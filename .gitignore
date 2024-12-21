@@ -1,7 +1,8 @@
 nasdaq-listed.csv
 nyse-listed.csv
-current_stocks.json
-not_found.json
+current_tickers.json
+not_found_tickers.json
+intervals.json
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
