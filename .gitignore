@@ -1,3 +1,8 @@
+nasdaq-listed.csv
+nyse-listed.csv
+current_stocks.json
+not_found.json
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
