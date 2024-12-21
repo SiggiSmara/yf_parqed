@@ -1,9 +1,21 @@
 [project]
 name = "yf-parqed"
 version = "0.1.0"
-description = "Add your description here"
+description = "Persistent storage of yfinance ticker data in parquet"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "httpx>=0.28.1",
     "pre-commit>=4.0.1",
+    "pyarrow>=18.1.0",
+    "tqdm>=4.67.1",
+    "typer>=0.15.1",
+    "yfinance[nospam]>=0.2.51",
 ]
+
+[project.scripts]
+yf-parqed = "yf_parqed:main.app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
