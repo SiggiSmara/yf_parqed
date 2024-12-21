@@ -1,4 +1,4 @@
-# yf_parqed
+# yf-parqed
 
 Persistent storage of yfinance ticker data in parquet.  It uses rate limiting on the calls to the Yahoo APIs (can be controlled) so as not to trigger any 
 usage limits. The aim is to have something you can install via PyPi that you call on the commandline to update your local copy of ticker data.
