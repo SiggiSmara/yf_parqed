@@ -46,6 +46,13 @@ def main(
         help="API Rate limiting. First argument is the maximum number of requests allowed in the time duration. Second argument is the time duration in seconds.",
     ),
 ):
+    """
+    Persistent storage of yfinance ticker data in parquet.
+
+    Use --limits to set the rate limiting for the API requests.
+
+    Use --wrk_dir to set the working directory.
+    """
     global yf_parqed
     wrk_dir = Path(wrk_dir)
     yf_parqed.set_working_path(wrk_dir)
