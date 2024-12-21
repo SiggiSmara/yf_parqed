@@ -66,7 +66,7 @@ def initialize():
     define_intervals()
     tickers = yf_parqed.get_new_list_of_stocks()
     yf_parqed.save_current_list_of_stocks(tickers)
-    yf_parqed.save_not_founds([])
+    yf_parqed.save_not_founds()
 
 
 @app.command()
