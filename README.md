@@ -3,7 +3,7 @@
 Persistent storage of yfinance ticker data in parquet.  It uses rate limiting on the calls to the Yahoo APIs (can be controlled) so as not to trigger any 
 usage limits. The aim is to have something you can install via PyPi that you call on the commandline to update your local copy of ticker data.
 
-It can download the actual lists of nasdaq and nyse tickers from [datahub.io](https://datahub.io/) (specifically  [nasdaq-listed.csv](https://datahub.io/core/nasdaq-listings/_r/-/data/nasdaq-listed.csv) and [nye-listed.csv](https://datahub.io/core/nyse-other-listings/_r/-/data/nyse-listed.csv) )and download each ticker found in there via yfinance.
+It can download the actual lists of nasdaq and nyse tickers from [datahub.io](https://datahub.io/) ( specifically  [nasdaq-listed.csv](https://datahub.io/core/nasdaq-listings/_r/-/data/nasdaq-listed.csv) and [nye-listed.csv](https://datahub.io/core/nyse-other-listings/_r/-/data/nyse-listed.csv) ) and download each ticker found in there via yfinance.
 
 Along with which tickers to sync locally you can also control the iinterval or intervals you are interested in.
 Each interval has their own folder and in there each ticker will have their own parquet. 
