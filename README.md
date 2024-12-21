@@ -1,12 +1,14 @@
 # yf_parqed
 
-Persistent storage of yfinance ticker data in parquet
+Persistent storage of yfinance ticker data in parquet.  It uses rate limiting on the calls to the Yahoo APIs (can be controlled) so as not to trigger any 
+usage limits. The aim is to have something you can install via PyPi that you call on the commandline to update your local copy of ticker data.
 
 ## About the repo
 
 This repo uses [uv](https://docs.astral.sh/uv/) and [pre-commit-uv](https://pypi.org/project/pre-commit-uv/).  
 
 Make sure that uv is installed and then execute `uv tool install pre-commit --with pre-commit-uv --force-reinstall` in the repo.
+
 
 
 ## Pre-flight acttivities
