@@ -2,14 +2,21 @@ import typer
 import httpx
 from pathlib import Path
 import os
+from loguru import logger
+import sys
+from datetime import datetime
+from typing import Annotated
 
 from yf_parqed.primary_class import YFParqed
 
-app = typer.Typer()
 
-global wrk_dir
-wrk_dir = Path(os.getcwd())
-yf_parqed = YFParqed(my_path=wrk_dir)
+# remove the defult stderr log sink in loguru and add a new one with the log
+# level set to INFO to limit the amount of output to the console
+logger.remove()
+logger.add(sys.stderr, level="INFO")
+
+app = typer.Typer()
+yf_parqed = YFParqed(my_path=Path(os.getcwd()))
 
 
 def download_file(url: str, local_path: Path):
@@ -30,8 +37,19 @@ def get_tickers():
 def define_intervals():
     global yf_parqed
     intervals = [
-        "1d",
+        "1m",
+        "2m",
+        "5m",
+        "15m",
+        "30m",
+        "60m",
+        "90m",
         "1h",
+        "1d",
+        "5d",
+        "1wk",
+        "1mo",
+        "3mo",
     ]
     yf_parqed.save_intervals(intervals)
 
@@ -45,6 +63,8 @@ def main(
         (2, 5),
         help="API Rate limiting. First argument is the maximum number of requests allowed in the time duration. Second argument is the time duration in seconds.",
     ),
+    # add option to set the loguru log level
+    log_level: str = typer.Option("INFO", help="Log level"),
 ):
     """
     Persistent storage of yfinance ticker data in parquet.
@@ -53,6 +73,10 @@ def main(
 
     Use --wrk_dir to set the working directory.
     """
+    # remove the defult stderr log sink in loguru and add a new one with the log level set
+    # to the supplied log level
+    logger.remove()
+    logger.add(sys.stderr, level=log_level)
     global yf_parqed
     wrk_dir = Path(wrk_dir)
     yf_parqed.set_working_path(wrk_dir)
@@ -61,6 +85,7 @@ def main(
 
 @app.command()
 def initialize():
+    """Initialize the yf_parqed project."""
     global yf_parqed
     get_tickers()
     define_intervals()
@@ -71,11 +96,75 @@ def initialize():
 
 @app.command()
 def add_interval(interval: str):
+    """Convenience function: Add a new interval to the list of intervals."""
     global yf_parqed
     yf_parqed.add_interval(interval)
 
 
 @app.command()
 def remove_interval(interval: str):
+    """Convenience function: Remve an interval from the list of intervals."""
     global yf_parqed
     yf_parqed.remove_interval(interval)
+
+
+@app.command()
+def update(
+    start_date: datetime = typer.Option(
+        None,
+        help="Start date for the initial snapshot the stock data. Skip if updating a current snapshot.",
+    ),
+    end_date: datetime = typer.Option(
+        None,
+        help="End date for the initial snapshot the stock data. Skip if updating a current snapshot.",
+    ),
+    save_not_found: Annotated[
+        bool,
+        typer.Option(
+            "--save-not-founds",
+            help="Save any tickers not returning data to the exclude list.",
+        ),
+    ] = False,
+    non_interactive: Annotated[
+        bool, typer.Option("--force-no-save", help="Run in non-interactive mode.")
+    ] = False,
+):
+    """Update the yfinace data for all stock tickers. See update --help for options."""
+    global yf_parqed
+    if all([start_date is None, end_date is None]):
+        yf_parqed.update_stock_data(update_only=True)
+    else:
+        if not all([start_date is None, end_date is None]):
+            logger.error(
+                "Both start and end date must be provided if not updating a current snapshot."
+            )
+            return
+        yf_parqed.update_stock_data(
+            start_date=start_date, end_date=end_date, update_only=False
+        )
+    if yf_parqed.new_not_found:
+        logger.info("Some tickers did not return any data.")
+        if non_interactive:
+            if save_not_found:
+                yf_parqed.save_not_founds()
+                logger.info("Not found list updated.")
+            else:
+                logger.info("Not found list was not updated.")
+            return
+        else:
+            if save_not_found:
+                yf_parqed.save_not_founds()
+                logger.info("Not found list updated.")
+                return
+            update_nf = typer.prompt(
+                (
+                    "Do you want to update the not found list so ",
+                    "they are not included in the future? (y/n)",
+                ),
+                default="y",
+            )
+            if update_nf.lower() == "y":
+                yf_parqed.save_not_founds()
+                logger.info("Not found list updated.")
+            else:
+                logger.info("Not found list not updated.")

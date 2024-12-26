@@ -3,7 +3,7 @@ import pandas as pd
 from pathlib import Path
 from datetime import datetime, timedelta
 import json
-from tqdm import tqdm
+from rich.progress import track
 from loguru import logger
 
 from requests import Session
@@ -16,25 +16,12 @@ class LimiterSession(LimiterMixin, Session):
 
 
 class YFParqed:
-    def __init__(
-        self,
-        my_path: Path = None,
-        my_intervals: list = ["1d", "1h"],
-        ny_session: Session = None,
-    ):
+    def __init__(self, my_path: Path = None, my_intervals: list = ["1d", "1h"]):
         self.my_path = None
         self.set_working_path(my_path)
         self.my_intervals = my_intervals
         self.new_not_found = False
-        if ny_session is None:
-            self.ny_session = LimiterSession(
-                limiter=Limiter(
-                    RequestRate(2, Duration.SECOND * 5)
-                ),  # max 2 requests per 5 seconds
-                bucket_class=MemoryQueueBucket,
-            )
-        else:
-            self.ny_session = ny_session
+        self.set_limiter()
 
     def set_working_path(self, my_path: Path):
         if my_path is None:
@@ -91,7 +78,7 @@ class YFParqed:
                 for y in nasdaq_path.read_text().split("\n")
                 if len(y.strip()) > 0
             ]
-            if x is not None or x != "" or not x.startswith("File Creation Time")
+            if x is not None and x != "" and not x.startswith("File")
         ]
 
         nyse = [
@@ -101,7 +88,7 @@ class YFParqed:
                 for y in nyse_path.read_text().split("\n")
                 if len(y.strip()) > 0
             ]
-            if x is not None or x != ""
+            if x is not None and x != ""
         ]
         stocks = nasdaq[1:] + nyse[1:]
         stocks = [
@@ -188,10 +175,13 @@ class YFParqed:
             return empty_df
 
     def update_stock_data(
-        self, start_date: datetime, end_date: datetime, update_only: bool = True
+        self,
+        start_date: datetime = None,
+        end_date: datetime = None,
+        update_only: bool = True,
     ):
         self.new_not_found = False
-        for stock in tqdm(self.stocks, desc="Processing stocks"):
+        for stock in track(self.stocks, description="Processing stocks"):
             if stock["ticker"] in self.not_found:
                 continue
             for interval in self.my_intervals:
@@ -206,30 +196,39 @@ class YFParqed:
     def save_single_stock_data(
         self,
         stock: str,
-        start_date: datetime,
-        end_date: datetime,
+        start_date: datetime = None,
+        end_date: datetime = None,
         interval: str = "1d",
         update_only: bool = True,
-        not_found: list = None,
     ):
         logger.debug(stock)
         data_path = self.my_path / f"stocks_{interval}" / f"{stock}.parquet"
 
         if stock in self.not_found:
+            logger.debug(f"{stock} is in the not found list, skipping")
             return
+
+        if end_date is None:
+            end_date = datetime.now()
+
         data_path.parent.mkdir(parents=True, exist_ok=True)
         df2 = self.read_yf(data_path)
-        if not df2.empty and update_only:
+        if update_only:
+            if df2.empty:
+                logger.error(f"Empty dataframe found for {stock}, can't update")
+                return
             start_date = df2.index.get_level_values("date").max().to_pydatetime()
-            logger.debug(f"Updating {stock} from {start_date} to {end_date}")
+
+        if start_date is None:
+            logger.error(f"Start date is not set for {stock}, can't proceed.")
+            return
 
         if (end_date - start_date).days > 0:
+            logger.debug(f"Reading {stock} from {start_date} to {end_date}")
             df1 = self.get_yfinance_data(
                 stock=stock, start_date=start_date, end_date=end_date, interval=interval
             )
-            # print(df1)
-            # print(df1.shape[0])
-            if df1.shape[0] > 0:
+            if not df1.empty:
                 self.save_yf(df1, df2, data_path)
             else:
                 logger.debug(
@@ -238,13 +237,13 @@ class YFParqed:
                 self.not_founds_whole.append(
                     {
                         "ticker": stock,
-                        "start_date": datetime.now().strftime("%Y-%m-%d"),
+                        "added_date": datetime.now().strftime("%Y-%m-%d"),
                     }
                 )
                 self.not_founds.append(stock)
                 self.new_not_found = True
-
-        return df2
+        else:
+            logger.debug(f"{stock} is up to date as the date range is 0 days.")
 
     def process_yfinance_data(self, df: pd.DataFrame, ticker: str) -> pd.DataFrame:
         df = df.rename_axis("date").reset_index()
