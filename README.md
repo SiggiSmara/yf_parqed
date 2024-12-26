@@ -3,20 +3,14 @@
 Persistent storage of yfinance ticker data in parquet based on [ranaroussi's](https://github.com/ranaroussi) [yfinace](https://ranaroussi.github.io/yfinance/index.html). Primary use case for using this package is collecting data for back testing or historical analysis. If the update interval is less than one day (24 h) this package will skip updating.
 
 It uses rate limiting on the calls to the Yahoo APIs (can be controlled) so as not to trigger any
-usage limits. The aim is to have something you can install via PyPi that you call on the commandline to update your local copy of ticker data.
+usage limits.
 
 It can download the actual lists of Nasdaq and Nyse tickers from [datahub.io](https://datahub.io/) ( specifically  [nasdaq-listed.csv](https://datahub.io/core/nasdaq-listings/_r/-/data/nasdaq-listed.csv) and [nye-listed.csv](https://datahub.io/core/nyse-other-listings/_r/-/data/nyse-listed.csv) ) and download historical ticker prices for each ticker found in there via yfinance.
 
-Along with which tickers to sync locally you can also control the interval(s) you are interested in.
+Along with which tickers to sync locally you can also control the time interval(s) you are interested in.
 Each interval has their own folder and in there each ticker will have their own parquet.
 
 In addition, if any ticker returns no data or you are no longer interested in syncing data for it you have the option of adding them to an exclude list to simplify the management of the list of tickers to download.
-
-## About the repo
-
-This repo uses [uv](https://docs.astral.sh/uv/) and [pre-commit-uv](https://pypi.org/project/pre-commit-uv/).  
-
-Make sure that uv is installed and then execute `uv tool install pre-commit --with pre-commit-uv --force-reinstall` in the repo.
 
 ## How to install
 
@@ -34,7 +28,7 @@ Still in flux, but generally:
 3. Trigger the initial snapshot via `uv-parqed update` with the `--start-date`and `--end-date` parameters set.
 4. Any time after that you can run `uv-parqed update` without parameters to add new data to your local snapshot.
 
-### Notes on `uv-parqed update`
+### Notes on `update`
 
  `uv-parqed update`  will detect if any tickers are not returning data and asks you via a prompt if you want to save them to the exclude list. You have two CLI options that allow you to control that behavior in the case when you are running this command via scripts:
 
@@ -45,11 +39,14 @@ The current list of tickers from Nasdaq and Nyse  (> 9000 tickers in total) with
 
 As the Yahoo finance APIs are rate limited (and not volume) it makes less sense (to me at least) to use an API cache mechanism, although that is easy to set up as well (see the above link to the yfinance documentation).
 
-## Details
+## About the package
+
+This repo uses [uv](https://docs.astral.sh/uv/) and [pre-commit-uv](https://pypi.org/project/pre-commit-uv/).  
+
+Make sure that uv is installed and then execute `uv tool install pre-commit --with pre-commit-uv --force-reinstall` in the repo.
 
 The package is created with the [typer module](https://typer.tiangolo.com/) from [tiangolo](https://github.com/tiangolo),
 so you can always add `--help` at the end of your cli command to get more information about options
 and functionalities.
 
 Logging is taken care of via loguru, and via the `--log-level` option you have access to set the level of logging detail.  Default logging level is `INFO`, for more verbose output set it to `DEBUG`.
-
