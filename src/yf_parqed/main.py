@@ -73,11 +73,10 @@ def main(
 
     Use --wrk_dir to set the working directory.
     """
-    # remove the defult stderr log sink in loguru and add a new one with the log level set
-    # to the supplied log level
+    global yf_parqed
     logger.remove()
     logger.add(sys.stderr, level=log_level)
-    global yf_parqed
+
     wrk_dir = Path(wrk_dir)
     yf_parqed.set_working_path(wrk_dir)
     yf_parqed.set_limiter(max_requests=limits[0], duration=limits[1])
@@ -87,6 +86,7 @@ def main(
 def initialize():
     """Initialize the yf_parqed project."""
     global yf_parqed
+
     get_tickers()
     define_intervals()
     tickers = yf_parqed.get_new_list_of_stocks()
@@ -98,6 +98,7 @@ def initialize():
 def add_interval(interval: str):
     """Convenience function: Add a new interval to the list of intervals."""
     global yf_parqed
+
     yf_parqed.add_interval(interval)
 
 
@@ -105,6 +106,7 @@ def add_interval(interval: str):
 def remove_interval(interval: str):
     """Convenience function: Remve an interval from the list of intervals."""
     global yf_parqed
+
     yf_parqed.remove_interval(interval)
 
 
@@ -131,6 +133,7 @@ def update(
 ):
     """Update the yfinace data for all stock tickers. See update --help for options."""
     global yf_parqed
+
     if all([start_date is None, end_date is None]):
         yf_parqed.update_stock_data(update_only=True)
     else:
