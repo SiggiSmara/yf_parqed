@@ -1,6 +1,6 @@
 # yf-parqed
 
-Persistent storage of yfinance ticker data in parquet based on @ranaroussi's [yfinace](https://ranaroussi.github.io/yfinance/index.html). Primary use case for using this package is collecting data for back testing or historical analysis. If the update interval is less than one day (24 h) this package will skip updating.
+Persistent storage of yfinance ticker data in parquet based on [ranaroussi's](https://github.com/ranaroussi) [yfinace](https://ranaroussi.github.io/yfinance/index.html). Primary use case for using this package is collecting data for back testing or historical analysis. If the update interval is less than one day (24 h) this package will skip updating.
 
 It uses rate limiting on the calls to the Yahoo APIs (can be controlled) so as not to trigger any
 usage limits. The aim is to have something you can install via PyPi that you call on the commandline to update your local copy of ticker data.
@@ -47,14 +47,9 @@ As the Yahoo finance APIs are rate limited (and not volume) it makes less sense 
 
 ## Details
 
-The package is created with the [typer module](https://typer.tiangolo.com/) from @tiangolo,
+The package is created with the [typer module](https://typer.tiangolo.com/) from [tiangolo](https://github.com/tiangolo),
 so you can always add `--help` at the end of your cli command to get more information about options
 and functionalities.
 
 Logging is taken care of via loguru, and via the `--log-level` option you have access to set the level of logging detail.  Default logging level is `INFO`, for more verbose output set it to `DEBUG`.
-
-
-
-
-
 
