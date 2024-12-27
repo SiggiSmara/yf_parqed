@@ -14,7 +14,7 @@ In addition, if any ticker returns no data or you are no longer interested in sy
 
 ## How to install
 
-Simply use pip or your favorite package management tool to install the package: `pip install yf-parqed`
+At some point I might publish this to PyPI but until then simply clone the repo and use pip or your favorite package management tool to install the package: `pip install .`
 
 ## How to use
 
