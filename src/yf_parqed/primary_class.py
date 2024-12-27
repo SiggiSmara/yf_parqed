@@ -186,6 +186,7 @@ class YFParqed:
             x["ticker"] for x in self.stocks if x["ticker"] not in self.not_founds
         ]
         logger.info(f"Number of tickers to process: {len(my_stocks)}")
+        logger.info(f"Number of tickers excluded: {len(self.not_founds)}")
         disable_track = not (os.getenv("YF_PARQED_LOG_LEVEL", "INFO") == "INFO")
         for stock in track(
             my_stocks, description="Processing stocks", disable=disable_track
@@ -283,10 +284,11 @@ class YFParqed:
                 end_date = today
 
         df = ticker.history(start=start_date, end=end_date, interval=interval)
+        logger.debug(
+            f"{stock} returned {df.shape[0]} result(s) for interval {interval} the date range of {start_date} to {end_date}."
+        )
+        # logger.debug(df.head())
         if df.empty:
-            logger.debug(
-                f"{stock} returned no results for the date range of {start_date} to {end_date}."
-            )
             return pd.DataFrame(
                 columns=[
                     "stock",
