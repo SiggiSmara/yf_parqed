@@ -3,6 +3,7 @@ nyse-listed.csv
 current_tickers.json
 not_found_tickers.json
 intervals.json
+stocks_*/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
