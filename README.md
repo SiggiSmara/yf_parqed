@@ -33,9 +33,9 @@ Still in flux, but generally:
  `uv-parqed update`  will detect if any tickers are not returning data and asks you via a prompt if you want to save them to the exclude list. You have two CLI options that allow you to control that behavior in the case when you are running this command via scripts:
 
 - `--save-not-founds` will circumvent the prompt and save them to the exclude list
-- `--force-no-save` will circumvent the prompt in the case when the `--save-not-found` is not present (resulting in the exclude list not being updated)
+- `--non-interactive` will circumvent the prompt in the case when the `--save-not-found` is not present (resulting in the exclude list not being updated)
 
-The current list of tickers from Nasdaq and Nyse  (> 9000 tickers in total) with the default limiter settings will take a considerable time given that the default limiter settings is no more than 2 API calls in a 5 second period.  You can of course play around with those settings, but they are coming from the [documentation of yfinance](https://ranaroussi.github.io/yfinance/advanced/caching.html) and they are very stable in my experience.
+The current list of tickers from Nasdaq and Nyse  (> 9000 tickers in total) with the default limiter settings will take a considerable time given that the default limiter settings is no more than 2 API calls in a 5 second period.  You can of course play around with those settings, but they are coming from the [documentation of yfinance](https://ranaroussi.github.io/yfinance/advanced/caching.html) and they are very stable in my experience. Feel free to experiment with other values.
 
 As the Yahoo finance APIs are rate limited (and not volume) it makes less sense (to me at least) to use an API cache mechanism, although that is easy to set up as well (see the above link to the yfinance documentation).
 
@@ -49,4 +49,4 @@ The package is created with the [typer module](https://typer.tiangolo.com/) from
 so you can always add `--help` at the end of your cli command to get more information about options
 and functionalities.
 
-Logging is taken care of via loguru, and via the `--log-level` option you have access to set the level of logging detail.  Default logging level is `INFO`, for more verbose output set it to `DEBUG`.
+Logging is taken care of via loguru, and with the `--log-level` option you have access to set the level of logging detail.  Default logging level is `INFO`, for more verbose output set it to `DEBUG` and for less you can set it to `WARNING` or higher.
