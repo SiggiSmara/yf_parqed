@@ -128,16 +128,27 @@ def update(
         ),
     ] = False,
     non_interactive: Annotated[
-        bool, typer.Option("--force-no-save", help="Run in non-interactive mode.")
+        bool, typer.Option("--non-interactive", help="Run in non-interactive mode.")
     ] = False,
 ):
     """Update the yfinace data for all stock tickers. See update --help for options."""
     global yf_parqed
 
+    logger.debug("Updating stock data.")
+    logger.debug(f"Supplied start and end dates:{[start_date, end_date]}")
+    logger.debug(
+        f"Supplied save-not-founds and non-interactive flags: {[save_not_found, non_interactive]}"
+    )
+    logger.debug(
+        f"Checking if we are in update mode: {all([start_date is None, end_date is None])}"
+    )
     if all([start_date is None, end_date is None]):
         yf_parqed.update_stock_data(update_only=True)
     else:
-        if not all([start_date is None, end_date is None]):
+        logger.debug(
+            f"Checking if either start or end dates are missing: {any([start_date is None, end_date is None])}"
+        )
+        if any([start_date is None, end_date is None]):
             logger.error(
                 "Both start and end date must be provided if not updating a current snapshot."
             )
@@ -145,6 +156,7 @@ def update(
         yf_parqed.update_stock_data(
             start_date=start_date, end_date=end_date, update_only=False
         )
+    logger.info("All tickers were processed.")
     if yf_parqed.new_not_found:
         logger.info("Some tickers did not return any data.")
         if non_interactive:
@@ -160,7 +172,7 @@ def update(
                 logger.info("Not found list updated.")
                 return
             update_nf = typer.prompt(
-                (
+                "".join(
                     "Do you want to update the not found list so ",
                     "they are not included in the future? (y/n)",
                 ),

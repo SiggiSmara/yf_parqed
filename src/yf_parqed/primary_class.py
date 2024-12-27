@@ -181,12 +181,14 @@ class YFParqed:
         update_only: bool = True,
     ):
         self.new_not_found = False
-        for stock in track(self.stocks, description="Processing stocks"):
-            if stock["ticker"] in self.not_found:
-                continue
+        my_stocks = [
+            x["ticker"] for x in self.stocks if x["ticker"] not in self.not_founds
+        ]
+        logger.info(f"Number of tickers to process: {len(my_stocks)}")
+        for stock in track(my_stocks, description="Processing stocks"):
             for interval in self.my_intervals:
                 self.save_single_stock_data(
-                    stock=stock["ticker"],
+                    stock=stock,
                     start_date=start_date,
                     end_date=end_date,
                     interval=interval,
@@ -204,7 +206,7 @@ class YFParqed:
         logger.debug(stock)
         data_path = self.my_path / f"stocks_{interval}" / f"{stock}.parquet"
 
-        if stock in self.not_found:
+        if stock in self.not_founds:
             logger.debug(f"{stock} is in the not found list, skipping")
             return
 
