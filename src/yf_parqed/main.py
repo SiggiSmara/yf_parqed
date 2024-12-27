@@ -76,6 +76,7 @@ def main(
     global yf_parqed
     logger.remove()
     logger.add(sys.stderr, level=log_level)
+    os.environ["YF_PARQED_LOG_LEVEL"] = log_level
 
     wrk_dir = Path(wrk_dir)
     yf_parqed.set_working_path(wrk_dir)

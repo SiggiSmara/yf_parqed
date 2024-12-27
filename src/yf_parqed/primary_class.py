@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 import json
 from rich.progress import track
 from loguru import logger
+import os
 
 from requests import Session
 from requests_ratelimiter import LimiterMixin, MemoryQueueBucket
@@ -185,7 +186,10 @@ class YFParqed:
             x["ticker"] for x in self.stocks if x["ticker"] not in self.not_founds
         ]
         logger.info(f"Number of tickers to process: {len(my_stocks)}")
-        for stock in track(my_stocks, description="Processing stocks"):
+        disable_track = not (os.getenv("YF_PARQED_LOG_LEVEL", "INFO") == "INFO")
+        for stock in track(
+            my_stocks, description="Processing stocks", disable=disable_track
+        ):
             for interval in self.my_intervals:
                 self.save_single_stock_data(
                     stock=stock,
