@@ -188,6 +188,11 @@ class YFParqed:
         logger.info(f"Number of tickers to process: {len(my_stocks)}")
         logger.info(f"Number of tickers excluded: {len(self.not_founds)}")
         disable_track = not (os.getenv("YF_PARQED_LOG_LEVEL", "INFO") == "INFO")
+
+        # set the end date to now if we are updating in order to
+        # have the same end date for the entire dataset
+        if update_only:
+            end_date = datetime.now()
         for stock in track(
             my_stocks, description="Processing stocks", disable=disable_track
         ):
