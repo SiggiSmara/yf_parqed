@@ -41,7 +41,7 @@ As the Yahoo finance APIs are rate limited (and not volume) it makes less sense 
 
 ## About the package
 
-This repo uses [uv](https://docs.astral.sh/uv/) and [pre-commit-uv](https://pypi.org/project/pre-commit-uv/).  
+The repo uses [uv](https://docs.astral.sh/uv/) and [pre-commit-uv](https://pypi.org/project/pre-commit-uv/).  
 
 Make sure that uv is installed and then execute `uv tool install pre-commit --with pre-commit-uv --force-reinstall` in the repo.
 
