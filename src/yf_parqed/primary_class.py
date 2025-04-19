@@ -17,10 +17,19 @@ class LimiterSession(LimiterMixin, Session):
 
 
 class YFParqed:
-    def __init__(self, my_path: Path = None, my_intervals: list = ["1d", "1h"]):
+    def __init__(self, my_path: Path = None, my_intervals: list = []):
         self.my_path = None
         self.set_working_path(my_path)
-        self.my_intervals = my_intervals
+
+        if len(my_intervals) == 0:
+            self.load_intervals()
+        else:
+            self.my_intervals = my_intervals
+            self.save_intervals(self.my_intervals)
+        if len(self.my_intervals) == 0:
+            logger.error("No intervals found.  Please set the intervals.")
+            raise ValueError("No intervals found.  Please set the intervals.")
+
         self.new_not_found = False
         self.set_limiter()
 
@@ -52,6 +61,7 @@ class YFParqed:
             self.my_intervals = json.loads(self.intervals_path.read_text())
         else:
             self.my_intervals = []
+        logger.debug(f"Intervals loaded: {self.my_intervals}")
 
     def save_intervals(self, intervals: list):
         self.intervals_path.write_text(json.dumps(intervals, indent=4))
@@ -224,6 +234,8 @@ class YFParqed:
             end_date = datetime.now()
 
         data_path.parent.mkdir(parents=True, exist_ok=True)
+        logger.debug(f"Data path: {data_path}")
+
         df2 = self.read_yf(data_path)
         if update_only:
             if df2.empty:
@@ -287,7 +299,8 @@ class YFParqed:
 
             if (today - end_date).days >= 6:
                 end_date = today
-
+        logger.debug(f"Getting {stock} from {start_date} to {end_date} with {interval}")
+        # logger.debug(ticker.info)
         df = ticker.history(start=start_date, end=end_date, interval=interval)
         logger.debug(
             f"{stock} returned {df.shape[0]} result(s) for interval {interval} the date range of {start_date} to {end_date}."
