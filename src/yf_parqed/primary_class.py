@@ -26,6 +26,7 @@ class YFParqed:
         else:
             self.my_intervals = my_intervals
             self.save_intervals(self.my_intervals)
+
         if len(self.my_intervals) == 0:
             logger.error("No intervals found.  Please set the intervals.")
             raise ValueError("No intervals found.  Please set the intervals.")
