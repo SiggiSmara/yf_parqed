@@ -29,7 +29,7 @@ def main(
         os.getcwd(), help="Working directory, default is current directory"
     ),
     limits: tuple[int, int] = typer.Option(
-        (2, 5),
+        (2, 1),
         help="API Rate limiting. First argument is the maximum number of requests allowed in the time duration. Second argument is the time duration in seconds.",
     ),
     # add option to set the loguru log level

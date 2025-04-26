@@ -67,11 +67,14 @@ class YFParqed:
         self.load_current_not_founds()
         self.load_current_list_of_stocks()
 
-    def set_limiter(self, max_requests: int = 2, duration: int = 5):
+    def set_limiter(self, max_requests: int = 2, duration: int = 1):
+        logger.info(
+            f"Ratelimiting set to {max_requests} max requests per {duration} seconds"
+        )
         self.session = LimiterSession(
             limiter=Limiter(
                 RequestRate(max_requests, Duration.SECOND * duration)
-            ),  # max 2 requests per 5 seconds
+            ),  # max 1 requests per 1 second
             bucket_class=MemoryQueueBucket,
         )
 
