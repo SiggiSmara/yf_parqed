@@ -9,7 +9,7 @@ dependencies = [
     "loguru>=0.7.3",
     "pyarrow>=18.1.0",
     "typer>=0.15.1",
-    "yfinance[nospam]>=0.2.54",
+    "yfinance[nospam]==0.2.56",
 ]
 
 [project.scripts]
