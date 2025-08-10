@@ -4,7 +4,8 @@ import os
 from loguru import logger
 import sys
 from datetime import datetime
-from typing import Annotated
+from typing_extensions import Annotated
+from typing import Tuple
 
 from yf_parqed.primary_class import YFParqed, all_intervals
 
@@ -25,15 +26,17 @@ yf_parqed = YFParqed(my_path=Path(os.getcwd()))
 
 @app.callback()
 def main(
-    wrk_dir: str = typer.Option(
-        os.getcwd(), help="Working directory, default is current directory"
-    ),
-    limits: tuple[int, int] = typer.Option(
-        (2, 1),
-        help="API Rate limiting. First argument is the maximum number of requests allowed in the time duration. Second argument is the time duration in seconds.",
-    ),
+    wrk_dir: Annotated[
+        Path, typer.Argument(help="Working directory, default is current directory")
+    ] = Path.cwd(),
+    limits: Annotated[
+        Tuple[int, int],
+        typer.Argument(
+            help="API Rate limiting. First argument is the maximum number of requests allowed in the time duration. Second argument is the time duration in seconds.",
+        ),
+    ] = (3, 2),
     # add option to set the loguru log level
-    log_level: str = typer.Option("INFO", help="Log level"),
+    log_level: Annotated[str, typer.Argument(help="Log level")] = "INFO",
 ):
     """
     Persistent storage of yfinance ticker data in parquet.
@@ -41,15 +44,18 @@ def main(
     Use --limits to set the rate limiting for the API requests.
 
     Use --wrk_dir to set the working directory.
+
+    Use --log_level to set the log level.
     """
     global yf_parqed
     logger.remove()
     logger.add(sys.stderr, level=log_level)
     os.environ["YF_PARQED_LOG_LEVEL"] = log_level
 
-    wrk_dir = Path(wrk_dir)
+    # wrk_dir = Path(wrk_dir)
     yf_parqed.set_working_path(wrk_dir)
-    yf_parqed.set_limiter(max_requests=limits[0], duration=limits[1])
+    if limits is not None and limits != (3, 2):
+        yf_parqed.set_limiter(max_requests=limits[0], duration=limits[1])
 
 
 @app.command()
@@ -60,13 +66,13 @@ def initialize():
     yf_parqed.get_new_list_of_stocks()
     # get_tickers()
     yf_parqed.save_intervals(all_intervals)
-    tickers = yf_parqed.get_new_list_of_stocks()
-    yf_parqed.save_current_list_of_stocks(tickers)
+    # tickers = yf_parqed.get_new_list_of_stocks()
+    yf_parqed.save_current_list_of_stocks()
     yf_parqed.save_not_founds()
 
 
 @app.command()
-def add_interval(interval: str):
+def add_interval(interval: Annotated[str, typer.Argument()]):
     """Convenience function: Add a new interval to the list of intervals."""
     global yf_parqed
 
@@ -74,7 +80,7 @@ def add_interval(interval: str):
 
 
 @app.command()
-def remove_interval(interval: str):
+def remove_interval(interval: Annotated[str, typer.Argument()]):
     """Convenience function: Remve an interval from the list of intervals."""
     global yf_parqed
 
@@ -83,23 +89,26 @@ def remove_interval(interval: str):
 
 @app.command()
 def update_data(
-    start_date: datetime = typer.Option(
-        None,
-        help="Start date for the initial snapshot the stock data. Skip if updating a current snapshot.",
-    ),
-    end_date: datetime = typer.Option(
-        None,
-        help="End date for the initial snapshot the stock data. Skip if updating a current snapshot.",
-    ),
-    save_not_found: Annotated[
+    start_date: Annotated[
+        datetime,
+        typer.Argument(
+            help="Start date for the initial snapshot the stock data. Skip if updating a current snapshot.",
+        ),
+    ],
+    end_date: Annotated[
+        datetime,
+        typer.Argument(
+            help="End date for the initial snapshot the stock data. Skip if updating a current snapshot.",
+        ),
+    ],
+    save_not_founds: Annotated[
         bool,
-        typer.Option(
-            "--save-not-founds",
+        typer.Argument(
             help="Save any tickers not returning data to the exclude list.",
         ),
     ] = False,
     non_interactive: Annotated[
-        bool, typer.Option("--non-interactive", help="Run in non-interactive mode.")
+        bool, typer.Argument(help="Run in non-interactive mode.")
     ] = False,
 ):
     """Update the yfinace data for all stock tickers. See update --help for options."""
@@ -108,7 +117,7 @@ def update_data(
     logger.debug("Updating stock data.")
     logger.debug(f"Supplied start and end dates:{[start_date, end_date]}")
     logger.debug(
-        f"Supplied save-not-founds and non-interactive flags: {[save_not_found, non_interactive]}"
+        f"Supplied save-not-founds and non-interactive flags: {[save_not_founds, non_interactive]}"
     )
     logger.debug(
         f"Checking if we are in update mode: {all([start_date is None, end_date is None])}"
@@ -132,14 +141,14 @@ def update_data(
     if yf_parqed.new_not_found:
         logger.info("Some tickers did not return any data.")
         if non_interactive:
-            if save_not_found:
+            if save_not_founds:
                 yf_parqed.save_not_founds()
                 logger.info("Not found list updated.")
             else:
                 logger.info("Not found list was not updated.")
             return
         else:
-            if save_not_found:
+            if save_not_founds:
                 yf_parqed.save_not_founds()
                 logger.info("Not found list updated.")
                 return
