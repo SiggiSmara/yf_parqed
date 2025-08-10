@@ -9,7 +9,7 @@ dependencies = [
     "loguru>=0.7.3",
     "pyarrow>=18.1.0",
     "typer>=0.15.1",
-    "yfinance[nospam]==0.2.56",
+    "yfinance[nospam]==0.2.58",
 ]
 
 [project.scripts]
@@ -26,3 +26,6 @@ build-backend = "hatchling.build"
 dev = [
     "pre-commit>=4.0.1",
 ]
+
+[tool.uv.sources]
+yfinance = { git = "https://github.com/ranaroussi/yfinance.git", rev = "dev" }
