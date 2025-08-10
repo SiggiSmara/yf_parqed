@@ -7,10 +7,13 @@ from rich.progress import track
 from loguru import logger
 import os
 import httpx
+import time
 
 from requests import Session
-from requests_ratelimiter import LimiterMixin, MemoryQueueBucket
-from pyrate_limiter import Duration, RequestRate, Limiter
+
+# from requests.exceptions import HTTPError
+from curl_cffi.requests.exceptions import HTTPError
+from requests_ratelimiter import LimiterMixin
 
 
 class LimiterSession(LimiterMixin, Session):
@@ -35,9 +38,11 @@ all_intervals = [
 
 
 class YFParqed:
-    def __init__(self, my_path: Path = None, my_intervals: list = []):
-        self.my_path = None
+    def __init__(self, my_path: Path = Path.cwd(), my_intervals: list = []):
+        self.my_path = Path()
         self.set_working_path(my_path)
+
+        self.call_list = []
 
         if len(my_intervals) == 0:
             self.load_intervals()
@@ -67,16 +72,69 @@ class YFParqed:
         self.load_current_not_founds()
         self.load_current_list_of_stocks()
 
-    def set_limiter(self, max_requests: int = 2, duration: int = 1):
+    def set_limiter(self, max_requests: int = 3, duration: int = 2):
         logger.info(
-            f"Ratelimiting set to {max_requests} max requests per {duration} seconds"
+            f"Ratelimiting set to max {max_requests} requests per {duration} seconds"
         )
-        self.session = LimiterSession(
-            limiter=Limiter(
-                RequestRate(max_requests, Duration.SECOND * duration)
-            ),  # max 1 requests per 1 second
-            bucket_class=MemoryQueueBucket,
+        self.max_requests = max_requests
+        self.duration = duration
+        if self.max_requests == 1:
+            self.limit_check_idx = 0
+        else:
+            self.limit_check_idx = 1
+
+        # self.session = LimiterSession(
+        #     limiter=Limiter(
+        #         RequestRate(max_requests, Duration.SECOND * duration)
+        #     ),  # max 1 requests per 1 second
+        #     bucket_class=MemoryQueueBucket,
+        # )
+
+    def enforce_limits(self):
+        logger.debug(f"Enforcing limits: {self.call_list}")
+        now = datetime.now()
+        if self.call_list == []:
+            logger.debug("Call list is empty, adding now")
+            self.call_list.append(now)
+        else:
+            delta = (now - max(self.call_list)).total_seconds()
+            sleepytime = self.duration / self.max_requests
+            if delta < sleepytime:
+                time.sleep(sleepytime - delta)
+                logger.debug(
+                    f"Sleept for {sleepytime - delta} seconds.  Calling enforce_limits again."
+                )
+                self.enforce_limits()
+            # if delta < self.duration and len(self.call_list) >= self.max_requests:
+            #     # sleepytime = self.duration - (now - self.call_list[self.limit_check_idx ]).total_seconds() + 0.05
+            #     logger.debug(
+            #         f"Sleeping for {sleepytime} seconds.  Len call list => max_requests."
+            #     )
+            #     time.sleep(sleepytime)
+            # elif delta < self.duration:
+            #     # sleepytime = delta / self.max_requests
+            #     logger.debug(
+            #         f"Sleeping for {sleepytime} seconds.  Len call list < max_requests."
+            #     )
+            #     time.sleep(sleepytime)
+            else:
+                logger.debug(f"Adding {now} to the call list")
+                self.call_list.append(now)
+                logger.debug(f"Len call list: {len(self.call_list)}")
+                if len(self.call_list) > self.max_requests:
+                    self.call_list.pop(0)
+
+    def business_days_between(self, start: datetime, end: datetime) -> int:
+        delta = (end - start).days
+        logger.debug(f"initial delta: {delta}")
+        business_days = sum(
+            1 for i in range(delta + 1) if (start + timedelta(days=i)).weekday() < 5
         )
+        logger.debug([(start + timedelta(days=i)).weekday() for i in range(delta + 1)])
+        if start.weekday() < 5:
+            business_days -= 1
+        logger.debug(f"final delta: {business_days}")
+        return business_days
 
     def load_intervals(self):
         if self.intervals_path.is_file():
@@ -187,15 +245,21 @@ class YFParqed:
         for stock, meta_data in track(
             self.not_founds.items(), "Re-checking not-founds..."
         ):
+            self.enforce_limits()
             meta_data["last_checked"] = datetime.now().strftime("%Y-%m-%d")
-            ticker = yf.Ticker(stock, session=self.session)
-            hist = ticker.history(period="1d")
-            if hist.empty:
-                logger.debug(f"{stock} is not found.")
-            else:
-                logger.debug(f"{stock} is found.")
-                last_date = hist.index[-1].to_pydatetime()
-                meta_data["last_date_found"] = last_date.strftime("%Y-%m-%d")
+            try:
+                ticker = yf.Ticker(stock)  # , session=self.session)
+                hist = ticker.history(period="1d")
+                if hist.empty:
+                    logger.debug(f"{stock} is not found.")
+                else:
+                    logger.debug(f"{stock} is found.")
+                    last_date = hist.index[-1].to_pydatetime()
+                    meta_data["last_date_found"] = last_date.strftime("%Y-%m-%d")
+            except HTTPError as e:
+                logger.error(
+                    f"Got an HTTPError for {stock}: {e}, most likely not available anymore."
+                )
 
             new_not_founds_whole[stock] = meta_data
 
@@ -271,8 +335,8 @@ class YFParqed:
 
     def update_stock_data(
         self,
-        start_date: datetime = None,
-        end_date: datetime = None,
+        start_date: datetime | None = None,
+        end_date: datetime | None = None,
         # update_only: bool = True,
     ):
         self.new_not_found = False
@@ -286,11 +350,17 @@ class YFParqed:
         # set the end date to now if we are updating in order to
         # have the same end date for the entire dataset
         if end_date is None:
-            end_date = datetime.now()
-        for stock in track(
-            my_stocks, description="Processing stocks", disable=disable_track
-        ):
-            for interval in self.my_intervals:
+            end_date = self.get_today()
+
+        for interval in self.my_intervals:
+            for stock in track(
+                my_stocks,
+                description=f"Processing stocks for interval:{interval}",
+                disable=disable_track,
+            ):
+                self.enforce_limits()
+                # print(stock)
+                # for interval in self.my_intervals:
                 self.save_single_stock_data(
                     stock=stock,
                     start_date=start_date,
@@ -302,8 +372,8 @@ class YFParqed:
     def save_single_stock_data(
         self,
         stock: str,
-        start_date: datetime = None,
-        end_date: datetime = None,
+        start_date: datetime | None = None,
+        end_date: datetime | None = None,
         interval: str = "1d",
         # update_only: bool = True,
     ):
@@ -329,13 +399,22 @@ class YFParqed:
         elif start_date is None:
             start_date = df2.index.get_level_values("date").max().to_pydatetime()
 
-        if all((start_date is None, end_date is None)):
-            start_date = datetime.now()
-            end_date = datetime.now()
+        # if any((start_date is None, end_date is None)):
+        #     start_date = datetime.now()
+        #     end_date = datetime.now()
+        #     load_all = True
+
+        if end_date is None:
+            end_date = self.get_today()
+
+        if start_date is None:
+            start_date = self.get_today()
             load_all = True
 
-        if load_all or (end_date - start_date).days > 0:
-            logger.debug(f"Reading {stock} from {start_date} to {end_date}")
+        if load_all or self.business_days_between(start=start_date, end=end_date) > 0:
+            logger.debug(
+                f"Reading {stock} from {start_date} to {end_date} and {load_all} load_all and {self.business_days_between(start=start_date, end=end_date)} business days"
+            )
             df1 = self.get_yfinance_data(
                 stock=stock,
                 start_date=start_date,
@@ -367,6 +446,17 @@ class YFParqed:
             ["date", "open", "high", "low", "close", "volume", "stock"]
         ].set_index(["stock", "date"])
 
+    def get_today(self) -> datetime:
+        # get the now datetime
+        today = datetime.now()
+        # if today is saturday or sunday set the date to the last weekday of the same week
+        if today.weekday() > 4:
+            today = today - timedelta(days=today.weekday() - 4)
+        # set the time to 23:59:59
+        today = today.replace(hour=17, minute=00, second=00, microsecond=0)
+        logger.debug(today)
+        return today
+
     def get_yfinance_data(
         self,
         stock: str,
@@ -375,39 +465,92 @@ class YFParqed:
         interval: str = "1d",
         get_all: bool = False,
     ) -> pd.DataFrame:
-        ticker = yf.Ticker(stock, session=self.session)
+        ticker = yf.Ticker(stock)  # , session=self.session)
         if not get_all:
+            # make sure the day limit is not reached
+            today = self.get_today()
             if interval in ("60m", "90m", "1h"):
-                # make sure the day limit is not reached
-                today = datetime.now()
-                if (today - start_date).days >= 730:
+                if (today - start_date).days >= 729:
                     start_date = today - timedelta(729)
+                    start_date = start_date.replace(
+                        hour=8, minute=0, second=0, microsecond=0
+                    )
 
-                if (today - end_date).days >= 730:
+                if (today - end_date).days >= 729:
                     end_date = today
 
+                if (end_date - start_date).days >= 729:
+                    logger.error(
+                        f"The date range is too large for this interval and I can't fix it: {end_date} - {start_date}"
+                    )
+                    return pd.DataFrame(
+                        columns=[
+                            "stock",
+                            "date",
+                            "open",
+                            "high",
+                            "low",
+                            "close",
+                            "volume",
+                            "sequence",
+                        ]
+                    ).set_index(["stock", "date"])
+
             if interval in ("1m", "2m", "5m", "15m", "30m"):
-                # make sure the 6 day limit is not reached
-                today = datetime.now()
+                if (today - start_date).days >= 7:
+                    start_date = today - timedelta(7)
+                    start_date = start_date.replace(
+                        hour=0, minute=0, second=0, microsecond=0
+                    )
 
-                if (today - start_date).days >= 6:
-                    start_date = today - timedelta(6)
-
-                if (today - end_date).days >= 6:
+                if (today - end_date).days >= 7:
                     end_date = today
             logger.debug(
                 f"Getting {stock} from {start_date} to {end_date} with {interval}"
             )
             # logger.debug(ticker.info)
-            df = ticker.history(start=start_date, end=end_date, interval=interval)
+            try:
+                df = ticker.history(start=start_date, end=end_date, interval=interval)
+            except Exception as e:
+                logger.error(f"Error getting data for {stock}: {e}")
+                df = pd.DataFrame(
+                    columns=[
+                        "stock",
+                        "date",
+                        "open",
+                        "high",
+                        "low",
+                        "close",
+                        "volume",
+                        "sequence",
+                    ]
+                )
         else:
-            logger.debug(f"Getting {stock} all data")
             period = "10y"
             if interval in ("60m", "90m", "1h"):
-                period = "5y"
+                period = "729d"
             elif interval in ("1m", "2m", "5m", "15m", "30m"):
                 period = "8d"
-            df = ticker.history(period=period, interval=interval)
+            logger.debug(
+                f"Getting {stock} all data with period {period} and interval {interval}"
+            )
+            try:
+                df = ticker.history(period=period, interval=interval)
+            except HTTPError as e:
+                logger.error(f"Error getting data for {stock}: {e}")
+                df = pd.DataFrame(
+                    columns=[
+                        "stock",
+                        "date",
+                        "open",
+                        "high",
+                        "low",
+                        "close",
+                        "volume",
+                        "sequence",
+                    ]
+                )
+
         logger.debug(
             f"{stock} returned {df.shape[0]} result(s) for interval {interval} the date range of {start_date} to {end_date}."
         )
