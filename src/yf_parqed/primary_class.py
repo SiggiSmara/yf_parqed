@@ -91,19 +91,25 @@ class YFParqed:
         # )
 
     def enforce_limits(self):
-        logger.debug(f"Enforcing limits: {self.call_list}")
+        logger.debug(f"Enforcing limits: {len(self.call_list)} calls in the list")
         now = datetime.now()
         if self.call_list == []:
             logger.debug("Call list is empty, adding now")
             self.call_list.append(now)
         else:
+            logger.debug(f"Now: {now.strftime('%Y-%m-%d %H:%M:%S')}")
+            logger.debug(
+                f"Max call list: {max(self.call_list).strftime('%Y-%m-%d %H:%M:%S')}"
+            )
             delta = (now - max(self.call_list)).total_seconds()
+            logger.debug(f"Delta: {delta} seconds")
             sleepytime = self.duration / self.max_requests
+            logger.debug(f"Sleepytime: {sleepytime} seconds")
+            logger.debug(f"delta < sleepytime: {delta < sleepytime}")
             if delta < sleepytime:
+                logger.debug(f"Sleeping for {sleepytime - delta} seconds.")
                 time.sleep(sleepytime - delta)
-                logger.debug(
-                    f"Sleept for {sleepytime - delta} seconds.  Calling enforce_limits again."
-                )
+                logger.debug("Calling enforce_limits again after waking up.")
                 self.enforce_limits()
             # if delta < self.duration and len(self.call_list) >= self.max_requests:
             #     # sleepytime = self.duration - (now - self.call_list[self.limit_check_idx ]).total_seconds() + 0.05
