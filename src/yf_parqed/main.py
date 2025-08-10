@@ -27,16 +27,16 @@ yf_parqed = YFParqed(my_path=Path(os.getcwd()))
 @app.callback()
 def main(
     wrk_dir: Annotated[
-        Path, typer.Argument(help="Working directory, default is current directory")
+        Path, typer.Option(help="Working directory, default is current directory")
     ] = Path.cwd(),
     limits: Annotated[
         Tuple[int, int],
-        typer.Argument(
+        typer.Option(
             help="API Rate limiting. First argument is the maximum number of requests allowed in the time duration. Second argument is the time duration in seconds.",
         ),
     ] = (3, 2),
     # add option to set the loguru log level
-    log_level: Annotated[str, typer.Argument(help="Log level")] = "INFO",
+    log_level: Annotated[str, typer.Option(help="Log level")] = "INFO",
 ):
     """
     Persistent storage of yfinance ticker data in parquet.
