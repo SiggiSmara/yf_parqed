@@ -9,15 +9,14 @@ import os
 import httpx
 import time
 
-from requests import Session
 
 # from requests.exceptions import HTTPError
 from curl_cffi.requests.exceptions import HTTPError
-from requests_ratelimiter import LimiterMixin
+# from requests_ratelimiter import LimiterMixin
 
 
-class LimiterSession(LimiterMixin, Session):
-    pass
+# class LimiterSession(LimiterMixin, Session):
+#     pass
 
 
 all_intervals = [
@@ -263,8 +262,11 @@ class YFParqed:
                     last_date = hist.index[-1].to_pydatetime()
                     meta_data["last_date_found"] = last_date.strftime("%Y-%m-%d")
             except HTTPError as e:
+                status_code = None
+                if hasattr(e, "response"):
+                    status_code = e.response.status_code
                 logger.error(
-                    f"Got an HTTPError for {stock}: {e}, most likely not available anymore."
+                    f"Error getting data for {stock}: HTTP {status_code} - {str(e)}, most likely not available anymore."
                 )
 
             new_not_founds_whole[stock] = meta_data
