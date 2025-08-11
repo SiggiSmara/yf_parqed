@@ -90,25 +90,25 @@ def remove_interval(interval: Annotated[str, typer.Argument()]):
 @app.command()
 def update_data(
     start_date: Annotated[
-        datetime,
-        typer.Argument(
+        datetime | None,
+        typer.Option(
             help="Start date for the initial snapshot the stock data. Skip if updating a current snapshot.",
         ),
-    ],
+    ] = None,
     end_date: Annotated[
-        datetime,
-        typer.Argument(
+        datetime | None,
+        typer.Option(
             help="End date for the initial snapshot the stock data. Skip if updating a current snapshot.",
         ),
-    ],
+    ] = None,
     save_not_founds: Annotated[
         bool,
-        typer.Argument(
+        typer.Option(
             help="Save any tickers not returning data to the exclude list.",
         ),
     ] = False,
     non_interactive: Annotated[
-        bool, typer.Argument(help="Run in non-interactive mode.")
+        bool, typer.Option(help="Run in non-interactive mode.")
     ] = False,
 ):
     """Update the yfinace data for all stock tickers. See update --help for options."""
