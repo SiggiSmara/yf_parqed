@@ -64,11 +64,9 @@ def initialize():
     global yf_parqed
 
     yf_parqed.get_new_list_of_stocks()
-    # get_tickers()
     yf_parqed.save_intervals(all_intervals)
-    # tickers = yf_parqed.get_new_list_of_stocks()
-    yf_parqed.save_current_list_of_stocks()
-    yf_parqed.save_not_founds()
+    yf_parqed.update_current_list_of_stocks()
+    yf_parqed.save_tickers()
 
 
 @app.command()
@@ -123,7 +121,7 @@ def update_data(
         f"Checking if we are in update mode: {all([start_date is None, end_date is None])}"
     )
     if all([start_date is None, end_date is None]):
-        yf_parqed.update_stock_data()  # update_only=True
+        yf_parqed.update_stock_data()
     else:
         logger.debug(
             f"Checking if either start or end dates are missing: {any([start_date is None, end_date is None])}"
@@ -135,22 +133,22 @@ def update_data(
             return
         yf_parqed.update_stock_data(
             start_date=start_date,
-            end_date=end_date,  # update_only=False
+            end_date=end_date,
         )
     logger.info("All tickers were processed.")
     if yf_parqed.new_not_found:
         logger.info("Some tickers did not return any data.")
         if non_interactive:
             if save_not_founds:
-                yf_parqed.save_not_founds()
-                logger.info("Not found list updated.")
+                yf_parqed.save_tickers()
+                logger.info("Tickers file updated with not found entries.")
             else:
-                logger.info("Not found list was not updated.")
+                logger.info("Tickers file was not updated.")
             return
         else:
             if save_not_founds:
-                yf_parqed.save_not_founds()
-                logger.info("Not found list updated.")
+                yf_parqed.save_tickers()
+                logger.info("Tickers file updated with not found entries.")
                 return
             update_nf = typer.prompt(
                 "".join(
@@ -162,10 +160,10 @@ def update_data(
                 default="y",
             )
             if update_nf.lower() == "y":
-                yf_parqed.save_not_founds()
-                logger.info("Not found list updated.")
+                yf_parqed.save_tickers()
+                logger.info("Tickers file updated with not found entries.")
             else:
-                logger.info("Not found list not updated.")
+                logger.info("Tickers file not updated.")
 
 
 @app.command()
@@ -183,7 +181,7 @@ def confirm_not_founds():
     global yf_parqed
 
     yf_parqed.confirm_not_founds()
-    logger.info("Not found list updated.")
+    logger.info("Tickers file updated.")
 
 
 @app.command()
@@ -191,5 +189,7 @@ def reparse_not_founds():
     """Reparse the not found list."""
     global yf_parqed
 
+    yf_parqed.reparse_not_founds()
+    logger.info("Tickers file updated.")
     yf_parqed.reparse_not_founds()
     logger.info("Not found list updated.")

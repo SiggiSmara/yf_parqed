@@ -65,11 +65,68 @@ class YFParqed:
         return self.my_path
 
     def update_meta_after_path_change(self):
-        self.current_stocks_path = self.my_path / "current_tickers.json"
-        self.not_founds_path = self.my_path / "not_found_tickers.json"
+        self.tickers_path = self.my_path / "tickers.json"
         self.intervals_path = self.my_path / "intervals.json"
-        self.load_current_not_founds()
-        self.load_current_list_of_stocks()
+        self.load_tickers()
+
+    @staticmethod
+    def _price_frame_columns() -> list[str]:
+        return [
+            "stock",
+            "date",
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "sequence",
+        ]
+
+    @classmethod
+    def _empty_price_frame(cls) -> pd.DataFrame:
+        return pd.DataFrame(
+            {
+                "stock": pd.Series(dtype="string"),
+                "date": pd.Series(dtype="datetime64[ns]"),
+                "open": pd.Series(dtype="float64"),
+                "high": pd.Series(dtype="float64"),
+                "low": pd.Series(dtype="float64"),
+                "close": pd.Series(dtype="float64"),
+                "volume": pd.Series(dtype="Int64"),
+                "sequence": pd.Series(dtype="Int64"),
+            }
+        ).set_index(["stock", "date"])
+
+    @classmethod
+    def _normalize_price_frame(cls, df: pd.DataFrame) -> pd.DataFrame:
+        expected_cols = cls._price_frame_columns()
+        normalized = df.copy()
+
+        for column in expected_cols:
+            if column not in normalized.columns:
+                if column in {"open", "high", "low", "close"}:
+                    normalized[column] = pd.Series(dtype="float64")
+                elif column in {"volume", "sequence"}:
+                    normalized[column] = pd.Series(dtype="Int64")
+                elif column == "date":
+                    normalized[column] = pd.Series(dtype="datetime64[ns]")
+                else:
+                    normalized[column] = pd.Series(dtype="string")
+
+        normalized["stock"] = normalized["stock"].astype("string")
+        normalized["date"] = pd.to_datetime(normalized["date"], errors="coerce")
+
+        for price_col in ["open", "high", "low", "close"]:
+            normalized[price_col] = pd.to_numeric(
+                normalized[price_col], errors="coerce"
+            ).astype("float64")
+
+        for int_col in ["volume", "sequence"]:
+            numeric_series = pd.to_numeric(normalized[int_col], errors="coerce")
+            normalized[int_col] = numeric_series.round().astype("Int64")
+
+        normalized = normalized[expected_cols]
+        return normalized
 
     def set_limiter(self, max_requests: int = 3, duration: int = 2):
         logger.info(
@@ -208,59 +265,161 @@ class YFParqed:
             x: {
                 "ticker": x,
                 "added_date": datetime.now().strftime("%Y-%m-%d"),
+                "status": "active",
+                "last_checked": None,
+                "intervals": {},
             }
             for x in stocks
         }
         return stocks
 
-    def load_current_list_of_stocks(self):
-        if self.current_stocks_path.is_file():
-            self.stocks = json.loads(self.current_stocks_path.read_text())
+    def load_tickers(self):
+        if self.tickers_path.is_file():
+            self.tickers = json.loads(self.tickers_path.read_text())
         else:
-            self.stocks = {}
+            self.tickers = {}
 
-    def save_current_list_of_stocks(self):
-        stocks = {
-            key: value
-            for key, value in self.stocks.items()
-            if key not in self.not_founds
-        }
-        self.current_stocks_path.write_text(json.dumps(stocks, indent=4))
+    def save_tickers(self):
+        self.tickers_path.write_text(json.dumps(self.tickers, indent=4))
 
     def update_current_list_of_stocks(self):
         new_tickers = self.get_new_list_of_stocks()
         for ticker, value in new_tickers.items():
-            if ticker not in self.stocks:
-                self.stocks[ticker] = value
-        self.save_current_list_of_stocks()
+            if ticker not in self.tickers:
+                self.tickers[ticker] = value
+            elif self.tickers[ticker].get("status") == "not_found":
+                # Keep existing metadata but mark as active
+                self.tickers[ticker]["status"] = "active"
+                # Preserve interval data
+                if "intervals" not in self.tickers[ticker]:
+                    self.tickers[ticker]["intervals"] = {}
 
-    def load_current_not_founds(self):
-        if self.not_founds_path.is_file():
-            self.not_founds = json.loads(self.not_founds_path.read_text())
+        self.save_tickers()
+
+    def is_ticker_active_for_interval(self, ticker: str, interval: str) -> bool:
+        """
+        Check if a ticker should be processed for a given interval.
+        Returns False if ticker is globally not found or if interval-specific
+        data suggests it's not trading in this timeframe.
+        """
+        if ticker not in self.tickers:
+            return True  # New ticker, should try
+
+        ticker_data = self.tickers[ticker]
+
+        # Global not found status
+        if ticker_data.get("status") == "not_found":
+            return False
+
+        # Check interval-specific status
+        interval_data = ticker_data.get("intervals", {}).get(interval, {})
+
+        # If we have interval data, check if it's marked as not found for this interval
+        if interval_data.get("status") == "not_found":
+            # Check if we should retry (e.g., after 30 days)
+            last_not_found = interval_data.get("last_not_found_date")
+            if last_not_found:
+                try:
+                    last_date = datetime.strptime(last_not_found, "%Y-%m-%d")
+                    days_since = (datetime.now() - last_date).days
+                    if days_since < 30:  # Don't retry for 30 days
+                        return False
+                except ValueError:
+                    pass  # If date parsing fails, proceed with processing
+
+        return True
+
+    def update_ticker_interval_status(
+        self, ticker: str, interval: str, found_data: bool, last_date: datetime = None
+    ):
+        """
+        Update the status of a ticker for a specific interval.
+
+        Args:
+            ticker: The ticker symbol
+            interval: The trading interval (1d, 1h, etc.)
+            found_data: Whether data was found for this ticker/interval
+            last_date: Last date with data (if found_data is True)
+        """
+        current_date = datetime.now().strftime("%Y-%m-%d")
+
+        if ticker not in self.tickers:
+            self.tickers[ticker] = {
+                "ticker": ticker,
+                "added_date": current_date,
+                "status": "active",
+                "last_checked": current_date,
+                "intervals": {},
+            }
+
+        # Ensure intervals structure exists
+        if "intervals" not in self.tickers[ticker]:
+            self.tickers[ticker]["intervals"] = {}
+
+        if interval not in self.tickers[ticker]["intervals"]:
+            self.tickers[ticker]["intervals"][interval] = {}
+
+        interval_data = self.tickers[ticker]["intervals"][interval]
+
+        if found_data:
+            # Data was found for this interval
+            interval_data["status"] = "active"
+            interval_data["last_found_date"] = current_date
+            if last_date:
+                interval_data["last_data_date"] = last_date.strftime("%Y-%m-%d")
+            interval_data["last_checked"] = current_date
+
+            # Update global ticker status
+            self.tickers[ticker]["status"] = "active"
+            self.tickers[ticker]["last_checked"] = current_date
+
         else:
-            self.not_founds = {}
+            # No data found for this interval
+            interval_data["status"] = "not_found"
+            interval_data["last_not_found_date"] = current_date
+            interval_data["last_checked"] = current_date
 
-    def save_not_founds(self):
-        self.not_founds_path.write_text(json.dumps(self.not_founds, indent=4))
+            # Update global last_checked but don't change global status unless all intervals fail
+            self.tickers[ticker]["last_checked"] = current_date
+
+            # Check if ALL intervals are not found - if so, mark ticker as globally not found
+            all_intervals_not_found = True
+            for int_name, int_data in self.tickers[ticker]["intervals"].items():
+                if int_data.get("status") != "not_found":
+                    all_intervals_not_found = False
+                    break
+
+            if all_intervals_not_found and len(self.tickers[ticker]["intervals"]) > 0:
+                self.tickers[ticker]["status"] = "not_found"
 
     def confirm_not_founds(self):
         logger.debug("Confirming not found tickers")
-        new_not_founds_whole = {}
-        logger.info(f"Number of not found tickers: {len(self.not_founds)}")
+        not_found_tickers = {
+            ticker: data
+            for ticker, data in self.tickers.items()
+            if data.get("status") == "not_found"
+        }
+
+        logger.info(f"Number of not found tickers: {len(not_found_tickers)}")
         for stock, meta_data in track(
-            self.not_founds.items(), "Re-checking not-founds..."
+            not_found_tickers.items(), "Re-checking not-founds..."
         ):
             self.enforce_limits()
-            meta_data["last_checked"] = datetime.now().strftime("%Y-%m-%d")
+            current_date = datetime.now().strftime("%Y-%m-%d")
+            meta_data["last_checked"] = current_date
+
             try:
-                ticker = yf.Ticker(stock)  # , session=self.session)
+                ticker = yf.Ticker(stock)
                 hist = ticker.history(period="1d")
-                if hist.empty:
-                    logger.debug(f"{stock} is not found.")
-                else:
+                if not hist.empty:
                     logger.debug(f"{stock} is found.")
                     last_date = hist.index[-1].to_pydatetime()
-                    meta_data["last_date_found"] = last_date.strftime("%Y-%m-%d")
+
+                    # Update for 1d interval specifically
+                    self.update_ticker_interval_status(stock, "1d", True, last_date)
+                else:
+                    logger.debug(f"{stock} is not found.")
+
             except HTTPError as e:
                 status_code = None
                 if hasattr(e, "response"):
@@ -269,73 +428,106 @@ class YFParqed:
                     f"Error getting data for {stock}: HTTP {status_code} - {str(e)}, most likely not available anymore."
                 )
 
-            new_not_founds_whole[stock] = meta_data
-
-        self.not_founds = new_not_founds_whole
-        self.save_not_founds()
+        self.save_tickers()
         self.reparse_not_founds()
-        self.load_current_not_founds()
 
     def reparse_not_founds(self):
-        # logger.debug("Re-parsing not found tickers")
-        new_not_founds_whole = {}
-        logger.info(f"Number of not found tickers: {len(self.not_founds)}")
+        not_found_tickers = {
+            ticker: data
+            for ticker, data in self.tickers.items()
+            if data.get("status") == "not_found"
+        }
+
+        logger.info(f"Number of not found tickers: {len(not_found_tickers)}")
         for ticker, meta_data in track(
-            self.not_founds.items(), "Re-parsing not-founds..."
+            not_found_tickers.items(), "Re-parsing not-founds..."
         ):
-            if meta_data.get("last_date_found") is not None:
+            # Check if any interval has recent data
+            has_recent_data = False
+            intervals_data = meta_data.get("intervals", {})
+
+            for interval_name, interval_data in intervals_data.items():
+                if interval_data.get("status") == "active":
+                    # Check if the data is recent (within last 90 days)
+                    last_found = interval_data.get("last_found_date")
+                    if last_found:
+                        try:
+                            last_date = datetime.strptime(last_found, "%Y-%m-%d")
+                            days_since = (datetime.now() - last_date).days
+                            if days_since <= 90:
+                                has_recent_data = True
+                                break
+                        except ValueError:
+                            continue
+
+            if has_recent_data:
+                # Reactivate ticker
                 stock_meta = {
                     "ticker": ticker,
-                    "added_date": meta_data["last_checked"],
+                    "added_date": meta_data.get(
+                        "added_date", datetime.now().strftime("%Y-%m-%d")
+                    ),
+                    "status": "active",
+                    "last_checked": datetime.now().strftime("%Y-%m-%d"),
+                    "intervals": meta_data.get("intervals", {}),
                 }
-                if ticker not in self.stocks:
-                    logger.info(
-                        f"Adding {meta_data['ticker']} to the current stocks list."
-                    )
-                    self.stocks[ticker] = stock_meta
-            else:
-                new_not_founds_whole[ticker] = meta_data
-        self.not_founds = new_not_founds_whole
+                logger.info(f"Reactivating {ticker} - found recent data in intervals.")
+                self.tickers[ticker] = stock_meta
 
-        self.save_not_founds()
-        self.load_current_not_founds()
-        self.save_current_list_of_stocks()
+        self.save_tickers()
 
     def save_yf(self, df1, df2, data_path):
-        if df2.empty:
-            df2 = df1
-        elif df1.empty:
+        if df1.empty and df2.empty:
+            return self._empty_price_frame()
+
+        if df1.empty:
             logger.debug("d1 empty.. nothing to do")
             return df2
-        df1.reset_index(inplace=True)
-        df2.reset_index(inplace=True)
-        df2 = pd.concat([df2, df1], axis=0).drop_duplicates(
-            subset=["date", "stock"], keep="last"
-        )
-        df2.to_parquet(data_path, index=False, compression="gzip")
-        return df2.set_index(["stock", "date"])
+
+        frames = []
+        if not df2.empty:
+            frames.append(df2.reset_index())
+        frames.append(df1.reset_index())
+
+        combined = pd.concat(frames, axis=0, ignore_index=True)
+        combined = self._normalize_price_frame(combined)
+
+        combined = combined.sort_values(["stock", "date", "sequence"], kind="mergesort")
+        combined = combined.drop_duplicates(subset=["stock", "date"], keep="last")
+        combined = combined.sort_values(["stock", "date"], kind="mergesort")
+
+        combined.to_parquet(data_path, index=False, compression="gzip")
+        return combined.set_index(["stock", "date"])
 
     def read_yf(self, data_path: Path):
-        empty_df = pd.DataFrame(
-            columns=[
-                "stock",
-                "date",
-                "open",
-                "high",
-                "low",
-                "close",
-                "volume",
-                "sequence",
-            ]
-        ).set_index(["stock", "date"])
+        empty_df = self._empty_price_frame()
         if data_path.is_file():
-            df = pd.read_parquet(data_path)
-            if df.empty:
+            try:
+                df = pd.read_parquet(data_path)
+            except (ValueError, FileNotFoundError, OSError):
                 logger.debug(
-                    f"Empty dataframe found for {data_path.stem}, deleting it before looking for new data"
+                    f"Unable to read parquet file for {data_path.stem}, deleting corrupt file"
                 )
-                data_path.unlink()
+                try:
+                    data_path.unlink(missing_ok=True)
+                except TypeError:
+                    if data_path.exists():
+                        data_path.unlink()
                 return empty_df
+
+            required = set(self._price_frame_columns())
+            if df.empty or not required.issubset(df.columns):
+                logger.debug(
+                    f"Invalid dataframe schema for {data_path.stem}, deleting file before rehydrating"
+                )
+                try:
+                    data_path.unlink(missing_ok=True)
+                except TypeError:
+                    if data_path.exists():
+                        data_path.unlink()
+                return empty_df
+
+            df = self._normalize_price_frame(df)
             df.set_index(["stock", "date"], inplace=True)
             return df
         else:
@@ -345,14 +537,26 @@ class YFParqed:
         self,
         start_date: datetime | None = None,
         end_date: datetime | None = None,
-        # update_only: bool = True,
     ):
         self.new_not_found = False
+        # Load current data
+        self.load_tickers()
+
         my_stocks = [
-            ticker for ticker in self.stocks.keys() if ticker not in self.not_founds
+            ticker
+            for ticker, data in self.tickers.items()
+            if data.get("status", "active") == "active"
         ]
+        not_found_count = len(
+            [
+                ticker
+                for ticker, data in self.tickers.items()
+                if data.get("status") == "not_found"
+            ]
+        )
+
         logger.info(f"Number of tickers to process: {len(my_stocks)}")
-        logger.info(f"Number of tickers in exclude list: {len(self.not_founds)}")
+        logger.info(f"Number of tickers in exclude list: {not_found_count}")
         disable_track = not (os.getenv("YF_PARQED_LOG_LEVEL", "INFO") == "INFO")
 
         # set the end date to now if we are updating in order to
@@ -361,20 +565,28 @@ class YFParqed:
             end_date = self.get_today()
 
         for interval in self.my_intervals:
+            # Filter stocks that should be processed for this interval
+            interval_stocks = [
+                stock
+                for stock in my_stocks
+                if self.is_ticker_active_for_interval(stock, interval)
+            ]
+
+            logger.info(
+                f"Processing {len(interval_stocks)} tickers for interval {interval}"
+            )
+
             for stock in track(
-                my_stocks,
+                interval_stocks,
                 description=f"Processing stocks for interval:{interval}",
                 disable=disable_track,
             ):
                 self.enforce_limits()
-                # print(stock)
-                # for interval in self.my_intervals:
                 self.save_single_stock_data(
                     stock=stock,
                     start_date=start_date,
                     end_date=end_date,
                     interval=interval,
-                    # update_only=update_only,
                 )
 
     def save_single_stock_data(
@@ -383,17 +595,14 @@ class YFParqed:
         start_date: datetime | None = None,
         end_date: datetime | None = None,
         interval: str = "1d",
-        # update_only: bool = True,
     ):
         logger.debug(stock)
         data_path = self.my_path / f"stocks_{interval}" / f"{stock}.parquet"
 
-        if stock in self.not_founds:
-            logger.debug(f"{stock} is in the not found list, skipping")
+        # Check if stock should be processed for this interval
+        if not self.is_ticker_active_for_interval(stock, interval):
+            logger.debug(f"{stock} is not active for interval {interval}, skipping")
             return
-
-        # if end_date is None:
-        #     end_date = datetime.now()
 
         data_path.parent.mkdir(parents=True, exist_ok=True)
         logger.debug(f"Data path: {data_path}")
@@ -402,15 +611,9 @@ class YFParqed:
         df2 = self.read_yf(data_path)
         if df2.empty:
             logger.debug(f"Empty dataframe found for {stock}, will try to get new data")
-            # start_date = datetime.now()
             load_all = True
         elif start_date is None:
             start_date = df2.index.get_level_values("date").max().to_pydatetime()
-
-        # if any((start_date is None, end_date is None)):
-        #     start_date = datetime.now()
-        #     end_date = datetime.now()
-        #     load_all = True
 
         if end_date is None:
             end_date = self.get_today()
@@ -431,19 +634,26 @@ class YFParqed:
                 get_all=load_all,
             )
             if not df1.empty:
+                last_data_date = (
+                    df1.index.get_level_values("date").max().to_pydatetime()
+                )
                 self.save_yf(df1, df2, data_path)
+
+                # Update ticker status - data found for this interval
+                self.update_ticker_interval_status(
+                    stock, interval, True, last_data_date
+                )
+
             else:
                 logger.debug(
-                    f"{stock} returned no results for the date range of {start_date} to {end_date} and load_all:{load_all}.  Putting it on the not found list."
+                    f"{stock} returned no results for the date range of {start_date} to {end_date} and load_all:{load_all} for interval {interval}."
                 )
-                self.not_founds[stock] = {
-                    "ticker": stock,
-                    "added_date": datetime.now().strftime("%Y-%m-%d"),
-                }
 
+                # Update ticker status - no data found for this interval
+                self.update_ticker_interval_status(stock, interval, False)
                 self.new_not_found = True
         else:
-            logger.debug(f"{stock} is up to date.")
+            logger.debug(f"{stock} is up to date for interval {interval}.")
 
     def process_yfinance_data(self, df: pd.DataFrame, ticker: str) -> pd.DataFrame:
         df = df.rename_axis("date").reset_index()

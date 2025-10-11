@@ -1,15 +1,17 @@
 [project]
 name = "yf-parqed"
-version = "0.1.0"
+version = "0.2.0"
 description = "Persistent storage of yfinance ticker data in parquet"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.12"
 dependencies = [
     "httpx>=0.28.1",
     "loguru>=0.7.3",
+    "pandas>=2.2.3",
     "pyarrow>=18.1.0",
+    "rich>=13.0.0",
     "typer>=0.15.1",
-    "yfinance[nospam]==0.2.58",
+    "yfinance>=0.2.66",
 ]
 
 [project.scripts]
@@ -25,7 +27,26 @@ build-backend = "hatchling.build"
 [dependency-groups]
 dev = [
     "pre-commit>=4.0.1",
+    "pytest>=8.4.1",
+]
+test = [
+    "pytest>=8.0.0",
+    "pytest-cov>=4.0.0",
+    "pytest-mock>=3.12.0",
 ]
 
-[tool.uv.sources]
-yfinance = { git = "https://github.com/ranaroussi/yfinance.git", rev = "dev" }
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "--verbose",
+    "-ra",
+]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+]

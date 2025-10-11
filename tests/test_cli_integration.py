@@ -1,0 +1,109 @@
+import json
+import tempfile
+from datetime import datetime
+from pathlib import Path
+
+import pandas as pd
+import pytest
+from typer.testing import CliRunner
+
+from yf_parqed import main
+from yf_parqed.primary_class import YFParqed
+
+
+@pytest.fixture
+def cli_environment(monkeypatch):
+    temp_dir = tempfile.TemporaryDirectory()
+    tmp_path = Path(temp_dir.name)
+
+    runner = CliRunner()
+
+    original_instance = main.yf_parqed
+    original_intervals = main.all_intervals
+    instance = YFParqed(my_path=tmp_path, my_intervals=["1d"])
+    main.yf_parqed = instance
+
+    monkeypatch.setattr(main, "all_intervals", ["1d"])
+
+    def fake_get_new_list_of_stocks(self, download_tickers=True):
+        return {
+            "SYN": {
+                "ticker": "SYN",
+                "added_date": "2024-01-01",
+                "status": "active",
+                "last_checked": None,
+                "intervals": {},
+            }
+        }
+
+    def fake_get_yfinance_data(
+        self,
+        stock: str,
+        start_date: datetime,
+        end_date: datetime,
+        interval: str = "1d",
+        get_all: bool = False,
+    ):
+        date_index = pd.MultiIndex.from_tuples(
+            [(stock, pd.Timestamp("2024-01-02"))], names=["stock", "date"]
+        )
+        return pd.DataFrame(
+            {
+                "open": [10.0],
+                "high": [11.0],
+                "low": [9.5],
+                "close": [10.5],
+                "volume": [1000],
+                "sequence": [1],
+            },
+            index=date_index,
+        )
+
+    monkeypatch.setattr(
+        YFParqed, "get_new_list_of_stocks", fake_get_new_list_of_stocks, raising=False
+    )
+    monkeypatch.setattr(
+        YFParqed, "get_yfinance_data", fake_get_yfinance_data, raising=False
+    )
+    monkeypatch.setattr(YFParqed, "enforce_limits", lambda self: None, raising=False)
+
+    try:
+        yield runner, instance, tmp_path
+    finally:
+        main.yf_parqed = original_instance
+        main.all_intervals = original_intervals
+        temp_dir.cleanup()
+
+
+def test_cli_initialize_and_update_flow(cli_environment):
+    runner, instance, tmp_path = cli_environment
+
+    init_result = runner.invoke(main.app, ["--wrk-dir", str(tmp_path), "initialize"])
+    assert init_result.exit_code == 0
+
+    tickers_path = tmp_path / "tickers.json"
+    assert tickers_path.exists()
+    tickers = json.loads(tickers_path.read_text())
+    assert "SYN" in tickers
+
+    update_result = runner.invoke(
+        main.app,
+        [
+            "--wrk-dir",
+            str(tmp_path),
+            "update-data",
+            "--non-interactive",
+            "--save-not-founds",
+        ],
+    )
+    assert update_result.exit_code == 0
+
+    parquet_path = tmp_path / "stocks_1d" / "SYN.parquet"
+    assert parquet_path.exists()
+
+    interval_meta = instance.tickers["SYN"]["intervals"]["1d"]
+    assert interval_meta["status"] == "active"
+    assert interval_meta["last_data_date"] == "2024-01-02"
+
+    assert instance.my_intervals == ["1d"]
+    assert instance.new_not_found is False

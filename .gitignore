@@ -2,8 +2,11 @@ nasdaq-listed.csv
 nyse-listed.csv
 current_tickers.json
 not_found_tickers.json
+tickers.json
 intervals.json
+intervals.json.*
 stocks_*/
+backup_ticker_files/*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
