@@ -67,7 +67,7 @@ class TestUpdateLoopHarness:
 
         fetch_calls = {"count": 0}
 
-        def fake_get_yfinance_data(**kwargs):
+        def fake_fetch(**kwargs):
             fetch_calls["count"] += 1
             return sample_df
 
@@ -81,7 +81,7 @@ class TestUpdateLoopHarness:
 
         monkeypatch.setattr(instance, "load_tickers", lambda: None)
         monkeypatch.setattr(instance, "enforce_limits", lambda: None)
-        monkeypatch.setattr(instance, "get_yfinance_data", fake_get_yfinance_data)
+        monkeypatch.setattr(instance.data_fetcher, "fetch", fake_fetch)
         monkeypatch.setattr(instance, "save_yf", fake_save_yf)
         monkeypatch.setattr(instance, "save_tickers", lambda: None)
 
@@ -224,12 +224,12 @@ class TestUpdateLoopHarness:
             }
         }
 
-        def fake_get_yfinance_data(**kwargs):
+        def fake_fetch(**kwargs):
             return pd.DataFrame()
 
         monkeypatch.setattr(instance, "load_tickers", lambda: None)
         monkeypatch.setattr(instance, "enforce_limits", lambda: None)
-        monkeypatch.setattr(instance, "get_yfinance_data", fake_get_yfinance_data)
+        monkeypatch.setattr(instance.data_fetcher, "fetch", fake_fetch)
         monkeypatch.setattr(instance, "save_yf", lambda df1, df2, path: df2)
         monkeypatch.setattr(instance, "save_tickers", lambda: None)
 
@@ -267,7 +267,7 @@ class TestUpdateLoopHarness:
 
         call_order: list[str] = []
 
-        def fake_get_yfinance_data(interval, **kwargs):
+        def fake_fetch(interval, **kwargs):
             call_order.append(interval)
             if interval == "1d":
                 return success_df
@@ -281,7 +281,7 @@ class TestUpdateLoopHarness:
 
         monkeypatch.setattr(instance, "load_tickers", lambda: None)
         monkeypatch.setattr(instance, "enforce_limits", lambda: None)
-        monkeypatch.setattr(instance, "get_yfinance_data", fake_get_yfinance_data)
+        monkeypatch.setattr(instance.data_fetcher, "fetch", fake_fetch)
         monkeypatch.setattr(instance, "save_yf", fake_save_yf)
         monkeypatch.setattr(instance, "save_tickers", lambda: None)
 
@@ -323,7 +323,7 @@ class TestUpdateLoopHarness:
 
         monkeypatch.setattr(instance, "load_tickers", lambda: None)
         monkeypatch.setattr(instance, "enforce_limits", lambda: None)
-        monkeypatch.setattr(instance, "get_yfinance_data", lambda **_: sample_df)
+        monkeypatch.setattr(instance.data_fetcher, "fetch", lambda **_: sample_df)
         monkeypatch.setattr(instance, "save_yf", lambda df1, df2, path: df1)
 
         save_ticker_calls = {"count": 0}
@@ -377,14 +377,14 @@ class TestUpdateLoopHarness:
         def track_limits():
             limit_calls["count"] += 1
 
-        def fake_get_yfinance_data(stock, interval, **kwargs):
+        def fake_fetch(stock, interval, **kwargs):
             if interval == "1d":
                 return data_map[stock]
             return pd.DataFrame()
 
         monkeypatch.setattr(instance, "load_tickers", lambda: None)
         monkeypatch.setattr(instance, "enforce_limits", track_limits)
-        monkeypatch.setattr(instance, "get_yfinance_data", fake_get_yfinance_data)
+        monkeypatch.setattr(instance.data_fetcher, "fetch", fake_fetch)
         monkeypatch.setattr(instance, "save_yf", lambda df1, df2, path: df1)
         monkeypatch.setattr(instance, "save_tickers", lambda: None)
 

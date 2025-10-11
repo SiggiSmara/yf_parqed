@@ -49,9 +49,8 @@
 - Stored in `stocks_<interval>/TICKER.parquet`
 - Contains OHLCV and other time series data for each ticker/interval
 
-## Main Components
-
 - `src/yf_parqed/primary_class.py`: Main logic for ticker management, interval status, and data updates
+- `src/yf_parqed/interval_scheduler.py`: Coordinates per-interval processing using injected services
 - `migrate_ticker_files.py`: Migration script for legacy JSON formats
 - `fix_migration.py`: Script to fix incomplete migrated data
 - `tests/test_ticker_operations.py`: Test suite for ticker logic and data integrity
@@ -93,30 +92,47 @@
   - `tests/test_update_loop.py`: full update-loop harness with mocks—happy path, cooldown skips, empty-fetch failure, multi-interval sequencing, persistence guards, and rate-limiter invocation.
   - `tests/test_cli.py`: Typer command smoke tests using a stubbed `YFParqed`, confirming wiring, limiter handoff, and not-found flags.
   - `tests/test_cli_integration.py`: end-to-end CLI run (real `YFParqed` in a temp workspace) exercising `initialize` + `update-data` with mocked Yahoo responses, verifying parquet output and interval metadata.
+  - `tests/test_data_fetcher.py`: comprehensive DataFetcher unit tests covering initialization, window/period fetching, interval constraints (hourly 729-day limit, minute 7-day limit), DataFrame normalization (lowercase columns, stock symbol, timezone removal), error handling (exceptions, HTTPError), and rate limiter invocation.
+  - `tests/test_storage_backend.py`: isolated StorageBackend unit tests covering read/save operations, corruption recovery, schema validation, deduplication logic, sequence preservation, and type normalization.
 - These suites implement the planned bottom-up → top-down strategy; future additions should extend this matrix rather than replace it.
 
-## Work In Progress
+## Service-Oriented Refactoring (Steps 1.1-1.7) — COMPLETED ✅
 
-1. Gradually refactor `primary_class.py` into composable services (config/environment, ticker registry, interval scheduler, data fetcher, storage backend, not-found maintenance) so the current workflow is orchestrated by a thin façade, easing the later switch to partition-aware storage.
+Successfully transformed `primary_class.py` from a 700+ line monolith into a composable service-oriented architecture with 5 specialized services and a thin façade. All work completed on 2025-10-11.
 
-  1. Extract configuration and environment concerns into a `ConfigService` responsible for path management, intervals loading/saving, and rate limiter wiring.
-  1. Introduce a `TickerRegistry` module handling JSON serialization, ticker lifecycle mutations, and interval metadata updates, leaving orchestration to lean call sites.
-  1. Isolate the update loop into an `IntervalScheduler` that decides which tickers/intervals run, relying on injected dependencies (`Limiter`, `TickerRegistry`, `DataFetcher`).
-  1. Create a `DataFetcher` abstraction wrapping Yahoo interactions (`get_yfinance_data`, `process_yfinance_data`, rate-limit enforcement) with injectable stubs for tests.
-  1. Move parquet I/O (`read_yf`, `save_yf`) to a `StorageBackend` that exposes typed operations, enabling future partitioning strategies without touching business logic.
-  1. Compose these services through a thin `YFParqed` façade that wires dependencies, keeping CLI/API surface untouched while enabling incremental rewrites and focused tests.
+**For detailed service specifications, data flows, and dependency injection patterns, see [ARCHITECTURE.md](ARCHITECTURE.md).**
 
-## Recently Completed
+### Services Overview
 
-- Rate-limiter stress scenario that simulates bursty workloads and asserts enforced delays via patched clocks. ✅ Covered by `tests/test_rate_limits.py::test_enforce_limits_handles_bursty_sequence` on 2025-10-11.
-- CLI smoke permutations covering option flags not yet exercised in `tests/test_cli.py`. ✅ Covered by `tests/test_cli.py::test_update_data_accepts_date_range`, `tests/test_cli.py::test_update_data_requires_both_dates`, and `tests/test_cli.py::test_global_options_apply_log_level_env` on 2025-10-11.
-- Storage edge cases around descending sequence numbers, partial parquet writes, and dtype drift. ✅ Covered by `tests/test_storage_operations.py::test_save_yf_preserves_higher_sequence_values`, `tests/test_storage_operations.py::test_read_yf_resets_partial_files_missing_columns`, and `tests/test_storage_operations.py::test_save_yf_normalizes_numeric_types` on 2025-10-11.
-- Expand automated coverage: add end-to-end `update_stock_data` tests, interval cooldown edge cases, not-found lifecycle mocks, rate-limiter behavior, storage dedupe edge cases, and CLI command smoke tests. ✅ Covered by the combined additions to `tests/test_update_end_to_end.py`, `tests/test_update_loop.py`, `tests/test_ticker_operations.py`, `tests/test_rate_limits.py`, `tests/test_storage_operations.py`, and `tests/test_cli.py` on 2025-10-11.
+The refactoring extracted these services (see ARCHITECTURE.md for detailed API reference):
+
+1. **ConfigService** (79 lines) - Environment and configuration management
+2. **TickerRegistry** (215 lines) - Ticker lifecycle and not-found maintenance  
+3. **IntervalScheduler** (95 lines) - Update loop orchestration
+4. **DataFetcher** (126 lines) - Yahoo Finance API abstraction
+5. **StorageBackend** (116 lines) - Parquet I/O with corruption recovery
+6. **YFParqed** (485 lines) - Thin façade wiring dependencies
+
+### Achievements
+
+- **109 tests passing** (up from 80 at project start)
+- **100% backward compatibility** — no breaking changes to CLI or API
+- **Clean architecture** — single responsibility, dependency injection, testability
+- **Comprehensive coverage** — unit, integration, and end-to-end tests
+- **Documentation** — `ARCHITECTURE.md` added with diagrams and service responsibilities
+
+## Recently Completed (Other Enhancements)
+
+- **Rate-limiter stress testing**: Bursty workload simulation with enforced delays. ✅ `tests/test_rate_limits.py` (2025-10-11)
+- **CLI option coverage**: Date range flags and environment variable handling. ✅ `tests/test_cli.py` expansions (2025-10-11)
+- **Storage edge cases**: Descending sequences, partial writes, dtype normalization. ✅ `tests/test_storage_operations.py` (2025-10-11)
 
 ## Future Improvements
 
-1. Partition per ticker/interval data by transaction date (e.g., `stocks_1d/ticker=XYZ/year=2025/month=10/day=11/`) to minimize corruption risk, enable incremental backups, and simplify selective rewrites.
-2. Add a DuckDB query layer on top of the partitioned parquet store for zero-copy analytics, predicate pushdown, and interactive reporting without bespoke ETL.
+**For detailed enhancement proposals with code examples, see [ARCHITECTURE.md](ARCHITECTURE.md#future-enhancements).**
+
+1. **Partition-aware storage**: Organize parquet files by ticker/date hierarchy to minimize corruption risk and enable incremental backups
+2. **DuckDB analytics layer**: Add zero-copy querying on partitioned parquet for interactive analysis without ETL
 
 ## Process Commitments
 

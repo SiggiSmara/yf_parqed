@@ -36,8 +36,7 @@ def cli_environment(monkeypatch):
             }
         }
 
-    def fake_get_yfinance_data(
-        self,
+    def fake_fetch(
         stock: str,
         start_date: datetime,
         end_date: datetime,
@@ -62,9 +61,8 @@ def cli_environment(monkeypatch):
     monkeypatch.setattr(
         YFParqed, "get_new_list_of_stocks", fake_get_new_list_of_stocks, raising=False
     )
-    monkeypatch.setattr(
-        YFParqed, "get_yfinance_data", fake_get_yfinance_data, raising=False
-    )
+    # Patch the data_fetcher.fetch method on the instance
+    monkeypatch.setattr(instance.data_fetcher, "fetch", fake_fetch)
     monkeypatch.setattr(YFParqed, "enforce_limits", lambda self: None, raising=False)
 
     try:
