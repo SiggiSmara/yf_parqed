@@ -7,14 +7,6 @@ import httpx
 import time
 
 
-# from requests.exceptions import HTTPError
-# from requests_ratelimiter import LimiterMixin
-
-
-# class LimiterSession(LimiterMixin, Session):
-#     pass
-
-
 from .config_service import ConfigService
 from .data_fetcher import DataFetcher
 from .ticker_registry import TickerRegistry
@@ -110,10 +102,6 @@ class YFParqed:
         self.load_tickers()
         return new_path
 
-    def update_meta_after_path_change(self):
-        self._sync_paths()
-        self.load_tickers()
-
     @property
     def tickers(self) -> dict:
         return self.registry.tickers
@@ -185,10 +173,6 @@ class YFParqed:
         max_requests, duration = self.config.configure_limits(max_requests, duration)
         self.max_requests = max_requests
         self.duration = duration
-        if self.max_requests == 1:
-            self.limit_check_idx = 0
-        else:
-            self.limit_check_idx = 1
 
     def _fetch_for_not_found_check(
         self, ticker: str, interval: str, period: str
@@ -228,18 +212,6 @@ class YFParqed:
                 time.sleep(sleepytime - delta)
                 logger.debug("Calling enforce_limits again after waking up.")
                 self.enforce_limits()
-            # if delta < self.duration and len(self.call_list) >= self.max_requests:
-            #     # sleepytime = self.duration - (now - self.call_list[self.limit_check_idx ]).total_seconds() + 0.05
-            #     logger.debug(
-            #         f"Sleeping for {sleepytime} seconds.  Len call list => max_requests."
-            #     )
-            #     time.sleep(sleepytime)
-            # elif delta < self.duration:
-            #     # sleepytime = delta / self.max_requests
-            #     logger.debug(
-            #         f"Sleeping for {sleepytime} seconds.  Len call list < max_requests."
-            #     )
-            #     time.sleep(sleepytime)
             else:
                 logger.debug(f"Adding {now} to the call list")
                 self.call_list.append(now)

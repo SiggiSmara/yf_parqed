@@ -35,12 +35,10 @@ def test_set_limiter_configures_internal_state(instance):
     instance.set_limiter(max_requests=5, duration=10)
     assert instance.max_requests == 5
     assert instance.duration == 10
-    assert instance.limit_check_idx == 1
 
     instance.set_limiter(max_requests=1, duration=4)
     assert instance.max_requests == 1
     assert instance.duration == 4
-    assert instance.limit_check_idx == 0
 
 
 def test_enforce_limits_initial_call_adds_timestamp(instance, monkeypatch):
