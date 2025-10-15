@@ -154,13 +154,13 @@ class TestFetchAll:
 
         mock_ticker.history.assert_called_once()
         call_kwargs = mock_ticker.history.call_args[1]
-        assert call_kwargs["period"] == "10y"
+        assert call_kwargs["period"] == "max"
         assert call_kwargs["interval"] == "1d"
 
-    def test_fetch_all_uses_729d_for_hourly_intervals(
+    def test_fetch_all_uses_730d_for_hourly_intervals(
         self, fetcher, mock_ticker_factory
     ):
-        """For hourly intervals with get_all=True, should use period=729d."""
+        """For hourly intervals with get_all=True, should use period=730d."""
         mock_ticker = mock_ticker_factory("AMZN")
         mock_ticker.history.return_value = pd.DataFrame()
 
@@ -169,10 +169,10 @@ class TestFetchAll:
         )
 
         call_kwargs = mock_ticker.history.call_args[1]
-        assert call_kwargs["period"] == "729d"
+        assert call_kwargs["period"] == "730d"
 
-    def test_fetch_all_uses_8d_for_minute_intervals(self, fetcher, mock_ticker_factory):
-        """For minute intervals with get_all=True, should use period=8d."""
+    def test_fetch_all_uses_7d_for_minute_intervals(self, fetcher, mock_ticker_factory):
+        """For minute intervals with get_all=True, should use period=7d."""
         mock_ticker = mock_ticker_factory("NFLX")
         mock_ticker.history.return_value = pd.DataFrame()
 
@@ -181,7 +181,7 @@ class TestFetchAll:
         )
 
         call_kwargs = mock_ticker.history.call_args[1]
-        assert call_kwargs["period"] == "8d"
+        assert call_kwargs["period"] == "7d"
 
     def test_fetch_all_returns_empty_on_http_error(
         self, fetcher, mock_ticker_factory, mock_empty_frame

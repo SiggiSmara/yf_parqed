@@ -69,11 +69,11 @@ class DataFetcher:
         stock: str,
         interval: str,
     ) -> pd.DataFrame:
-        period = "10y"
+        period = "max"
         if interval in ("60m", "90m", "1h"):
-            period = "729d"
+            period = "730d"
         elif interval in ("1m", "2m", "5m", "15m", "30m"):
-            period = "8d"
+            period = "7d"
 
         try:
             df = ticker.history(period=period, interval=interval)

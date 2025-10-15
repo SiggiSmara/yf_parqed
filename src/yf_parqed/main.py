@@ -193,3 +193,61 @@ def reparse_not_founds():
     logger.info("Tickers file updated.")
     yf_parqed.reparse_not_founds()
     logger.info("Not found list updated.")
+
+
+@app.command("partition-toggle")
+def partition_toggle(
+    market: Annotated[
+        str | None,
+        typer.Option("--market", "-m", help="Market code (for example US)"),
+    ] = None,
+    source: Annotated[
+        str | None,
+        typer.Option("--source", "-s", help="Source identifier (for example yahoo)"),
+    ] = None,
+    disable: Annotated[
+        bool,
+        typer.Option("--disable", help="Disable partitioned storage for the target"),
+    ] = False,
+    clear: Annotated[
+        bool,
+        typer.Option(
+            "--clear", help="Remove an explicit partition override for the target"
+        ),
+    ] = False,
+):
+    """Enable, disable, or clear partitioned storage overrides."""
+    global yf_parqed
+
+    if source and not market:
+        typer.echo("Provide --market when specifying --source", err=True)
+        raise typer.Exit(code=1)
+
+    if clear and disable:
+        typer.echo("--clear cannot be combined with --disable", err=True)
+        raise typer.Exit(code=1)
+
+    try:
+        if clear:
+            yf_parqed.clear_partition_override(market=market, source=source)
+            typer.echo("Partition override cleared.")
+            return
+
+        enabled = not disable
+        yf_parqed.set_partition_override(
+            enabled=enabled,
+            market=market,
+            source=source,
+        )
+
+        target = "globally"
+        if market and source:
+            target = f"for {market}/{source}"
+        elif market:
+            target = f"for market {market}"
+
+        state = "enabled" if enabled else "disabled"
+        typer.echo(f"Partition mode {state} {target}.")
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1)

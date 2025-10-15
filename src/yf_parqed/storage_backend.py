@@ -1,13 +1,38 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Protocol
 
 import pandas as pd
 from loguru import logger
 
 
-class StorageBackend:
+@dataclass(frozen=True)
+class StorageRequest:
+    root: Path
+    interval: str
+    ticker: str
+    market: str | None = None
+    source: str | None = None
+    dataset: str = "stocks"
+
+    def legacy_path(self) -> Path:
+        return self.root / f"stocks_{self.interval}" / f"{self.ticker}.parquet"
+
+
+class StorageInterface(Protocol):
+    def read(self, request: StorageRequest) -> pd.DataFrame: ...
+
+    def save(
+        self,
+        request: StorageRequest,
+        new_data: pd.DataFrame,
+        existing_data: pd.DataFrame,
+    ) -> pd.DataFrame: ...
+
+
+class StorageBackend(StorageInterface):
     """Handle parquet I/O with typed operations and error recovery."""
 
     def __init__(
@@ -28,17 +53,18 @@ class StorageBackend:
         self._normalizer = normalizer
         self._column_provider = column_provider
 
-    def read(self, data_path: Path) -> pd.DataFrame:
+    def read(self, request: StorageRequest) -> pd.DataFrame:
         """
         Read parquet file with error recovery and schema validation.
 
         Args:
-            data_path: Path to the parquet file
+            request: Storage metadata describing the target
 
         Returns:
             DataFrame with (stock, date) multi-index, or empty DataFrame if file missing/corrupt
         """
         empty_df = self._empty_frame_factory()
+        data_path = request.legacy_path()
 
         if not data_path.is_file():
             return empty_df
@@ -65,7 +91,10 @@ class StorageBackend:
         return df
 
     def save(
-        self, new_data: pd.DataFrame, existing_data: pd.DataFrame, data_path: Path
+        self,
+        request: StorageRequest,
+        new_data: pd.DataFrame,
+        existing_data: pd.DataFrame,
     ) -> pd.DataFrame:
         """
         Merge new data with existing, deduplicate, and save to parquet.
@@ -73,7 +102,7 @@ class StorageBackend:
         Args:
             new_data: Fresh data to add (with stock/date multi-index)
             existing_data: Previously persisted data (with stock/date multi-index)
-            data_path: Path where parquet file should be written
+            request: Storage metadata describing the target
 
         Returns:
             Merged DataFrame with stock/date multi-index
@@ -100,6 +129,8 @@ class StorageBackend:
         # Final sort for consistent output
         combined = combined.sort_values(["stock", "date"], kind="mergesort")
 
+        data_path = request.legacy_path()
+        data_path.parent.mkdir(parents=True, exist_ok=True)
         combined.to_parquet(data_path, index=False, compression="gzip")
         return combined.set_index(["stock", "date"])
 

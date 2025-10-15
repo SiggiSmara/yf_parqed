@@ -198,3 +198,79 @@ def test_replace_overwrites_internal_state(registry: TickerRegistry) -> None:
 
     registry.replace(new_data)
     assert registry.tickers == new_data
+
+
+def test_get_last_data_date_parses_metadata(registry: TickerRegistry) -> None:
+    registry.replace(
+        {
+            "PARSE": {
+                "ticker": "PARSE",
+                "added_date": "2024-01-01",
+                "status": "active",
+                "last_checked": "2024-01-02",
+                "intervals": {
+                    "1d": {
+                        "status": "active",
+                        "last_data_date": "2024-02-10",
+                    }
+                },
+            }
+        }
+    )
+
+    result = registry.get_last_data_date("PARSE", "1d")
+    assert isinstance(result, datetime)
+    assert result.strftime("%Y-%m-%d") == "2024-02-10"
+
+
+def test_get_last_data_date_handles_missing_values(registry: TickerRegistry) -> None:
+    registry.replace({})
+    assert registry.get_last_data_date("MISSING", "1d") is None
+
+    registry.replace(
+        {
+            "BAD": {
+                "ticker": "BAD",
+                "added_date": "2024-01-01",
+                "status": "active",
+                "last_checked": "2024-01-02",
+                "intervals": {
+                    "1d": {
+                        "status": "active",
+                        "last_data_date": "20-02-2024",
+                    }
+                },
+            }
+        }
+    )
+
+    assert registry.get_last_data_date("BAD", "1d") is None
+
+    def test_get_interval_storage_returns_metadata(tmp_path):
+        service = ConfigService(tmp_path)
+        registry = TickerRegistry(config=service)
+        registry.replace(
+            {
+                "PART": {
+                    "ticker": "PART",
+                    "intervals": {
+                        "1m": {
+                            "status": "active",
+                            "storage": {
+                                "mode": "partitioned",
+                                "market": "us",
+                                "source": "yahoo",
+                                "dataset": "stocks",
+                                "root": "data",
+                                "verified_at": "2025-10-15T00:00:00Z",
+                            },
+                        }
+                    },
+                }
+            }
+        )
+
+        storage = registry.get_interval_storage("PART", "1m")
+        assert storage is not None
+        assert storage["mode"] == "partitioned"
+        assert registry.get_interval_storage("PART", "1h") is None

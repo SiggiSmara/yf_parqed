@@ -12,6 +12,29 @@ Each interval has their own folder and in there each ticker will have their own 
 
 In addition, if any ticker returns no data or you are no longer interested in syncing data for it you have the option of adding them to an exclude list to simplify the management of the list of tickers to download.
 
+## Partition-aware storage
+
+For large datasets you can switch from the legacy `stocks_<interval>/<ticker>.parquet` layout to Hive-style partitions under `data/<market>/<source>/stocks_<interval>/ticker=<TICKER>/...`. The migration flow is opt-in and maintains backward compatibility until you complete it.
+
+1. Move your existing legacy folders **under** `data/legacy/` (for example `mv stocks_1d data/legacy/`). The migration CLI refuses to run until the legacy tree lives there.
+2. Create a migration plan with the Typer helper:
+
+   ```bash
+   yf-parqed-migrate init --venue us:yahoo --interval 1m --interval 1h --interval 1d
+   ```
+
+   Adjust the venue/interval list to match the data you want to migrate.
+3. Run the migration:
+
+   ```bash
+   yf-parqed-migrate migrate --all
+   ```
+
+   The command estimates disk requirements, copies each ticker into the partitioned layout, and verifies row counts + checksums.
+4. After a venue completes, the runtime automatically uses the partitioned backend. You can still override behavior manually with `yf-parqed partition-toggle` (see CLI notes below).
+
+Legacy-only workflows continue to function. You can migrate venues one at a time and mix legacy + partitioned sources in the same workspace.
+
 ## How to install
 
 At some point I might publish this to PyPI but until then simply clone the repo and use pip or your favorite package management tool to install the package: `pip install .`
@@ -27,6 +50,16 @@ Still in flux, but generally:
    3. not_found_tickers.json contains a list of tickers that should be excluded
 3. Trigger the initial snapshot via `uv-parqed update` with the `--start-date`and `--end-date` parameters set.
 4. Any time after that you can run `uv-parqed update` without parameters to add new data to your local snapshot.
+
+### Partition mode toggles
+
+Use `yf-parqed partition-toggle` to control the storage backend once the migration metadata exists. Examples:
+
+- `yf-parqed partition-toggle` → enable partition mode globally.
+- `yf-parqed partition-toggle --market US --disable` → keep US venues on the legacy backend.
+- `yf-parqed partition-toggle --market US --source yahoo --clear` → remove an explicit override so the venue follows the default rules.
+
+The command updates `storage_config.json`; manual edits are rarely necessary now.
 
 ### Notes on `update`
 

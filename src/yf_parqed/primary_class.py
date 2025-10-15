@@ -1,7 +1,9 @@
-import yfinance as yf
-import pandas as pd
 from pathlib import Path
 from datetime import datetime, timedelta
+from typing import Sequence
+
+import yfinance as yf
+import pandas as pd
 from loguru import logger
 import httpx
 import time
@@ -11,7 +13,13 @@ from .config_service import ConfigService
 from .data_fetcher import DataFetcher
 from .ticker_registry import TickerRegistry
 from .interval_scheduler import IntervalScheduler
-from .storage_backend import StorageBackend
+from .partition_path_builder import PartitionPathBuilder
+from .partitioned_storage_backend import PartitionedStorageBackend
+from .storage_backend import (
+    StorageBackend,
+    StorageInterface,
+    StorageRequest,
+)
 
 
 all_intervals = [
@@ -30,9 +38,16 @@ all_intervals = [
     "3mo",
 ]
 
+DATASET_NAME = "stocks"
+
 
 class YFParqed:
-    def __init__(self, my_path: Path = Path.cwd(), my_intervals: list = []):
+    def __init__(
+        self,
+        my_path: Path = Path.cwd(),
+        my_intervals: Sequence[str] | None = None,
+        storage_backend: StorageInterface | None = None,
+    ):
         self.config = ConfigService(my_path)
         self.call_list = []
 
@@ -43,10 +58,12 @@ class YFParqed:
         self.registry = TickerRegistry(config=self.config)
         self.load_tickers()
 
-        if len(my_intervals) == 0:
+        intervals_arg = list(my_intervals) if my_intervals is not None else []
+
+        if len(intervals_arg) == 0:
             self.load_intervals()
         else:
-            self.my_intervals = my_intervals
+            self.my_intervals = list(intervals_arg)
             self.save_intervals(self.my_intervals)
 
         if len(self.my_intervals) == 0:
@@ -69,11 +86,10 @@ class YFParqed:
             today_provider=lambda: self.get_today(),
             empty_frame_factory=self._empty_price_frame,
         )
-        self.storage = StorageBackend(
-            empty_frame_factory=self._empty_price_frame,
-            normalizer=self._normalize_price_frame,
-            column_provider=self._price_frame_columns,
-        )
+        base_backend = storage_backend or self._create_storage_backend()
+        self._legacy_storage = base_backend
+        self.storage = base_backend
+        self._partition_storage = self._create_partition_backend()
         self.scheduler = IntervalScheduler(
             registry=self.registry,
             intervals=lambda: list(self.my_intervals),
@@ -168,6 +184,22 @@ class YFParqed:
 
         normalized = normalized[expected_cols]
         return normalized
+
+    def _create_storage_backend(self) -> StorageInterface:
+        return StorageBackend(
+            empty_frame_factory=self._empty_price_frame,
+            normalizer=self._normalize_price_frame,
+            column_provider=self._price_frame_columns,
+        )
+
+    def _create_partition_backend(self) -> PartitionedStorageBackend:
+        data_root = self.my_path / "data"
+        return PartitionedStorageBackend(
+            empty_frame_factory=self._empty_price_frame,
+            normalizer=self._normalize_price_frame,
+            column_provider=self._price_frame_columns,
+            path_builder=PartitionPathBuilder(root=data_root),
+        )
 
     def set_limiter(self, max_requests: int = 3, duration: int = 2):
         max_requests, duration = self.config.configure_limits(max_requests, duration)
@@ -352,11 +384,70 @@ class YFParqed:
         """Delegate to registry for not-found ticker reactivation."""
         self.registry.reparse_not_founds()
 
-    def save_yf(self, df1, df2, data_path):
-        return self.storage.save(df1, df2, data_path)
+    def save_yf(
+        self,
+        new_data: pd.DataFrame,
+        existing_data: pd.DataFrame,
+        target: StorageRequest | Path | str,
+    ) -> pd.DataFrame:
+        request = self._ensure_storage_request(target)
+        backend = self._select_storage_backend(request)
+        return backend.save(request, new_data, existing_data)
 
-    def read_yf(self, data_path: Path):
-        return self.storage.read(data_path)
+    def read_yf(self, target: StorageRequest | Path | str) -> pd.DataFrame:
+        request = self._ensure_storage_request(target)
+        backend = self._select_storage_backend(request)
+        return backend.read(request)
+
+    def _ensure_storage_request(
+        self,
+        target: StorageRequest | Path | str,
+    ) -> StorageRequest:
+        if isinstance(target, StorageRequest):
+            return target
+
+        path = Path(target)
+        parent = path.parent
+        prefix, _, interval = parent.name.partition("_")
+        if prefix != "stocks" or not interval:
+            raise ValueError(
+                "Unable to infer storage request from path; expected legacy stocks_<interval> structure"
+            )
+
+        root = parent.parent
+        return StorageRequest(root=root, interval=interval, ticker=path.stem)
+
+    def _select_storage_backend(self, request: StorageRequest) -> StorageInterface:
+        if request.market and request.source:
+            return self._partition_storage
+        return self._legacy_storage
+
+    def _build_storage_request(self, ticker: str, interval: str) -> StorageRequest:
+        storage_info = self.registry.get_interval_storage(ticker, interval)
+        if storage_info and storage_info.get("mode") == "partitioned":
+            market = storage_info.get("market")
+            source = storage_info.get("source")
+            dataset = storage_info.get("dataset") or DATASET_NAME
+            root_token = storage_info.get("root") or "data"
+            root_path = (
+                Path(root_token)
+                if Path(root_token).is_absolute()
+                else self.my_path / root_token
+            )
+            return StorageRequest(
+                root=root_path,
+                interval=interval,
+                ticker=ticker,
+                market=str(market).lower() if isinstance(market, str) else None,
+                source=str(source).lower() if isinstance(source, str) else None,
+                dataset=str(dataset),
+            )
+
+        return StorageRequest(
+            root=self.my_path,
+            interval=interval,
+            ticker=ticker,
+        )
 
     def update_stock_data(
         self,
@@ -374,32 +465,43 @@ class YFParqed:
         interval: str = "1d",
     ):
         logger.debug(stock)
-        data_path = self.my_path / f"stocks_{interval}" / f"{stock}.parquet"
+        storage_request = self._build_storage_request(stock, interval)
+        backend = self._select_storage_backend(storage_request)
 
         # Check if stock should be processed for this interval
         if not self.is_ticker_active_for_interval(stock, interval):
             logger.debug(f"{stock} is not active for interval {interval}, skipping")
             return
 
-        data_path.parent.mkdir(parents=True, exist_ok=True)
-        logger.debug(f"Data path: {data_path}")
+        if backend is self._legacy_storage:
+            logger.debug(f"Data path: {storage_request.legacy_path()}")
+        else:
+            logger.debug(
+                "Using partitioned storage for %s interval %s", stock, interval
+            )
 
-        load_all = False
-        df2 = self.read_yf(data_path)
-        if df2.empty:
-            logger.debug(f"Empty dataframe found for {stock}, will try to get new data")
-            load_all = True
-        elif start_date is None:
-            start_date = df2.index.get_level_values("date").max().to_pydatetime()
+        last_data_date = self.registry.get_last_data_date(stock, interval)
+
+        df2 = self.read_yf(storage_request)
 
         if end_date is None:
             end_date = self.get_today()
 
+        load_all = False
         if start_date is None:
-            start_date = self.get_today()
-            load_all = True
+            if last_data_date is not None:
+                start_date = min(last_data_date, end_date)
+            else:
+                load_all = True
+                start_date = end_date
 
-        if load_all or self.business_days_between(start=start_date, end=end_date) > 0:
+        should_fetch = load_all or (
+            start_date is not None
+            and end_date is not None
+            and self.business_days_between(start=start_date, end=end_date) > 0
+        )
+
+        if should_fetch:
             logger.debug(
                 f"Reading {stock} from {start_date} to {end_date} and {load_all} load_all and {self.business_days_between(start=start_date, end=end_date)} business days"
             )
@@ -414,7 +516,7 @@ class YFParqed:
                 last_data_date = (
                     df1.index.get_level_values("date").max().to_pydatetime()
                 )
-                self.save_yf(df1, df2, data_path)
+                self.save_yf(df1, df2, storage_request)
 
                 # Update ticker status - data found for this interval
                 self.update_ticker_interval_status(
@@ -442,3 +544,40 @@ class YFParqed:
         today = today.replace(hour=17, minute=00, second=00, microsecond=0)
         logger.debug(today)
         return today
+
+    def set_partition_override(
+        self,
+        *,
+        enabled: bool,
+        market: str | None = None,
+        source: str | None = None,
+    ) -> dict:
+        if source and not market:
+            raise ValueError("Market must be provided when setting a source override")
+
+        if market and source:
+            return self.config.set_source_partition_mode(market, source, enabled)
+
+        if market:
+            return self.config.set_market_partition_mode(market, enabled)
+
+        return self.config.set_partition_mode(enabled)
+
+    def clear_partition_override(
+        self,
+        *,
+        market: str | None = None,
+        source: str | None = None,
+    ) -> dict:
+        if source and not market:
+            raise ValueError("Market must be provided when clearing a source override")
+
+        if market and source:
+            return self.config.clear_source_partition_mode(market, source)
+
+        if market:
+            return self.config.clear_market_partition_mode(market)
+
+        raise ValueError(
+            "Provide --market (and optionally --source) when clearing overrides"
+        )

@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
+from pathlib import Path
 
 
 from yf_parqed.config_service import ConfigService
+from yf_parqed.migration_plan import MigrationPlan
 
 
 def test_default_base_path_uses_cwd(monkeypatch, tmp_path):
@@ -89,3 +91,92 @@ def test_format_date_uses_explicit_value():
     service = ConfigService()
     explicit = datetime(2023, 12, 31)
     assert service.format_date(explicit) == "2023-12-31"
+
+
+def test_load_storage_config_defaults(tmp_path):
+    service = ConfigService(tmp_path)
+    config = service.load_storage_config()
+    assert config == {
+        "partitioned": False,
+        "markets": {},
+        "sources": {},
+    }
+
+
+def test_set_partition_mode_persists(tmp_path):
+    service = ConfigService(tmp_path)
+    updated = service.set_partition_mode(True)
+    assert updated["partitioned"] is True
+    stored = json.loads(service.storage_config_path.read_text())
+    assert stored["partitioned"] is True
+
+
+def test_partition_overrides_precedence(tmp_path):
+    service = ConfigService(tmp_path)
+    service.set_partition_mode(False)
+    # Market-level override
+    service.set_market_partition_mode("DE", True)
+    assert service.is_partitioned_enabled(market="de") is True
+    assert service.is_partitioned_enabled(market="us") is False
+
+    # Source-level override takes precedence over market-level
+    service.set_source_partition_mode("DE", "XETRA", False)
+    assert service.is_partitioned_enabled(market="de", source="xetra") is False
+    # Market still true when source override not supplied
+    assert service.is_partitioned_enabled(market="de", source="tradegate") is True
+
+
+def test_load_storage_config_handles_invalid_json(tmp_path, caplog):
+    path = tmp_path / "storage_config.json"
+    path.write_text("not-json")
+    service = ConfigService(tmp_path)
+    with caplog.at_level("WARNING"):
+        config = service.load_storage_config()
+    assert config["partitioned"] is False
+
+
+def _sample_plan() -> dict:
+    return {
+        "schema_version": 1,
+        "generated_at": "2025-10-15T12:40:00Z",
+        "created_by": "test-suite",
+        "legacy_root": "data/legacy",
+        "venues": [
+            {
+                "id": "us:yahoo",
+                "market": "US",
+                "source": "yahoo",
+                "status": "pending",
+                "last_updated": "2025-10-15T12:40:00Z",
+                "intervals": {
+                    "1m": {
+                        "legacy_path": "data/legacy/stocks_1m",
+                        "partition_path": "data/us/yahoo/stocks/interval=1m",
+                        "status": "pending",
+                        "totals": {"legacy_rows": None, "partition_rows": None},
+                        "jobs": {"total": 0, "completed": 0},
+                        "resume_token": None,
+                        "verification": {"method": "row_counts", "verified_at": None},
+                        "backups": [],
+                    }
+                },
+            }
+        ],
+    }
+
+
+def test_migration_plan_path(tmp_path):
+    service = ConfigService(tmp_path)
+    assert service.migration_plan_path == tmp_path / "migration_plan.json"
+
+
+def test_load_migration_plan(tmp_path):
+    service = ConfigService(tmp_path)
+    plan_path = service.migration_plan_path
+    plan_path.write_text(json.dumps(_sample_plan(), indent=4))
+
+    plan = service.load_migration_plan()
+
+    assert isinstance(plan, MigrationPlan)
+    assert plan.legacy_root == Path("data/legacy")
+    assert "us:yahoo" in plan.venues

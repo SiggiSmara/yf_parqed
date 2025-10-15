@@ -482,6 +482,7 @@ class TestTickerOperations:
         ):
             mock_datetime.now.return_value = freeze_date
             mock_datetime.strftime = datetime.strftime
+            mock_datetime.strptime = datetime.strptime
 
             yf_parqed.save_single_stock_data("LIFE", interval="1d")
             assert yf_parqed.tickers["LIFE"]["status"] == "active"

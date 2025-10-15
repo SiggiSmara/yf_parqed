@@ -6,7 +6,7 @@
 
 The codebase follows a service-oriented architecture with clear separation of concerns:
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │                         CLI Layer                            │
 │                      (main.py / Typer)                       │
@@ -25,87 +25,129 @@ The codebase follows a service-oriented architecture with clear separation of co
            ▼        ▼        ▼        ▼        ▼
     ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐
     │ Config   │ │ Ticker   │ │ Interval │ │ Data     │ │ Storage  │
-    │ Service  │ │ Registry │ │Scheduler │ │ Fetcher  │ │ Backend  │
+    │ Service  │ │ Registry │ │Scheduler │ │ Fetcher  │ │ Layers   │
     └──────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘
 ```
 
 ## Service Responsibilities
 
 ### ConfigService
+
 **Purpose**: Environment and configuration management  
-**File**: `src/yf_parqed/config_service.py`  
-**Key Methods**:
-- `set_working_path()`: Change base directory
-- `load_intervals()` / `save_intervals()`: Interval configuration
-- `load_tickers()` / `save_tickers()`: Ticker JSON I/O
-- `configure_limits()`: Rate limiting parameters
-- `get_now()` / `format_date()`: Deterministic timestamps
+**File**: `src/yf_parqed/config_service.py`
+
+Key methods:
+
+- `set_working_path()` changes the base directory.
+- `load_intervals()` / `save_intervals()` manage interval configuration.
+- `load_tickers()` / `save_tickers()` read and persist ticker metadata.
+- `configure_limits()` stores rate limiting parameters.
+- `get_now()` / `format_date()` provide deterministic timestamps.
 
 **Dependencies**: None (bottom layer)  
-**Tests**: `tests/test_config_service.py` (12 tests)
+**Tests**: `tests/test_config_service.py`
 
 ### TickerRegistry
-**Purpose**: Ticker lifecycle and interval metadata management  
-**File**: `src/yf_parqed/ticker_registry.py`  
-**Key Methods**:
-- `load()` / `save()`: Ticker data persistence
-- `update_current_list()`: Merge new tickers, reactivate not-founds
-- `is_active_for_interval()`: Check ticker/interval eligibility
-- `update_ticker_interval_status()`: Record fetch success/failure
-- `replace()`: Bulk ticker updates
-- `confirm_not_founds()`: Re-check globally not-found tickers
-- `reparse_not_founds()`: Reactivate tickers with recent interval data
 
-**Dependencies**: `ConfigService` (for timestamps), optional limiter and fetch_callback  
-**Tests**: `tests/test_ticker_registry.py` (7 tests), `tests/test_ticker_operations.py` (23 tests)
+**Purpose**: Ticker lifecycle and interval metadata management  
+**File**: `src/yf_parqed/ticker_registry.py`
+
+Key methods:
+
+- `load()` / `save()` handle persistence.
+- `update_current_list()` merges new tickers and reactivates not-founds.
+- `is_active_for_interval()` evaluates ticker/interval eligibility.
+- `get_interval_storage()` exposes interval storage metadata for routing.
+- `update_ticker_interval_status()` records fetch success/failure.
+- `confirm_not_founds()` and `reparse_not_founds()` maintain not-found lifecycles.
+
+**Dependencies**: `ConfigService`, optional limiter and fetch callback  
+**Tests**: `tests/test_ticker_registry.py`, `tests/test_ticker_operations.py`
 
 ### IntervalScheduler
-**Purpose**: Orchestrate update loop across intervals  
-**File**: `src/yf_parqed/interval_scheduler.py`  
-**Key Methods**:
-- `run()`: Execute update workflow for all intervals/tickers
+
+**Purpose**: Orchestrate the update loop across intervals  
+**File**: `src/yf_parqed/interval_scheduler.py`
+
+Key methods:
+
+- `run()` reloads tickers, filters by interval eligibility, and invokes the processor per ticker.
 
 **Dependencies**: `TickerRegistry`, limiter, processor callback  
-**Tests**: `tests/test_interval_scheduler.py` (2 tests)
+**Tests**: `tests/test_interval_scheduler.py`
 
 ### DataFetcher
-**Purpose**: Yahoo Finance API interactions  
-**File**: `src/yf_parqed/data_fetcher.py`  
-**Key Methods**:
-- `fetch()`: Retrieve OHLCV data for ticker/interval/date range
-- `_fetch_window()`: Specific date range
-- `_fetch_all()`: Maximum available history
-- `_apply_interval_constraints()`: Yahoo API limits (729d hourly, 7d minute)
-- `_normalize_dataframe()`: Lowercase columns, timezone removal, multi-index
+
+**Purpose**: Yahoo Finance API abstraction  
+**File**: `src/yf_parqed/data_fetcher.py`
+
+Key methods:
+
+- `fetch()` retrieves OHLCV data for a ticker/interval/date range.
+- `_fetch_window()` is a bounded fetch while `_fetch_all()` requests maximum history.
+- `_apply_interval_constraints()` enforces Yahoo limits (729-day hourly, 7-day minute, etc.).
+- `_normalize_dataframe()` lowercases columns, removes timezone metadata, and sets the multi-index.
 
 **Dependencies**: `yfinance`, limiter, date provider  
-**Tests**: `tests/test_data_fetcher.py` (18 tests)
+**Tests**: `tests/test_data_fetcher.py`
 
 ### StorageBackend
-**Purpose**: Parquet persistence with corruption recovery  
-**File**: `src/yf_parqed/storage_backend.py`  
-**Key Methods**:
-- `read()`: Load parquet with schema validation
-- `save()`: Merge, deduplicate, persist
-- `_remove_file()`: Cross-version pathlib cleanup
+
+**Purpose**: Legacy parquet persistence with corruption recovery  
+**File**: `src/yf_parqed/storage_backend.py`
+
+Key methods:
+
+- `read()` loads parquet files with schema validation and removes corrupt artifacts.
+- `save()` merges, deduplicates, and persists data to `stocks_<interval>/<ticker>.parquet`.
 
 **Dependencies**: Empty frame factory, normalizer, column provider  
-**Tests**: `tests/test_storage_backend.py` (11 tests)
+**Tests**: `tests/test_storage_backend.py`, `tests/test_storage_operations.py`
+
+### PartitionedStorageBackend
+
+**Purpose**: Partition-aware parquet persistence using Hive-style directories  
+**File**: `src/yf_parqed/partitioned_storage_backend.py`
+
+Key methods:
+
+- `save()` writes data under `data/<market>/<source>/stocks_<interval>/ticker=<TICKER>/year=...` partitions.
+- `read()` globs partition directories, normalizes schema, and deletes corrupt files before retrying.
+
+**Dependencies**: `PartitionPathBuilder`, empty frame factory, normalizer, column provider  
+**Tests**: `tests/test_partitioned_storage_backend.py`
+
+### PartitionMigrationService
+
+**Purpose**: Drive legacy-to-partition migrations and toggle runtime storage flags  
+**File**: `src/yf_parqed/partition_migration_service.py`
+
+Key methods:
+
+- `initialize_plan()` persists a migration plan rooted at `data/legacy/...`.
+- `estimate_disk_requirements()` surfaces disk usage estimates and limitations before copying.
+- `migrate_interval()` copies and verifies ticker data, backfills interval storage metadata, and activates per-source partition flags once verification succeeds.
+
+**Dependencies**: `ConfigService`, `StorageBackend`, `PartitionedStorageBackend`, `PartitionPathBuilder`  
+**Tests**: `tests/test_partition_migration_service.py`, `tests/test_partition_migrate_cli.py`
 
 ## Data Flow
 
 ### Initialization Flow
-```
+
+```text
 CLI → YFParqed.__init__
   ├─→ ConfigService(path)
   ├─→ TickerRegistry(config)
   ├─→ DataFetcher(limiter, today, empty_frame)
   ├─→ StorageBackend(empty_frame, normalizer, columns)
+  ├─→ PartitionedStorageBackend(empty_frame, normalizer, columns, path_builder)
   └─→ IntervalScheduler(registry, intervals, limiter, processor)
 ```
 
 ### Update Data Flow
-```
+
+```text
 update_stock_data(start_date, end_date)
   └─→ scheduler.run(start_date, end_date)
        ├─→ registry.load() [reload tickers]
@@ -113,20 +155,21 @@ update_stock_data(start_date, end_date)
        │    └─→ For each active ticker:
        │         ├─→ limiter() [rate limit]
        │         └─→ save_single_stock_data(ticker, dates, interval)
-       │              ├─→ storage.read(parquet_path) [existing data]
+       │              ├─→ storage.read(...) [existing data via StorageRequest]
        │              ├─→ data_fetcher.fetch(...) [new data]
-       │              ├─→ storage.save(new, existing, path)
+       │              ├─→ storage.save(new, existing, ...)
        │              └─→ registry.update_ticker_interval_status(...)
        └─→ [no save_tickers() during loop - deferred]
 ```
 
 ### Not-Found Maintenance Flow
-```
+
+```text
 confirm_not_founds()
   └─→ registry.confirm_not_founds()
        ├─→ For each globally not-found ticker:
        │    ├─→ limiter() [rate limit]
-       │    └─→ fetch_callback(ticker, "1d", "1d") [try to fetch data]
+       │    └─→ fetch_callback(ticker, "1d", "1d")
        │         └─→ If data found: update_ticker_interval_status(found=True)
        ├─→ save() [persist changes]
        └─→ reparse_not_founds() [chain to reactivation]
@@ -139,6 +182,18 @@ reparse_not_founds()
        └─→ save() [persist changes]
 ```
 
+### Partitioned Storage Workflow
+
+```text
+data/legacy/stocks_<interval> → partition-migrate CLI → partitioned layout → runtime toggle
+```
+
+1. Operators relocate legacy `stocks_<interval>/` folders under `data/legacy/`.
+2. `yf-parqed-migrate init` writes a migration plan and enforces the directory layout.
+3. `yf-parqed-migrate migrate` copies and verifies data, backfills `tickers.json` storage metadata, and flips per-source flags in `storage_config.json` once verification succeeds.
+4. Subsequent `update-data` runs rely on `_build_storage_request` to route partitioned intervals through `PartitionedStorageBackend`; legacy intervals continue using `StorageBackend`.
+5. Operators can override defaults with `yf-parqed partition-toggle` for global, market, or source scopes.
+
 ## Dependency Injection Patterns
 
 All services use constructor injection for testability:
@@ -147,60 +202,47 @@ All services use constructor injection for testability:
 # Example: DataFetcher
 DataFetcher(
     limiter=lambda: self.enforce_limits(),        # Callable
-    today_provider=lambda: self.get_today(),      # Callable  
+    today_provider=lambda: self.get_today(),      # Callable
     empty_frame_factory=self._empty_price_frame,  # Callable
     ticker_factory=yf.Ticker                      # Optional override
 )
 ```
 
 This enables:
-- **Mocking**: Tests inject fake implementations
-- **Flexibility**: Swap implementations without code changes
-- **Testing**: Services testable in isolation
+
+- **Mocking**: Tests inject fake implementations.
+- **Flexibility**: Implementations are swappable without code changes.
+- **Testing**: Services remain testable in isolation.
 
 ## Test Coverage
 
-Total: **109 tests** across 14 test files
+Total: **163 tests** across 17 test files.
 
-- Integration: `test_cli_integration.py`, `test_update_end_to_end.py`
-- Services: `test_config_service.py`, `test_ticker_registry.py`, `test_interval_scheduler.py`, `test_data_fetcher.py`, `test_storage_backend.py`
-- Operations: `test_ticker_operations.py`, `test_storage_operations.py`, `test_update_loop.py`
-- CLI: `test_cli.py`
-- Infrastructure: `test_rate_limits.py`
+- Integration: `tests/test_cli_integration.py`, `tests/test_update_end_to_end.py`.
+- Services: `tests/test_config_service.py`, `tests/test_ticker_registry.py`, `tests/test_interval_scheduler.py`, `tests/test_data_fetcher.py`, `tests/test_partition_migration_service.py`.
+- Storage Layers: `tests/test_storage_backend.py`, `tests/test_storage_operations.py`, `tests/test_partitioned_storage_backend.py`.
+- Orchestration: `tests/test_update_loop.py`, `tests/test_partition_migrate_cli.py`.
+- CLI: `tests/test_cli.py`.
+- Infrastructure: `tests/test_rate_limits.py`.
 
 ## Future Enhancements
 
-### Partition-Aware Storage
-The current `StorageBackend` can be swapped for a partitioned version:
-```
-stocks_1d/
-  ticker=AAPL/
-    year=2025/
-      month=10/
-        day=11/
-          data.parquet
-```
+- **Migration UX**: Add dry-run/resume support and a guided rollback command for partition migrations.
+- **DuckDB Query Layer**: Provide zero-copy analytics on the partitioned layout, for example:
 
-Benefits:
-- Minimize corruption blast radius
-- Enable incremental backups
-- Simplify selective rewrites
-- Better parallelization
+  ```python
+  import duckdb
 
-### DuckDB Query Layer
-Add zero-copy analytics on partitioned parquet:
-```python
-import duckdb
-con = duckdb.connect()
-con.execute("SELECT * FROM 'stocks_1d/**/*.parquet' WHERE ticker='AAPL'")
-```
+  con = duckdb.connect()
+  con.execute("SELECT * FROM 'data/us/yahoo/stocks_1d/**/*.parquet' WHERE ticker='AAPL'")
+  ```
 
 ## Design Principles
 
-1. **Single Responsibility**: Each service has one clear purpose
-2. **Dependency Inversion**: High-level modules depend on abstractions (callables)
-3. **Open/Closed**: Extend via new services, not modifications
-4. **Testability**: Every service has comprehensive unit tests
-5. **Backward Compatibility**: Public API unchanged during refactor
-6. **Fail-Safe**: Corruption recovery, schema validation, cross-version support
-
+1. **Single Responsibility**: Each service has one clear purpose.
+2. **Dependency Inversion**: High-level modules depend on abstractions (callables).
+3. **Open/Closed**: Extend behavior via new services rather than modifying callers.
+4. **Testability**: Every service has dedicated unit tests.
+5. **Backward Compatibility**: Public CLI and façade APIs remain stable.
+6. **Fail-Safe**: Corruption recovery, schema validation, and cross-version support.
+7. **Operational Guardrails**: Migration CLI validates disk space, directory layout, and checksum parity before activating partition mode.

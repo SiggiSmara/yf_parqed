@@ -1,6 +1,6 @@
 [project]
 name = "yf-parqed"
-version = "0.2.0"
+version = "0.3.0"
 description = "Persistent storage of yfinance ticker data in parquet"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -16,9 +16,11 @@ dependencies = [
 
 [project.scripts]
 yf-parqed = "yf_parqed.main:app"
+yf-parqed-migrate = "yf_parqed.tools.partition_migrate:app"
 
 [project.entry-points."pipx.run"]
 yf-parqed = "yf_parqed.main:app"
+yf-parqed-migrate = "yf_parqed.tools.partition_migrate:app"
 
 [build-system]
 requires = ["hatchling"]

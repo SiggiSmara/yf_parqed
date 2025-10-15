@@ -19,6 +19,8 @@ class StubYFParqed:
         self.saved_intervals = None
         self.added_intervals: list[str] = []
         self.removed_intervals: list[str] = []
+        self.partition_overrides: list[tuple] = []
+        self.cleared_overrides: list[tuple] = []
 
     def set_working_path(self, path: Path):
         self.calls.append(("set_working_path", Path(path)))
@@ -58,6 +60,14 @@ class StubYFParqed:
 
     def reparse_not_founds(self):
         self.calls.append(("reparse_not_founds",))
+
+    def set_partition_override(self, *, enabled: bool, market=None, source=None):
+        self.calls.append(("set_partition_override", enabled, market, source))
+        self.partition_overrides.append((enabled, market, source))
+
+    def clear_partition_override(self, *, market=None, source=None):
+        self.calls.append(("clear_partition_override", market, source))
+        self.cleared_overrides.append((market, source))
 
 
 @pytest.fixture
@@ -222,3 +232,66 @@ def test_global_options_apply_log_level_env(runner, stub, monkeypatch):
     assert result.exit_code == 0
     assert os.environ["YF_PARQED_LOG_LEVEL"] == "DEBUG"
     assert ("set_working_path", Path(tmp_dir)) in stub.calls
+
+
+def test_partition_toggle_enables_global_by_default(runner, stub):
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        result = runner.invoke(main.app, ["--wrk-dir", tmp_dir, "partition-toggle"])
+
+    assert result.exit_code == 0
+    assert ("set_partition_override", True, None, None) in stub.calls
+
+
+def test_partition_toggle_disables_market(runner, stub):
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        result = runner.invoke(
+            main.app,
+            [
+                "--wrk-dir",
+                tmp_dir,
+                "partition-toggle",
+                "--market",
+                "US",
+                "--disable",
+            ],
+        )
+
+    assert result.exit_code == 0
+    assert ("set_partition_override", False, "US", None) in stub.calls
+
+
+def test_partition_toggle_requires_market_when_source_provided(runner, stub):
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        result = runner.invoke(
+            main.app,
+            [
+                "--wrk-dir",
+                tmp_dir,
+                "partition-toggle",
+                "--source",
+                "yahoo",
+            ],
+        )
+
+    assert result.exit_code == 1
+    assert "Provide --market" in result.stdout
+
+
+def test_partition_toggle_clears_override(runner, stub):
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        result = runner.invoke(
+            main.app,
+            [
+                "--wrk-dir",
+                tmp_dir,
+                "partition-toggle",
+                "--market",
+                "US",
+                "--source",
+                "yahoo",
+                "--clear",
+            ],
+        )
+
+    assert result.exit_code == 0
+    assert ("clear_partition_override", "US", "yahoo") in stub.calls

@@ -10,8 +10,15 @@ This document records user-facing changes by release. Each section should captur
 
 ## Unreleased
 
-- Planned: Partition-aware storage rollout ([ADR 2025-10-12](adr/2025-10-12-partition-aware-storage.md))
 - Planned: Optional DuckDB analytics layer ([ADR 2025-10-12](adr/2025-10-12-duckdb-query-layer.md))
+- Planned: Xetra delayed data ingestion ([ADR 2025-10-12](adr/2025-10-12-xetra-delayed-data.md))
+
+---
+
+## 2025-10-15 — Version 0.3.0 (Partition Storage Rollout Prep)
+
+- Advanced the partition-aware storage rollout ([ADR 2025-10-12](adr/2025-10-12-partition-aware-storage.md)) with migration CLI refinements—defaulted venue selection, numeric-or-name prompts, and an `--all` batch mode that records progress back into the plan—while noting disk estimation, resume/backfill, and rollback steps remain outstanding.
+- Updated the ADR work log to capture the delivered CLI usability milestone and enumerate the remaining migration workflow gaps before full rollout.
 
 ---
 

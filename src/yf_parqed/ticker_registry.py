@@ -84,6 +84,34 @@ class TickerRegistry:
         now = self._config.get_now()
         return (now - last_date).days >= 30
 
+    def get_interval_metadata(self, ticker: str, interval: str) -> dict | None:
+        ticker_data = self._tickers.get(ticker)
+        if not ticker_data:
+            return None
+        intervals = ticker_data.get("intervals", {})
+        return intervals.get(interval)
+
+    def get_interval_storage(self, ticker: str, interval: str) -> dict | None:
+        interval_meta = self.get_interval_metadata(ticker, interval)
+        if not interval_meta:
+            return None
+        storage = interval_meta.get("storage")
+        return storage if isinstance(storage, dict) else None
+
+    def get_last_data_date(self, ticker: str, interval: str) -> datetime | None:
+        interval_meta = self.get_interval_metadata(ticker, interval)
+        if not interval_meta:
+            return None
+
+        last_data = interval_meta.get("last_data_date")
+        if not last_data:
+            return None
+
+        try:
+            return datetime.strptime(last_data, "%Y-%m-%d")
+        except ValueError:
+            return None
+
     def update_ticker_interval_status(
         self,
         ticker: str,

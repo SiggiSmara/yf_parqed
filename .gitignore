@@ -5,6 +5,7 @@ not_found_tickers.json
 tickers.json
 intervals.json
 intervals.json.*
+migration_plan.json
 stocks_*/
 backup_ticker_files/*
 

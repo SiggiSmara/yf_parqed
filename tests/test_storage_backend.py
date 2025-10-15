@@ -5,7 +5,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from yf_parqed.storage_backend import StorageBackend
+from yf_parqed.storage_backend import StorageBackend, StorageRequest
 
 
 @pytest.fixture
@@ -111,22 +111,29 @@ def temp_dir():
         yield Path(tmpdir)
 
 
+def make_request(
+    root: Path, ticker: str = "AAPL", interval: str = "1d"
+) -> StorageRequest:
+    return StorageRequest(root=root, interval=interval, ticker=ticker)
+
+
 class TestStorageBackendRead:
     """Test StorageBackend read operations."""
 
     def test_read_returns_empty_when_file_missing(self, storage, temp_dir):
         """read() should return empty DataFrame when file doesn't exist."""
-        path = temp_dir / "missing.parquet"
-        result = storage.read(path)
+        request = make_request(temp_dir, ticker="MISSING")
+        result = storage.read(request)
 
         assert result.empty
         assert list(result.index.names) == ["stock", "date"]
 
     def test_read_loads_valid_parquet(self, storage, temp_dir):
         """read() should successfully load a valid parquet file."""
-        path = temp_dir / "valid.parquet"
+        request = make_request(temp_dir, ticker="VALID")
+        path = request.legacy_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Create a valid parquet file
         df = pd.DataFrame(
             {
                 "stock": ["TEST"],
@@ -141,7 +148,7 @@ class TestStorageBackendRead:
         )
         df.to_parquet(path, index=False)
 
-        result = storage.read(path)
+        result = storage.read(request)
 
         assert not result.empty
         assert len(result) == 1
@@ -150,19 +157,23 @@ class TestStorageBackendRead:
 
     def test_read_deletes_corrupt_file(self, storage, temp_dir):
         """read() should delete corrupt parquet files."""
-        path = temp_dir / "corrupt.parquet"
+        request = make_request(temp_dir, ticker="CORRUPT")
+        path = request.legacy_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
 
         # Create a corrupt file
         path.write_text("not a parquet file")
 
-        result = storage.read(path)
+        result = storage.read(request)
 
         assert result.empty
         assert not path.exists()
 
     def test_read_deletes_file_with_missing_columns(self, storage, temp_dir):
         """read() should delete files missing required columns."""
-        path = temp_dir / "incomplete.parquet"
+        request = make_request(temp_dir, ticker="INCOMPLETE")
+        path = request.legacy_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
 
         # Create parquet with incomplete schema
         df = pd.DataFrame(
@@ -175,7 +186,7 @@ class TestStorageBackendRead:
         )
         df.to_parquet(path, index=False)
 
-        result = storage.read(path)
+        result = storage.read(request)
 
         assert result.empty
         assert not path.exists()
@@ -187,12 +198,12 @@ class TestStorageBackendSave:
     def test_save_returns_empty_when_both_empty(self, storage, temp_dir):
         """save() should return empty DataFrame when both inputs are empty."""
         empty_df = storage._empty_frame_factory()
-        path = temp_dir / "empty.parquet"
+        request = make_request(temp_dir, ticker="EMPTY")
 
-        result = storage.save(empty_df, empty_df, path)
+        result = storage.save(request, empty_df, empty_df)
 
         assert result.empty
-        assert not path.exists()
+        assert not request.legacy_path().exists()
 
     def test_save_returns_existing_when_new_empty(self, storage, temp_dir):
         """save() should return existing data when new data is empty."""
@@ -210,9 +221,9 @@ class TestStorageBackendSave:
             }
         ).set_index(["stock", "date"])
 
-        path = temp_dir / "keep.parquet"
+        request = make_request(temp_dir, ticker="KEEP")
 
-        result = storage.save(empty_df, existing_df, path)
+        result = storage.save(request, empty_df, existing_df)
 
         assert len(result) == 1
         assert result.loc[("KEEP", pd.Timestamp("2024-01-01")), "close"] == 50.5
@@ -245,9 +256,9 @@ class TestStorageBackendSave:
             }
         ).set_index(["stock", "date"])
 
-        path = temp_dir / "merged.parquet"
+        request = make_request(temp_dir, ticker="MERGE")
 
-        result = storage.save(new_df, existing_df, path)
+        result = storage.save(request, new_df, existing_df)
 
         # Should have 2 rows: updated Jan 1 and new Jan 2
         assert len(result) == 2
@@ -272,12 +283,13 @@ class TestStorageBackendSave:
             }
         ).set_index(["stock", "date"])
 
+        request = make_request(temp_dir, ticker="SAVE")
         empty_df = storage._empty_frame_factory()
-        path = temp_dir / "saved.parquet"
 
-        storage.save(new_df, empty_df, path)
+        storage.save(request, new_df, empty_df)
 
         # Verify file was created
+        path = request.legacy_path()
         assert path.exists()
 
         # Verify can be read back
@@ -313,9 +325,9 @@ class TestStorageBackendSave:
             }
         ).set_index(["stock", "date"])
 
-        path = temp_dir / "seq.parquet"
+        request = make_request(temp_dir, ticker="SEQ")
 
-        result = storage.save(new_df, existing_df, path)
+        result = storage.save(request, new_df, existing_df)
 
         # Should keep the higher sequence value (5)
         assert len(result) == 1
@@ -328,7 +340,9 @@ class TestStorageBackendEdgeCases:
 
     def test_handles_empty_dataframe_with_schema(self, storage, temp_dir):
         """Storage should handle empty DataFrames that have correct schema."""
-        path = temp_dir / "empty_schema.parquet"
+        request = make_request(temp_dir, ticker="EMPTY_SCHEMA")
+        path = request.legacy_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
 
         # Create empty but valid parquet
         df = pd.DataFrame(
@@ -345,7 +359,7 @@ class TestStorageBackendEdgeCases:
         )
         df.to_parquet(path, index=False)
 
-        result = storage.read(path)
+        result = storage.read(request)
 
         # Should handle gracefully and delete
         assert result.empty
@@ -366,9 +380,9 @@ class TestStorageBackendEdgeCases:
         ).set_index(["stock", "date"])
 
         empty_df = storage._empty_frame_factory()
-        path = temp_dir / "normalized.parquet"
+        request = make_request(temp_dir, ticker="NORM")
 
-        result = storage.save(new_df, empty_df, path)
+        result = storage.save(request, new_df, empty_df)
 
         # Types should be normalized
         assert result.loc[("NORM", pd.Timestamp("2024-01-01")), "open"] == 100.5
