@@ -32,6 +32,7 @@ class PartitionPathBuilder:
         if not market or not source:
             return self._legacy_path(interval, ticker)
         dataset_segment = f"{dataset.lower()}_{interval}"
+        #  / f"day={normalized_date.day:02d}"
         return (
             self._root
             / self._normalize_segment(market)
@@ -40,7 +41,6 @@ class PartitionPathBuilder:
             / f"ticker={ticker}"
             / f"year={normalized_date.year:04d}"
             / f"month={normalized_date.month:02d}"
-            / f"day={normalized_date.day:02d}"
             / "data.parquet"
         )
 

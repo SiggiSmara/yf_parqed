@@ -20,11 +20,13 @@ class PartitionedStorageBackend(StorageInterface):
         normalizer: Callable[[pd.DataFrame], pd.DataFrame],
         column_provider: Callable[[], list[str]],
         path_builder: PartitionPathBuilder,
+        compression: str | None = "gzip",
     ) -> None:
         self._empty_frame_factory = empty_frame_factory
         self._normalizer = normalizer
         self._column_provider = column_provider
         self._path_builder = path_builder
+        self._compression = compression
 
     def save(
         self,
@@ -113,19 +115,48 @@ class PartitionedStorageBackend(StorageInterface):
         return normalized
 
     def _write_partitions(self, request: StorageRequest, frame: pd.DataFrame) -> None:
+        """
+        Write one parquet file per ticker/month instead of per full date.
+        Groups rows by the YYYY-MM period and calls the path builder with
+        the period's start timestamp so callers that emit year/month folders
+        will get a single file per month.
+        """
+        # without copy the month_start column gets populated back up into the original
+        frame = frame.copy()
         unique_dates = frame["date"].dropna().sort_values().unique()
-        for timestamp in unique_dates:
-            partition_df = frame[frame["date"] == timestamp].copy()
+        if unique_dates.size == 0:
+            return
+        # compute month-start timestamp for grouping
+        frame["month_start"] = frame["date"].dt.to_period("M").dt.to_timestamp()
+
+        for month_ts in frame["month_start"].dropna().unique():
+            partition_df = frame[frame["month_start"] == month_ts].copy()
+            # remove internal grouping column before persisting
+            partition_df = partition_df.drop(columns=["month_start"], errors="ignore")
+            print(partition_df.columns)
             path = self._path_builder.build(
                 market=request.market,
                 source=request.source,
                 dataset=request.dataset,
                 interval=request.interval,
                 ticker=request.ticker,
-                timestamp=pd.Timestamp(timestamp).to_pydatetime(),
+                timestamp=pd.Timestamp(month_ts).to_pydatetime(),
             )
             path.parent.mkdir(parents=True, exist_ok=True)
-            partition_df.to_parquet(path, index=False, compression="gzip")
+            partition_df.to_parquet(path, index=False, compression=self._compression)
+
+        # for timestamp in unique_dates:
+        #     partition_df = frame[frame["date"] == timestamp].copy()
+        #     path = self._path_builder.build(
+        #         market=request.market,
+        #         source=request.source,
+        #         dataset=request.dataset,
+        #         interval=request.interval,
+        #         ticker=request.ticker,
+        #         timestamp=pd.Timestamp(timestamp).to_pydatetime(),
+        #     )
+        #     path.parent.mkdir(parents=True, exist_ok=True)
+        #     partition_df.to_parquet(path, index=False, compression=self._compression)
 
     def _validate_partition_metadata(self, request: StorageRequest) -> None:
         if not request.market or not request.source:

@@ -6,6 +6,7 @@ from typing import Callable, Optional, Sequence, Tuple
 import typer
 from rich.console import Console
 from rich.table import Table
+from loguru import logger
 
 from ..config_service import ConfigService
 from ..migration_plan import MigrationPlan
@@ -13,11 +14,59 @@ from ..partition_migration_service import PartitionMigrationService
 
 app = typer.Typer(help="Partition storage migration utilities")
 console = Console()
+_FILE_SINK_ID: int | None = None
 
 
-def _load_service(base_dir: Path, created_by: str) -> PartitionMigrationService:
+def _load_service(
+    base_dir: Path,
+    created_by: str,
+    *,
+    compression: str | None = "gzip",
+) -> PartitionMigrationService:
     config = ConfigService(base_dir)
-    return PartitionMigrationService(config, created_by=created_by)
+    return PartitionMigrationService(
+        config,
+        created_by=created_by,
+        compression=compression,
+    )
+
+
+def _configure_logging(base_dir: Path, log_file: Optional[Path]) -> None:
+    global _FILE_SINK_ID  # pylint: disable=global-statement
+    if log_file is None:
+        return
+
+    resolved = log_file if log_file.is_absolute() else base_dir / log_file
+    resolved.parent.mkdir(parents=True, exist_ok=True)
+
+    if _FILE_SINK_ID is not None:
+        logger.remove(_FILE_SINK_ID)
+        _FILE_SINK_ID = None
+
+    _FILE_SINK_ID = logger.add(
+        resolved,
+        level="DEBUG",
+        rotation="10 MB",
+        retention=5,
+        enqueue=True,
+        backtrace=False,
+        diagnose=False,
+    )
+    logger.debug("File logging enabled at {path}", path=str(resolved))
+
+
+def _resolve_compression_option(value: Optional[str]) -> str | None:
+    if value is None:
+        return "gzip"
+
+    codec = value.strip().lower()
+    if not codec or codec in {"default", "auto"}:
+        return "gzip"
+
+    if codec in {"none", "no", "false", "off", "uncompressed"}:
+        return None
+
+    return codec
 
 
 def _format_bytes(size: int | None) -> str:
@@ -240,8 +289,14 @@ def init(
         "yf-parqed-migrate", help="Identifier stored in plan"
     ),
     base_dir: Path = typer.Option(Path.cwd(), help="Working directory"),
+    log_file: Optional[Path] = typer.Option(
+        None,
+        "--log-file",
+        help="Optional log file path (relative to base dir if not absolute)",
+    ),
 ) -> None:
     """Create or overwrite the migration plan."""
+    _configure_logging(base_dir, log_file)
     if not interval:
         console.print("[red]At least one --interval must be provided[/red]")
         raise typer.Exit(code=1)
@@ -277,8 +332,14 @@ def init(
 @app.command()
 def status(
     base_dir: Path = typer.Option(Path.cwd(), help="Working directory"),
+    log_file: Optional[Path] = typer.Option(
+        None,
+        "--log-file",
+        help="Optional log file path (relative to base dir if not absolute)",
+    ),
 ) -> None:
     """Display current migration plan state."""
+    _configure_logging(base_dir, log_file)
     try:
         plan = _load_plan(base_dir)
     except FileNotFoundError as exc:
@@ -301,8 +362,14 @@ def mark(
         "yf-parqed-migrate", help="Identifier stored in plan"
     ),
     base_dir: Path = typer.Option(Path.cwd(), help="Working directory"),
+    log_file: Optional[Path] = typer.Option(
+        None,
+        "--log-file",
+        help="Optional log file path (relative to base dir if not absolute)",
+    ),
 ) -> None:
     """Update interval metadata in the migration plan (manual override)."""
+    _configure_logging(base_dir, log_file)
     service = _load_service(base_dir, created_by)
     try:
         updated = service.update_interval(
@@ -334,6 +401,22 @@ def migrate(
         "--delete-legacy",
         help="Remove legacy parquet files after successful migration",
     ),
+    max_tickers: Optional[int] = typer.Option(
+        None,
+        "--max-tickers",
+        "-n",
+        min=1,
+        help="Process at most this many tickers (useful for sampling runs)",
+    ),
+    compression: str = typer.Option(
+        "gzip",
+        "--compression",
+        "-c",
+        help=(
+            "Compression codec for partition parquet writes (e.g. gzip, snappy, none)."
+        ),
+        show_default=True,
+    ),
     all_intervals: bool = typer.Option(
         False,
         "--all",
@@ -343,8 +426,14 @@ def migrate(
         "yf-parqed-migrate", help="Identifier stored in plan"
     ),
     base_dir: Path = typer.Option(Path.cwd(), help="Working directory"),
+    log_file: Optional[Path] = typer.Option(
+        None,
+        "--log-file",
+        help="Optional log file path (relative to base dir if not absolute)",
+    ),
 ) -> None:
     """Execute migration for the specified venue/interval."""
+    _configure_logging(base_dir, log_file)
     plan = _load_plan(base_dir)
     venue = venue or "us:yahoo"
 
@@ -364,7 +453,18 @@ def migrate(
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=1)
 
-    service = _load_service(base_dir, created_by)
+    compression_value = _resolve_compression_option(compression)
+    service = _load_service(
+        base_dir,
+        created_by,
+        compression=compression_value,
+    )
+    if compression_value is None:
+        console.print(
+            "[yellow]Compression disabled for partition writes (output will be larger).[/yellow]"
+        )
+    elif compression_value != "gzip":
+        console.print(f"Using '{compression_value}' compression for partition writes.")
     try:
         estimate = service.estimate_disk_requirements(
             venue,
@@ -392,6 +492,7 @@ def migrate(
                 venue,
                 interval_name,
                 delete_legacy=delete_legacy,
+                max_tickers=max_tickers,
             )
         except (FileNotFoundError, FileExistsError, ValueError) as exc:
             console.print(f"[red]{exc}[/red]")
@@ -401,6 +502,13 @@ def migrate(
             f"(jobs: {result['jobs_completed']}/{result['jobs_total']}, "
             f"rows: {result['legacy_rows']} legacy → {result['partition_rows']} partitioned)"
         )
+        if not bool(result.get("persisted", True)):
+            available = result.get("available_jobs", result.get("jobs_total"))
+            console.print(
+                "[yellow]Partial run:[/yellow] processed "
+                f"{result['jobs_completed']} of {available} available tickers. "
+                "Plan state was left unchanged; rerun without --max-tickers to persist."
+            )
         results.append((interval_name, result))
 
     if len(results) > 1:

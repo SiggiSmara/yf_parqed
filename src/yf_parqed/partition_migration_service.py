@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
+from time import perf_counter
 from typing import Callable, Sequence, Tuple
 import hashlib
 import shutil
 
 import pandas as pd
+from loguru import logger
 
 from .config_service import ConfigService
 from .migration_plan import MigrationInterval, MigrationPlan, MigrationVenue
@@ -15,6 +17,7 @@ from .partitioned_storage_backend import PartitionedStorageBackend
 from .storage_backend import StorageBackend, StorageRequest
 
 DATASET_NAME = "stocks"
+SLOW_TICKER_THRESHOLD_SECONDS = 15.0
 
 
 def _default_now() -> str:
@@ -35,6 +38,7 @@ class PartitionMigrationService:
         *,
         created_by: str = "yf_parqed-cli",
         now_provider: Callable[[], str] | None = None,
+        compression: str | None = "gzip",
     ) -> None:
         self._config_service = config_service
         self._created_by = created_by
@@ -51,6 +55,7 @@ class PartitionMigrationService:
             path_builder=PartitionPathBuilder(
                 root=self._config_service.base_path / "data"
             ),
+            compression=compression,
         )
 
     def _load_plan(self) -> MigrationPlan:
@@ -191,7 +196,11 @@ class PartitionMigrationService:
         interval: str,
         *,
         delete_legacy: bool = False,
+        max_tickers: int | None = None,
     ) -> dict[str, object]:
+        if max_tickers is not None and max_tickers <= 0:
+            raise ValueError("max_tickers must be a positive integer when provided")
+
         plan = self._load_plan()
         base_path = self._config_service.base_path
         venue = plan.get_venue(venue_id)
@@ -214,36 +223,90 @@ class PartitionMigrationService:
                 "Partition path is inside legacy root; adjust migration plan before continuing"
             )
 
-        ticker_files = sorted(legacy_path.glob("*.parquet"))
+        ticker_files_all = sorted(legacy_path.glob("*.parquet"))
+        total_available_jobs = len(ticker_files_all)
+
+        ticker_files = ticker_files_all
+        if max_tickers is not None:
+            ticker_files = ticker_files_all[:max_tickers]
+
         total_jobs = len(ticker_files)
-        timestamp = self._now_provider()
-        plan.update_interval(
-            venue_id,
-            interval,
-            status="migrating",
-            jobs_total=total_jobs,
-            jobs_completed=0,
-            legacy_rows=0,
-            partition_rows=0,
-            when=timestamp,
+        partial_run = total_jobs < total_available_jobs
+        persist_results = not partial_run
+
+        if partial_run:
+            logger.info(
+                "Limiting migration for {venue}/{interval} to first {count} tickers "
+                "out of {total} available (delete_legacy={delete_legacy})",
+                venue=venue_id,
+                interval=interval,
+                count=total_jobs,
+                total=total_available_jobs,
+                delete_legacy=delete_legacy,
+            )
+
+        migration_start = perf_counter()
+        logger.info(
+            "Starting partition migration for {venue}/{interval}: {count} tickers"
+            " (delete_legacy={delete_legacy}, available={available})",
+            venue=venue_id,
+            interval=interval,
+            count=total_jobs,
+            delete_legacy=delete_legacy,
+            available=total_available_jobs,
         )
-        plan.write(generated_at=timestamp, created_by=self._created_by)
+        plan_write_elapsed = 0.0
+        if persist_results:
+            timestamp = self._now_provider()
+            plan_phase_start = perf_counter()
+            plan.update_interval(
+                venue_id,
+                interval,
+                status="migrating",
+                jobs_total=total_jobs,
+                jobs_completed=0,
+                legacy_rows=0,
+                partition_rows=0,
+                when=timestamp,
+            )
+            plan.write(generated_at=timestamp, created_by=self._created_by)
+            plan_write_elapsed = perf_counter() - plan_phase_start
+
+        phase_totals = {
+            "legacy_read": 0.0,
+            "partition_read": 0.0,
+            "partition_write": 0.0,
+            "checksum": 0.0,
+            "plan_write": plan_write_elapsed,
+            "delete_legacy": 0.0,
+            "metadata": 0.0,
+        }
 
         completed = 0
         total_legacy_rows = 0
         total_partition_rows = 0
+        total_legacy_file_bytes = 0
+        total_partition_estimated_bytes = 0
         per_ticker_checksums: dict[str, str] = {}
         migrated_tickers: set[str] = set()
 
         for ticker_file in ticker_files:
             ticker = ticker_file.stem
             migrated_tickers.add(ticker)
+            ticker_start = perf_counter()
+            phase_times: dict[str, float] = {}
+            legacy_file_size = ticker_file.stat().st_size if ticker_file.exists() else 0
+            total_legacy_file_bytes += legacy_file_size
             legacy_request = StorageRequest(
                 root=legacy_root,
                 interval=interval,
                 ticker=ticker,
             )
+            phase_start = perf_counter()
             legacy_df = self._legacy_backend.read(legacy_request)
+            legacy_read_elapsed = perf_counter() - phase_start
+            phase_times["legacy_read"] = legacy_read_elapsed
+            phase_totals["legacy_read"] += legacy_read_elapsed
             partition_request = StorageRequest(
                 root=base_path / "data",
                 interval=interval,
@@ -252,12 +315,20 @@ class PartitionMigrationService:
                 source=venue.source,
                 dataset=DATASET_NAME,
             )
+            phase_start = perf_counter()
             existing_partition = self._partition_backend.read(partition_request)
+            partition_read_elapsed = perf_counter() - phase_start
+            phase_times["partition_read"] = partition_read_elapsed
+            phase_totals["partition_read"] += partition_read_elapsed
+            phase_start = perf_counter()
             combined = self._partition_backend.save(
                 partition_request,
                 new_data=legacy_df,
                 existing_data=existing_partition,
             )
+            partition_write_elapsed = perf_counter() - phase_start
+            phase_times["partition_write"] = partition_write_elapsed
+            phase_totals["partition_write"] += partition_write_elapsed
 
             legacy_rows = int(len(legacy_df))
             partition_rows = int(len(combined))
@@ -267,20 +338,35 @@ class PartitionMigrationService:
                     f"{ticker}: legacy={legacy_rows}, partition={partition_rows}"
                 )
 
+            phase_start = perf_counter()
             legacy_checksum = self._frame_checksum(legacy_df)
             partition_checksum = self._frame_checksum(combined)
             if legacy_checksum != partition_checksum:
+                print(legacy_df)
+                print(combined)
                 raise ValueError(
                     "Checksum mismatch for ticker "
                     f"{ticker}: legacy={legacy_checksum}, partition={partition_checksum}"
                 )
+            checksum_elapsed = perf_counter() - phase_start
+            phase_times["checksum"] = checksum_elapsed
+            phase_totals["checksum"] += checksum_elapsed
 
             completed += 1
             total_legacy_rows += legacy_rows
             total_partition_rows += partition_rows
             per_ticker_checksums[ticker] = partition_checksum
+            try:
+                partition_estimated_bytes = int(
+                    combined.reset_index().memory_usage(deep=True).sum()
+                )
+            except ValueError:
+                partition_estimated_bytes = 0
+            total_partition_estimated_bytes += partition_estimated_bytes
 
+            plan_elapsed = 0.0
             if delete_legacy and ticker_file.exists():
+                delete_start = perf_counter()
                 try:
                     ticker_file.unlink(missing_ok=True)
                 except TypeError:
@@ -292,59 +378,132 @@ class PartitionMigrationService:
                         ticker_file.parent.rmdir()
                     except OSError:
                         pass
+                delete_elapsed = perf_counter() - delete_start
+                phase_times["delete_legacy"] = delete_elapsed
+                phase_totals["delete_legacy"] += delete_elapsed
+            else:
+                phase_times["delete_legacy"] = 0.0
 
-            timestamp = self._now_provider()
+            if persist_results:
+                timestamp = self._now_provider()
+                plan_start = perf_counter()
+                plan.update_interval(
+                    venue_id,
+                    interval,
+                    jobs_completed=completed,
+                    legacy_rows=total_legacy_rows,
+                    partition_rows=total_partition_rows,
+                    when=timestamp,
+                )
+                plan.write(generated_at=timestamp, created_by=self._created_by)
+                plan_elapsed = perf_counter() - plan_start
+            else:
+                plan_elapsed = 0.0
+            phase_times["plan_write"] = plan_elapsed
+            phase_totals["plan_write"] += plan_elapsed
+
+            ticker_elapsed = perf_counter() - ticker_start
+            if ticker_elapsed > SLOW_TICKER_THRESHOLD_SECONDS:
+                logger.warning(
+                    "Slow migration for {ticker}: {duration:.2f}s (rows={rows}, bytes={bytes}, phases={phases})",
+                    ticker=ticker,
+                    duration=ticker_elapsed,
+                    rows=legacy_rows,
+                    bytes=legacy_file_size,
+                    phases=phase_times,
+                )
+            else:
+                logger.debug(
+                    "Migrated {ticker} in {duration:.2f}s (rows={rows}, bytes={bytes}, phases={phases})",
+                    ticker=ticker,
+                    duration=ticker_elapsed,
+                    rows=legacy_rows,
+                    bytes=legacy_file_size,
+                    phases=phase_times,
+                )
+
+        metadata_elapsed = 0.0
+        intervals_verified = False
+        if persist_results:
+            final_timestamp = self._now_provider()
+            plan_start = perf_counter()
             plan.update_interval(
                 venue_id,
                 interval,
+                status="complete",
                 jobs_completed=completed,
                 legacy_rows=total_legacy_rows,
                 partition_rows=total_partition_rows,
-                when=timestamp,
+                verification_method="row_counts+checksum",
+                verified_at=final_timestamp,
+                when=final_timestamp,
             )
-            plan.write(generated_at=timestamp, created_by=self._created_by)
+            plan.write(generated_at=final_timestamp, created_by=self._created_by)
+            phase_totals["plan_write"] += perf_counter() - plan_start
 
-        final_timestamp = self._now_provider()
-        plan.update_interval(
-            venue_id,
-            interval,
-            status="complete",
-            jobs_completed=completed,
-            legacy_rows=total_legacy_rows,
-            partition_rows=total_partition_rows,
-            verification_method="row_counts+checksum",
-            verified_at=final_timestamp,
-            when=final_timestamp,
+            venue = plan.get_venue(venue_id)
+            intervals_verified = self._all_intervals_verified(venue)
+
+            if intervals_verified:
+                try:
+                    meta_start = perf_counter()
+                    self._activate_partitioned_storage(venue)
+                    self._backfill_ticker_storage_metadata(
+                        venue=venue,
+                        intervals=[interval],
+                        verified_at=final_timestamp,
+                    )
+                    metadata_elapsed += perf_counter() - meta_start
+                except Exception as exc:  # pylint: disable=broad-except
+                    raise RuntimeError(
+                        "Failed to finalize partitioned storage activation"
+                    ) from exc
+            else:
+                # Update storage metadata for the interval that just completed so mixed-mode routing works.
+                try:
+                    meta_start = perf_counter()
+                    self._backfill_ticker_storage_metadata(
+                        venue=venue,
+                        intervals=[interval],
+                        verified_at=final_timestamp,
+                    )
+                    metadata_elapsed += perf_counter() - meta_start
+                except Exception as exc:  # pylint: disable=broad-except
+                    raise RuntimeError(
+                        "Failed to backfill ticker metadata for migrated interval"
+                    ) from exc
+
+        phase_totals["metadata"] += metadata_elapsed
+        if metadata_elapsed:
+            logger.debug(
+                "Metadata update complete for {venue}/{interval} in {duration:.2f}s",
+                venue=venue_id,
+                interval=interval,
+                duration=metadata_elapsed,
+            )
+
+        total_duration = perf_counter() - migration_start
+        tickers_per_minute = (
+            (completed / total_duration) * 60 if total_duration > 0 else 0.0
         )
-        plan.write(generated_at=final_timestamp, created_by=self._created_by)
-
-        venue = plan.get_venue(venue_id)
-        intervals_verified = self._all_intervals_verified(venue)
-
-        if intervals_verified:
-            try:
-                self._activate_partitioned_storage(venue)
-                self._backfill_ticker_storage_metadata(
-                    venue=venue,
-                    intervals=[interval],
-                    verified_at=final_timestamp,
-                )
-            except Exception as exc:  # pylint: disable=broad-except
-                raise RuntimeError(
-                    "Failed to finalize partitioned storage activation"
-                ) from exc
-        else:
-            # Update storage metadata for the interval that just completed so mixed-mode routing works.
-            try:
-                self._backfill_ticker_storage_metadata(
-                    venue=venue,
-                    intervals=[interval],
-                    verified_at=final_timestamp,
-                )
-            except Exception as exc:  # pylint: disable=broad-except
-                raise RuntimeError(
-                    "Failed to backfill ticker metadata for migrated interval"
-                ) from exc
+        completion_status = "Completed" if persist_results else "Completed partial"
+        logger.info(
+            "{status} partition migration for {venue}/{interval} in {duration:.2f}s"
+            " (tickers={tickers}, rows={rows}, throughput={tpm:.2f} tickers/min)",
+            status=completion_status,
+            venue=venue_id,
+            interval=interval,
+            duration=total_duration,
+            tickers=completed,
+            rows=total_legacy_rows,
+            tpm=tickers_per_minute,
+        )
+        logger.debug(
+            "Phase totals for {venue}/{interval}: {phases}",
+            venue=venue_id,
+            interval=interval,
+            phases={k: round(v, 4) for k, v in phase_totals.items()},
+        )
 
         result: dict[str, object] = {
             "jobs_total": total_jobs,
@@ -354,6 +513,15 @@ class PartitionMigrationService:
             "checksums": per_ticker_checksums,
             "tickers": sorted(migrated_tickers),
             "storage_activated": intervals_verified,
+            "duration_seconds": total_duration,
+            "tickers_per_minute": tickers_per_minute,
+            "phase_totals": phase_totals,
+            "legacy_bytes": total_legacy_file_bytes,
+            "partition_estimated_bytes": total_partition_estimated_bytes,
+            "available_jobs": total_available_jobs,
+            "persisted": persist_results,
+            "partial_run": partial_run,
+            "max_tickers": max_tickers,
         }
         return result
 

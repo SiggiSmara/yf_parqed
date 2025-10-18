@@ -55,6 +55,10 @@ class StubMigrationService:
             "legacy_rows": 0,
             "partition_rows": 0,
             "checksums": {},
+            "available_jobs": 0,
+            "persisted": True,
+            "partial_run": False,
+            "tickers": [],
         }
         self.estimate_return = {
             "intervals": {"1m": {"legacy_bytes": 1024}},
@@ -108,8 +112,9 @@ class StubMigrationService:
         interval: str,
         *,
         delete_legacy: bool = False,
+        max_tickers: int | None = None,
     ):
-        self.calls.append(("migrate", venue, interval, delete_legacy))
+        self.calls.append(("migrate", venue, interval, delete_legacy, max_tickers))
         return self.migrate_return
 
 
@@ -215,7 +220,9 @@ def test_status_command_prints_table(monkeypatch, tmp_path: Path) -> None:
 def test_mark_command_updates_service(monkeypatch, tmp_path: Path) -> None:
     stub_service = StubMigrationService()
     monkeypatch.setattr(
-        partition_migrate, "_load_service", lambda base, created_by: stub_service
+        partition_migrate,
+        "_load_service",
+        lambda base, created_by, **kwargs: stub_service,
     )
 
     result = runner.invoke(
@@ -288,7 +295,9 @@ def test_migrate_command_invokes_service(monkeypatch, tmp_path: Path) -> None:
         "checksums": {"AAA": "digest"},
     }
     monkeypatch.setattr(
-        partition_migrate, "_load_service", lambda base, created_by: stub_service
+        partition_migrate,
+        "_load_service",
+        lambda base, created_by, **kwargs: stub_service,
     )
     monkeypatch.setattr(
         partition_migrate, "_load_plan", lambda base: _single_interval_plan()
@@ -306,13 +315,15 @@ def test_migrate_command_invokes_service(monkeypatch, tmp_path: Path) -> None:
     assert result.exit_code == 0
     assert "Migration complete" in result.stdout
     assert ("estimate", "us:yahoo", ("1m",), False) in stub_service.calls
-    assert ("migrate", "us:yahoo", "1m", False) in stub_service.calls
+    assert ("migrate", "us:yahoo", "1m", False, None) in stub_service.calls
 
 
 def test_migrate_command_with_delete(monkeypatch, tmp_path: Path) -> None:
     stub_service = StubMigrationService()
     monkeypatch.setattr(
-        partition_migrate, "_load_service", lambda base, created_by: stub_service
+        partition_migrate,
+        "_load_service",
+        lambda base, created_by, **kwargs: stub_service,
     )
     monkeypatch.setattr(
         partition_migrate, "_load_plan", lambda base: _single_interval_plan()
@@ -330,7 +341,75 @@ def test_migrate_command_with_delete(monkeypatch, tmp_path: Path) -> None:
 
     assert result.exit_code == 0
     assert ("estimate", "us:yahoo", ("1m",), True) in stub_service.calls
-    assert ("migrate", "us:yahoo", "1m", True) in stub_service.calls
+    assert ("migrate", "us:yahoo", "1m", True, None) in stub_service.calls
+
+
+def test_migrate_command_with_max_tickers(monkeypatch, tmp_path: Path) -> None:
+    stub_service = StubMigrationService()
+    stub_service.migrate_return = {
+        "jobs_total": 5,
+        "jobs_completed": 5,
+        "legacy_rows": 100,
+        "partition_rows": 100,
+        "checksums": {},
+        "available_jobs": 20,
+        "persisted": False,
+        "partial_run": True,
+        "tickers": ["AAA", "BBB"],
+    }
+    monkeypatch.setattr(
+        partition_migrate,
+        "_load_service",
+        lambda base, created_by, **kwargs: stub_service,
+    )
+    monkeypatch.setattr(
+        partition_migrate, "_load_plan", lambda base: _single_interval_plan()
+    )
+
+    result = runner.invoke(
+        partition_migrate.app,
+        [
+            "migrate",
+            "--max-tickers",
+            "5",
+            "--base-dir",
+            str(tmp_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert ("estimate", "us:yahoo", ("1m",), False) in stub_service.calls
+    assert ("migrate", "us:yahoo", "1m", False, 5) in stub_service.calls
+    assert "Partial run" in result.stdout
+
+
+def test_migrate_command_with_no_compression(monkeypatch, tmp_path: Path) -> None:
+    stub_service = StubMigrationService()
+    compression_args: list[str | None] = []
+
+    def _fake_load_service(base, created_by, **kwargs):
+        compression_args.append(kwargs.get("compression"))
+        return stub_service
+
+    monkeypatch.setattr(partition_migrate, "_load_service", _fake_load_service)
+    monkeypatch.setattr(
+        partition_migrate, "_load_plan", lambda base: _single_interval_plan()
+    )
+
+    result = runner.invoke(
+        partition_migrate.app,
+        [
+            "migrate",
+            "--base-dir",
+            str(tmp_path),
+            "--compression",
+            "none",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert compression_args == [None]
+    assert "Compression disabled" in result.stdout
 
 
 def test_migrate_command_blocks_when_estimate_fails(
@@ -342,7 +421,9 @@ def test_migrate_command_blocks_when_estimate_fails(
         "Partition root lacks 10 bytes of free space"
     ]
     monkeypatch.setattr(
-        partition_migrate, "_load_service", lambda base, created_by: stub_service
+        partition_migrate,
+        "_load_service",
+        lambda base, created_by, **kwargs: stub_service,
     )
     monkeypatch.setattr(
         partition_migrate, "_load_plan", lambda base: _single_interval_plan()
@@ -370,7 +451,7 @@ def test_cli_migrate_end_to_end(tmp_path: Path) -> None:
     df = pd.DataFrame(
         {
             "stock": ["AAA", "AAA"],
-            "date": [pd.Timestamp("2024-03-01"), pd.Timestamp("2024-03-02")],
+            "date": [pd.Timestamp("2024-03-01"), pd.Timestamp("2024-04-01")],
             "open": [10.0, 10.5],
             "high": [10.2, 10.7],
             "low": [9.8, 10.1],
@@ -415,12 +496,10 @@ def test_cli_migrate_end_to_end(tmp_path: Path) -> None:
     assert not interval.backups
 
     partition_file = (
-        tmp_path
-        / "data/us/yahoo/stocks_1m/ticker=AAA/year=2024/month=03/day=01/data.parquet"
+        tmp_path / "data/us/yahoo/stocks_1m/ticker=AAA/year=2024/month=03/data.parquet"
     )
     partition_file_day2 = (
-        tmp_path
-        / "data/us/yahoo/stocks_1m/ticker=AAA/year=2024/month=03/day=02/data.parquet"
+        tmp_path / "data/us/yahoo/stocks_1m/ticker=AAA/year=2024/month=04/data.parquet"
     )
     assert partition_file.exists()
     assert partition_file_day2.exists()
@@ -432,7 +511,9 @@ def test_cli_migrate_end_to_end(tmp_path: Path) -> None:
 def test_migrate_prompt_accepts_interval_name(monkeypatch, tmp_path: Path) -> None:
     stub_service = StubMigrationService()
     monkeypatch.setattr(
-        partition_migrate, "_load_service", lambda base, created_by: stub_service
+        partition_migrate,
+        "_load_service",
+        lambda base, created_by, **kwargs: stub_service,
     )
     monkeypatch.setattr(
         partition_migrate,
@@ -452,13 +533,15 @@ def test_migrate_prompt_accepts_interval_name(monkeypatch, tmp_path: Path) -> No
 
     assert result.exit_code == 0
     assert ("estimate", "us:yahoo", ("1h",), False) in stub_service.calls
-    assert ("migrate", "us:yahoo", "1h", False) in stub_service.calls
+    assert ("migrate", "us:yahoo", "1h", False, None) in stub_service.calls
 
 
 def test_migrate_all_processes_each_pending(monkeypatch, tmp_path: Path) -> None:
     stub_service = StubMigrationService()
     monkeypatch.setattr(
-        partition_migrate, "_load_service", lambda base, created_by: stub_service
+        partition_migrate,
+        "_load_service",
+        lambda base, created_by, **kwargs: stub_service,
     )
     plan = _multi_interval_plan({"1m": "pending", "1h": "pending", "1d": "complete"})
     monkeypatch.setattr(partition_migrate, "_load_plan", lambda base: plan)
@@ -476,8 +559,8 @@ def test_migrate_all_processes_each_pending(monkeypatch, tmp_path: Path) -> None
     assert result.exit_code == 0
     calls = [call for call in stub_service.calls if call[0] == "migrate"]
     assert calls == [
-        ("migrate", "us:yahoo", "1m", False),
-        ("migrate", "us:yahoo", "1h", False),
+        ("migrate", "us:yahoo", "1m", False, None),
+        ("migrate", "us:yahoo", "1h", False, None),
     ]
     assert ("estimate", "us:yahoo", ("1m", "1h"), False) in stub_service.calls
     assert "All requested intervals migrated successfully" in result.stdout

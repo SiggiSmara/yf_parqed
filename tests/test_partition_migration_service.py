@@ -165,7 +165,7 @@ def test_migrate_interval_moves_data(tmp_path: Path) -> None:
     df = pd.DataFrame(
         {
             "stock": ["AAA", "AAA"],
-            "date": [pd.Timestamp("2024-01-01"), pd.Timestamp("2024-01-02")],
+            "date": [pd.Timestamp("2024-01-01"), pd.Timestamp("2024-02-01")],
             "open": [1.0, 1.1],
             "high": [1.2, 1.3],
             "low": [0.9, 1.0],
@@ -193,13 +193,11 @@ def test_migrate_interval_moves_data(tmp_path: Path) -> None:
     assert isinstance(checksums["AAA"], str)
 
     partition_file = (
-        tmp_path
-        / "data/us/yahoo/stocks_1m/ticker=AAA/year=2024/month=01/day=01/data.parquet"
+        tmp_path / "data/us/yahoo/stocks_1m/ticker=AAA/year=2024/month=01/data.parquet"
     )
     assert partition_file.exists()
     partition_file_day2 = (
-        tmp_path
-        / "data/us/yahoo/stocks_1m/ticker=AAA/year=2024/month=01/day=02/data.parquet"
+        tmp_path / "data/us/yahoo/stocks_1m/ticker=AAA/year=2024/month=02/data.parquet"
     )
     assert partition_file_day2.exists()
     # Legacy file should remain when delete_legacy=False
@@ -215,6 +213,79 @@ def test_migrate_interval_moves_data(tmp_path: Path) -> None:
 
     storage_config = json.loads((tmp_path / "storage_config.json").read_text())
     assert storage_config["sources"]["us/yahoo"] is True
+
+
+def test_migrate_interval_with_limit_skips_plan_persistence(tmp_path: Path) -> None:
+    config = ConfigService(tmp_path)
+    service = PartitionMigrationService(
+        config,
+        created_by="tests",
+        now_provider=lambda: "2025-10-15T13:17:00Z",
+    )
+
+    (tmp_path / "data/legacy").mkdir(parents=True, exist_ok=True)
+    service.initialize_plan(
+        venue_id="us:yahoo",
+        market="US",
+        source="yahoo",
+        intervals=["1m"],
+    )
+
+    legacy_dir = tmp_path / "data/legacy/stocks_1m"
+    legacy_dir.mkdir(parents=True, exist_ok=True)
+    df_aaa = pd.DataFrame(
+        {
+            "stock": ["AAA", "AAA"],
+            "date": [pd.Timestamp("2024-01-01"), pd.Timestamp("2024-01-02")],
+            "open": [1.0, 1.1],
+            "high": [1.2, 1.3],
+            "low": [0.9, 1.0],
+            "close": [1.05, 1.15],
+            "volume": [100, 110],
+            "sequence": [0, 1],
+        }
+    )
+    df_bbb = pd.DataFrame(
+        {
+            "stock": ["BBB", "BBB"],
+            "date": [pd.Timestamp("2024-01-01"), pd.Timestamp("2024-01-02")],
+            "open": [2.0, 2.1],
+            "high": [2.2, 2.3],
+            "low": [1.9, 2.0],
+            "close": [2.05, 2.15],
+            "volume": [200, 210],
+            "sequence": [0, 1],
+        }
+    )
+    df_aaa.to_parquet(legacy_dir / "AAA.parquet", index=False)
+    df_bbb.to_parquet(legacy_dir / "BBB.parquet", index=False)
+
+    plan_path = tmp_path / "migration_plan.json"
+    before_plan = plan_path.read_text()
+
+    result = service.migrate_interval("us:yahoo", "1m", max_tickers=1)
+
+    after_plan = plan_path.read_text()
+    assert after_plan == before_plan
+
+    assert result["jobs_total"] == 1
+    assert result["jobs_completed"] == 1
+    assert result["available_jobs"] == 2
+    assert result["persisted"] is False
+    assert result["partial_run"] is True
+    assert result["storage_activated"] is False
+    assert result["tickers"] == ["AAA"]
+
+    partition_root = tmp_path / "data/us/yahoo/stocks_1m"
+    assert (partition_root / "ticker=AAA").exists()
+    assert not (partition_root / "ticker=BBB").exists()
+
+    # Legacy parquet files remain untouched in partial runs
+    assert (legacy_dir / "AAA.parquet").exists()
+    assert (legacy_dir / "BBB.parquet").exists()
+
+    # No storage activation when plan persistence is skipped
+    assert not config.storage_config_path.exists()
 
 
 def test_migrate_interval_can_delete_legacy(tmp_path: Path) -> None:
@@ -289,9 +360,7 @@ def test_migrate_interval_detects_row_count_mismatch(tmp_path: Path) -> None:
     )
     legacy_df.to_parquet(legacy_dir / "MMM.parquet", index=False)
 
-    partition_dir = (
-        tmp_path / "data/us/yahoo/stocks_1m/ticker=MMM/year=2024/month=01/day=02"
-    )
+    partition_dir = tmp_path / "data/us/yahoo/stocks_1m/ticker=MMM/year=2024/month=04"
     partition_dir.mkdir(parents=True, exist_ok=True)
     existing_df = pd.DataFrame(
         {
