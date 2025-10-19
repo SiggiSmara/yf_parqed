@@ -11,6 +11,7 @@ from loguru import logger
 from ..config_service import ConfigService
 from ..migration_plan import MigrationPlan
 from ..partition_migration_service import PartitionMigrationService
+from ..run_lock import GlobalRunLock
 
 app = typer.Typer(help="Partition storage migration utilities")
 console = Console()
@@ -426,6 +427,7 @@ def migrate(
         "yf-parqed-migrate", help="Identifier stored in plan"
     ),
     base_dir: Path = typer.Option(Path.cwd(), help="Working directory"),
+    non_interactive: bool = typer.Option(False, help="Run in non-interactive mode"),
     log_file: Optional[Path] = typer.Option(
         None,
         "--log-file",
@@ -434,6 +436,29 @@ def migrate(
 ) -> None:
     """Execute migration for the specified venue/interval."""
     _configure_logging(base_dir, log_file)
+    # Acquire a global run lock to avoid overlapping updater/migration runs
+    lock = GlobalRunLock(base_dir)
+    if not lock.try_acquire():
+        owner = lock.owner_info() or {}
+        console.print(
+            "[red]Another update or migration appears to be running. Owner: {}[/red]".format(
+                owner
+            )
+        )
+        if non_interactive:
+            # Non-interactive: attempt to recover leftover tmp files before aborting
+            processed = lock.cleanup_tmp_files()
+            console.print(f"Recovered {processed} tmp files")
+            lock.release()
+        else:
+            if typer.confirm(
+                "Attempt to recover leftover tmp files and remove stale lock?"
+            ):
+                processed = lock.cleanup_tmp_files()
+                console.print(f"Recovered {processed} tmp files")
+                lock.release()
+            else:
+                raise typer.Exit(code=1)
     plan = _load_plan(base_dir)
     venue = venue or "us:yahoo"
 
@@ -513,6 +538,11 @@ def migrate(
 
     if len(results) > 1:
         console.print("[green]All requested intervals migrated successfully.[/green]")
+    # release global lock
+    try:
+        lock.release()
+    except Exception:
+        logger.debug("Failed to release global run lock", exc_info=True)
 
 
 if __name__ == "__main__":

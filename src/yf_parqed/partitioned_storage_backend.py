@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Callable
+import os
+import uuid
+import time
 
 import pandas as pd
 from loguru import logger
@@ -133,7 +136,6 @@ class PartitionedStorageBackend(StorageInterface):
             partition_df = frame[frame["month_start"] == month_ts].copy()
             # remove internal grouping column before persisting
             partition_df = partition_df.drop(columns=["month_start"], errors="ignore")
-            print(partition_df.columns)
             path = self._path_builder.build(
                 market=request.market,
                 source=request.source,
@@ -143,7 +145,43 @@ class PartitionedStorageBackend(StorageInterface):
                 timestamp=pd.Timestamp(month_ts).to_pydatetime(),
             )
             path.parent.mkdir(parents=True, exist_ok=True)
-            partition_df.to_parquet(path, index=False, compression=self._compression)
+
+            # atomic write: write to same-dir temp file, fsync, then os.replace
+            suffix = uuid.uuid4().hex
+            temp_name = (
+                f"data.parquet.tmp-{os.getpid()}-{int(time.time()*1000)}-{suffix}"
+            )
+            temp_path = path.with_name(temp_name)
+            try:
+                partition_df.to_parquet(
+                    temp_path, index=False, compression=self._compression
+                )
+                # ensure data is flushed to disk
+                try:
+                    with open(temp_path, "rb") as fd:
+                        os.fsync(fd.fileno())
+                except OSError:
+                    # best-effort: if fsync fails, proceed to replace anyway
+                    logger.debug("fsync failed for %s", str(temp_path))
+
+                # atomic replace
+                try:
+                    # use pathlib.Path.replace for a cleaner, idiomatic atomic rename
+                    temp_path.replace(path)
+                except Exception:
+                    # If replace fails, attempt to remove temp file and re-raise
+                    try:
+                        temp_path.unlink(missing_ok=True)
+                    except Exception:
+                        logger.debug("Failed to remove temp file %s", str(temp_path))
+                    raise
+            except Exception:
+                logger.exception(
+                    "Failed to write partition file for %s month %s",
+                    request.ticker,
+                    month_ts,
+                )
+                raise
 
         # for timestamp in unique_dates:
         #     partition_df = frame[frame["date"] == timestamp].copy()

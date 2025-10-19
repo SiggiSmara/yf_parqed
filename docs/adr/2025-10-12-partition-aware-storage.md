@@ -4,6 +4,15 @@
 
 Accepted (2025-10-12)
 
+## Current status (2025-10-19)
+
+- Partition-aware storage is implemented and integrated in the codebase. Key operational and safety items completed and covered by automated tests:
+    - Monthly consolidation layout: partition paths use `year=YYYY/month=MM/data.parquet` under `data/<market>/<source>/...` for partitioned mode.
+    - Atomic writes: backend writes to same-directory temp files, calls fsync on the temp file, then performs an atomic rename using `Path.replace` so final files are either the old or the fully-written new file.
+    - Unified global run lock: introduced a mkdir-based `GlobalRunLock` that records owner metadata and provides `cleanup_tmp_files()` to recover or remove stale `data.parquet.tmp-*` artifacts.
+    - CLI integration: update and migration CLI commands acquire the global run lock; non-interactive runs automatically run cleanup to support cron/automation.
+    - Tests: added a partial-write-failure simulation test (monkeypatching `DataFrame.to_parquet`), expanded cleanup/fsync simulation tests, and a partition-write hardening test; full test suite passed locally (177 passed) on 2025-10-19.
+
 ## Context
 
 - `StorageBackend` currently writes a single parquet file per ticker/interval (e.g., `stocks_1d/AAPL.parquet`).
@@ -56,7 +65,7 @@ Accepted (2025-10-12)
         5. ⏳ Offer a dry-run mode and resume support that tracks completion status for each `(market, source, dataset)` tuple.
         6. ✅ Switch the active storage roots only after verification passes for that tuple (per-source partition flag toggled automatically once all venue intervals verify).
         7. ✅ Backfill ticker metadata (per-interval `storage` blocks) so post-migration runs can resolve the correct paths without rescanning legacy layouts.
-    1. ⏳ Consolidate migrated data into monthly parquet partitions so the steady-state path matches the update pipeline’s target layout.
+        8. ✅ Consolidate migrated data into monthly parquet partitions so the steady-state path matches the update pipeline’s target layout.
     - ⏳ Provide a complementary rollback command to restore from the backup if needed, scoped to the affected `(market, source, dataset)` entries.
 
 5. **Testing Plan (TDD)**
@@ -95,6 +104,9 @@ Accepted (2025-10-12)
 | 2025-10-15 | Partition CLI toggles | Completed | Added Typer command `partition-toggle` to enable, disable, or clear partition overrides for global, market, or source scopes. |
 |            | Rollback command | Pending | |
 |            | Docs + final rollout | Pending | |
+| 2025-10-19 | Atomic writes & run-lock | Completed | Implemented same-dir temp-write + fsync + atomic replace (Path.replace), added `GlobalRunLock` with cleanup helper, wired into CLI; added tests for partial-write failure and cleanup. |
+| 2025-10-19 | ADR accepted & completed | Completed | Partition-aware storage features implemented, tests green across the suite, release notes and docs updated. |
+| 2025-10-19 | Expanded tests & hardening | Completed | Added expanded cleanup tests, fsync failure simulation, and partition-write hardening test; full test suite passed locally: 176 tests green. |
 
 ## Consequences
 

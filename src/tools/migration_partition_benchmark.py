@@ -8,6 +8,7 @@ from typing import Callable, Iterable, cast
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
+from migration_benchmark_checker import run_checks
 
 
 def _select_tickers(files: list[Path], sample_size: int, seed: int) -> list[Path]:
@@ -325,6 +326,17 @@ def main() -> None:
             f"  Est. full run (days) : {estimated_total_days:.2f}\n"
             f"  Output path          : {metrics['output_root']}"
         )
+
+    # run sanity checks against the originals
+    print("\nRunning row-for-row sanity checks against originals...")
+    checker_results = run_checks(sample, args.output_root, strategies.keys())
+    for strat, res in checker_results.items():
+        total = len(res["passed"]) + len(res["failed"])
+        print(
+            f"Strategy {strat}: {len(res['passed'])}/{total} tickers passed sanity check"
+        )
+        if res["failed"]:
+            print("  Sample failures:", res["failed"][:10])
 
 
 if __name__ == "__main__":

@@ -117,6 +117,8 @@ Key methods:
 **Dependencies**: `PartitionPathBuilder`, empty frame factory, normalizer, column provider  
 **Tests**: `tests/test_partitioned_storage_backend.py`
 
+Status: Implemented and validated (2025-10-19). See ADR `docs/adr/2025-10-12-partition-aware-storage.md` and release notes for operational details.
+
 ### PartitionMigrationService
 
 **Purpose**: Drive legacy-to-partition migrations and toggle runtime storage flags  
@@ -130,6 +132,8 @@ Key methods:
 
 **Dependencies**: `ConfigService`, `StorageBackend`, `PartitionedStorageBackend`, `PartitionPathBuilder`  
 **Tests**: `tests/test_partition_migration_service.py`, `tests/test_partition_migrate_cli.py`
+
+Status: Implemented and validated (2025-10-19). Migration CLI supports plan persistence, parity verification, and per-venue toggles; operators should consult release notes before running in production.
 
 ## Data Flow
 

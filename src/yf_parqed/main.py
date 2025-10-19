@@ -8,6 +8,7 @@ from typing_extensions import Annotated
 from typing import Tuple
 
 from yf_parqed.primary_class import YFParqed, all_intervals
+from .run_lock import GlobalRunLock
 
 
 # remove the defult stderr log sink in loguru and add a new one with the log
@@ -17,6 +18,47 @@ logger.add(sys.stderr, level="INFO")
 
 app = typer.Typer()
 yf_parqed = YFParqed(my_path=Path(os.getcwd()))
+
+# run-lock operator subcommands
+run_lock_app = typer.Typer()
+app.add_typer(
+    run_lock_app, name="run-lock", help="Operator commands for the global run lock"
+)
+
+
+@run_lock_app.command("status")
+def run_lock_status(
+    base_dir: Annotated[Path, typer.Option(help="Working directory")] = Path.cwd(),
+):
+    """Show owner info for the global run lock (if present)."""
+    lock = GlobalRunLock(base_dir)
+    info = lock.owner_info()
+    if not info:
+        typer.echo("No run lock present.")
+        raise typer.Exit(code=0)
+    typer.echo(str(info))
+
+
+@run_lock_app.command("cleanup")
+def run_lock_cleanup(
+    base_dir: Annotated[Path, typer.Option(help="Working directory")] = Path.cwd(),
+    non_interactive: Annotated[
+        bool, typer.Option(help="Run in non-interactive mode")
+    ] = False,
+):
+    """Run cleanup of leftover tmp partition files.
+
+    In interactive mode the operator will be prompted to confirm.
+    """
+    lock = GlobalRunLock(base_dir)
+    if not non_interactive:
+        confirm = typer.confirm(
+            "This will scan and recover or remove leftover tmp files. Continue?"
+        )
+        if not confirm:
+            raise typer.Exit(code=1)
+    processed = lock.cleanup_tmp_files()
+    typer.echo(f"Processed {processed} tmp files")
 
 
 # def download_file(url: str, local_path: Path):
@@ -113,6 +155,56 @@ def update_data(
     global yf_parqed
 
     logger.debug("Updating stock data.")
+    # Acquire a global run lock to avoid overlapping updater runs
+    # Be defensive: tests may replace `yf_parqed` with a stub that lacks `my_path`.
+    # Prefer real object's my_path, otherwise accept test stub's work_path, then config, then cwd
+    base_for_lock = None
+    if hasattr(yf_parqed, "my_path"):
+        base_for_lock = getattr(yf_parqed, "my_path")
+    elif hasattr(yf_parqed, "work_path"):
+        base_for_lock = getattr(yf_parqed, "work_path")
+    else:
+        cfg = getattr(yf_parqed, "config", None)
+        if cfg is not None and getattr(cfg, "base_path", None) is not None:
+            base_for_lock = cfg.base_path
+        else:
+            base_for_lock = Path.cwd()
+    lock = GlobalRunLock(base_for_lock)
+    if not lock.try_acquire():
+        owner = lock.owner_info() or {}
+        msg = (
+            "Another update or migration run appears to be in progress. "
+            f"Owner: {owner}"
+        )
+        logger.error(msg)
+        # If running non-interactively (cron), attempt automatic recovery
+        if non_interactive:
+            # First attempt to recover leftover tmp files before aborting
+            processed = lock.cleanup_tmp_files()
+            logger.info("Recovered %d tmp files", processed)
+            try:
+                lock.release()
+                logger.info("Removed stale lock; continuing.")
+            except Exception:
+                logger.warning("Could not remove lock; aborting.")
+                raise typer.Exit(code=1)
+        else:
+            # Prompt operator to cleanup tmp files if running interactively
+            should = typer.confirm(
+                "Lock detected. Do you want to attempt to recover leftover tmp files?"
+            )
+            if should:
+                processed = lock.cleanup_tmp_files()
+                logger.info("Recovered %d tmp files", processed)
+                # Try removing the lock if it was stale
+                try:
+                    lock.release()
+                    logger.info("Removed stale lock; continuing.")
+                except Exception:
+                    logger.warning("Could not remove lock; aborting.")
+                    raise typer.Exit(code=1)
+            else:
+                raise typer.Exit(code=1)
     logger.debug(f"Supplied start and end dates:{[start_date, end_date]}")
     logger.debug(
         f"Supplied save-not-founds and non-interactive flags: {[save_not_founds, non_interactive]}"
@@ -136,6 +228,11 @@ def update_data(
             end_date=end_date,
         )
     logger.info("All tickers were processed.")
+    # release global lock
+    try:
+        lock.release()
+    except Exception:
+        logger.debug("Failed to release global run lock", exc_info=True)
     if yf_parqed.new_not_found:
         logger.info("Some tickers did not return any data.")
         if non_interactive:

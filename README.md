@@ -16,6 +16,8 @@ In addition, if any ticker returns no data or you are no longer interested in sy
 
 For large datasets you can switch from the legacy `stocks_<interval>/<ticker>.parquet` layout to Hive-style partitions under `data/<market>/<source>/stocks_<interval>/ticker=<TICKER>/...`. The migration flow is opt-in and maintains backward compatibility until you complete it.
 
+Note: Partition-Aware storage is implemented and shipped (2025-10-19). See `docs/adr/2025-10-12-partition-aware-storage.md` and `docs/release-notes.md` for rollout and operational guidance.
+
 1. Move your existing legacy folders **under** `data/legacy/` (for example `mv stocks_1d data/legacy/`). The migration CLI refuses to run until the legacy tree lives there.
 2. Create a migration plan with the Typer helper:
 

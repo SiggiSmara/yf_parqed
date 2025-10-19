@@ -120,6 +120,7 @@ The refactoring extracted these services (see ARCHITECTURE.md for detailed API r
 - **Clean architecture** — single responsibility, dependency injection, testability
 - **Comprehensive coverage** — unit, integration, and end-to-end tests
 - **Documentation** — `ARCHITECTURE.md` added with diagrams and service responsibilities
+- **Partition-aware storage** - implemented and validated (2025-10-19) — monthly Hive-style partitions, atomic same-dir temp→fsync→replace writes, global run-lock and migration CLI available; see `docs/adr/2025-10-12-partition-aware-storage.md` and `docs/release-notes.md` for details.
 
 ## Recently Completed (Other Enhancements)
 

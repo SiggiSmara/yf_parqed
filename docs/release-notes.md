@@ -22,6 +22,15 @@ This document records user-facing changes by release. Each section should captur
 
 ---
 
+## 2025-10-19 — Version 0.3.1 (Partition-Aware Storage Rollout)
+
+- Completed the Partition-Aware Storage ADR and shipped operational safeguards: monthly Hive-style partitions, same-dir temp writes with fsync + atomic replace, a mkdir-based global run-lock with operator cleanup tooling, and a migration CLI that verifies parity before toggling the runtime to partitioned mode. Full test suite passed locally (177 tests).
+
+  Notes:
+
+  - The migration CLI supports plan persistence, per-venue verification, and `--non-interactive` automation-friendly runs. Operators should run the `partition-migrate status` command prior to any destructive actions and may use `partition-toggle` to control rollout scope.
+
+
 ## 2025-10-12 — Documentation Restructure
 
 - Added `docs/roadmap.md` and feature-specific ADRs to track partition-aware storage and DuckDB analytics enhancements.
