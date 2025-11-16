@@ -1,6 +1,6 @@
 [project]
 name = "yf-parqed"
-version = "0.3.0"
+version = "0.3.1"
 description = "Persistent storage of yfinance ticker data in parquet"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -10,16 +10,19 @@ dependencies = [
     "pandas>=2.2.3",
     "pyarrow>=18.1.0",
     "rich>=13.0.0",
+    "scipy>=1.16.3",
     "typer>=0.15.1",
     "yfinance>=0.2.66",
 ]
 
 [project.scripts]
-yf-parqed = "yf_parqed.main:app"
+yf-parqed = "yf_parqed.yfinance_cli:app"
+xetra-parqed = "yf_parqed.xetra_cli:app"
 yf-parqed-migrate = "yf_parqed.tools.partition_migrate:app"
 
 [project.entry-points."pipx.run"]
-yf-parqed = "yf_parqed.main:app"
+yf-parqed = "yf_parqed.yfinance_cli:app"
+xetra-parqed = "yf_parqed.xetra_cli:app"
 yf-parqed-migrate = "yf_parqed.tools.partition_migrate:app"
 
 [build-system]
@@ -29,6 +32,7 @@ build-backend = "hatchling.build"
 [dependency-groups]
 dev = [
     "pre-commit>=4.0.1",
+    "pytest-cov>=6.2.1",
     "pytest>=8.4.1",
     "ruff>=0.14.0",
 ]
@@ -52,4 +56,5 @@ addopts = [
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "integration: marks tests as integration tests",
+    "live: marks tests that make real API calls (run with '-m live')",
 ]

@@ -39,6 +39,8 @@ class PartitionMigrationService:
         created_by: str = "yf_parqed-cli",
         now_provider: Callable[[], str] | None = None,
         compression: str | None = "gzip",
+        fsync: bool = True,
+        row_group_size: int | None = None,
     ) -> None:
         self._config_service = config_service
         self._created_by = created_by
@@ -56,6 +58,8 @@ class PartitionMigrationService:
                 root=self._config_service.base_path / "data"
             ),
             compression=compression,
+            fsync=fsync,
+            row_group_size=row_group_size,
         )
 
     def _load_plan(self) -> MigrationPlan:
@@ -197,6 +201,7 @@ class PartitionMigrationService:
         *,
         delete_legacy: bool = False,
         max_tickers: int | None = None,
+        overwrite_existing: bool = False,
     ) -> dict[str, object]:
         if max_tickers is not None and max_tickers <= 0:
             raise ValueError("max_tickers must be a positive integer when provided")
@@ -211,6 +216,15 @@ class PartitionMigrationService:
 
         if not legacy_path.exists():
             raise FileNotFoundError(f"Legacy path does not exist: {legacy_path}")
+
+        # Handle destructive overwrite mode: delete the existing partition folder
+        if overwrite_existing and partition_root.exists():
+            logger.warning(
+                "--overwrite-existing specified: deleting existing partition folder {path}",
+                path=str(partition_root),
+            )
+            # safe delete of the directory tree
+            shutil.rmtree(partition_root)
 
         legacy_resolved = legacy_root.resolve()
         partition_resolved = partition_root.resolve()
@@ -305,6 +319,12 @@ class PartitionMigrationService:
             phase_start = perf_counter()
             legacy_df = self._legacy_backend.read(legacy_request)
             legacy_read_elapsed = perf_counter() - phase_start
+            # log legacy read size for diagnostics
+            try:
+                legacy_rows = int(len(legacy_df))
+            except Exception:
+                legacy_rows = 0
+            # legacy_read diagnostics suppressed to reduce log noise; keep per-ticker summary later
             phase_times["legacy_read"] = legacy_read_elapsed
             phase_totals["legacy_read"] += legacy_read_elapsed
             partition_request = StorageRequest(
@@ -315,9 +335,18 @@ class PartitionMigrationService:
                 source=venue.source,
                 dataset=DATASET_NAME,
             )
-            phase_start = perf_counter()
-            existing_partition = self._partition_backend.read(partition_request)
-            partition_read_elapsed = perf_counter() - phase_start
+            # Optionally skip reading existing partitions in overwrite mode to save I/O
+            if overwrite_existing:
+                existing_partition = self._empty_price_frame()
+                partition_read_elapsed = 0.0
+                # intentionally not recording partition read row counts in overwrite mode
+            else:
+                phase_start = perf_counter()
+                existing_partition = self._partition_backend.read(partition_request)
+                partition_read_elapsed = perf_counter() - phase_start
+                # log partition read stats
+                # intentionally not recording per-month partition row counts here
+            # partition_read diagnostics suppressed to reduce log noise; keep per-ticker summary later
             phase_times["partition_read"] = partition_read_elapsed
             phase_totals["partition_read"] += partition_read_elapsed
             phase_start = perf_counter()
@@ -327,6 +356,9 @@ class PartitionMigrationService:
                 existing_data=existing_partition,
             )
             partition_write_elapsed = perf_counter() - phase_start
+            # after write, report combined size and rows
+            # intentionally not recording combined row counts here
+            # partition_write diagnostics suppressed to reduce log noise; keep per-ticker summary later
             phase_times["partition_write"] = partition_write_elapsed
             phase_totals["partition_write"] += partition_write_elapsed
 
@@ -349,6 +381,7 @@ class PartitionMigrationService:
                     f"{ticker}: legacy={legacy_checksum}, partition={partition_checksum}"
                 )
             checksum_elapsed = perf_counter() - phase_start
+            # checksum diagnostics suppressed to reduce log noise; keep per-ticker summary later
             phase_times["checksum"] = checksum_elapsed
             phase_totals["checksum"] += checksum_elapsed
 
@@ -561,7 +594,7 @@ class PartitionMigrationService:
 
         if not can_proceed:
             needed = required_partition_bytes - partition_usage.free
-            message = "Partition root lacks " f"{needed} additional bytes of free space"
+            message = f"Partition root lacks {needed} additional bytes of free space"
             limitations.append(message)
 
         potential_with_delete = partition_usage.free + (
@@ -595,6 +628,79 @@ class PartitionMigrationService:
             "can_proceed": can_proceed,
             "limitations": limitations,
             "suggest_delete_legacy": suggest_delete,
+        }
+
+    def verify_interval(
+        self,
+        venue_id: str,
+        interval: str,
+        *,
+        max_tickers: int | None = None,
+    ) -> dict[str, object]:
+        """Verify that legacy data and partitioned data match for the given interval.
+
+        This reads the legacy ticker files and the partitioned storage for each ticker
+        and compares row counts and checksums. It does not modify data.
+        """
+        plan = self._load_plan()
+        base_path = self._config_service.base_path
+        venue = plan.get_venue(venue_id)
+        interval_state = venue.intervals[interval]
+        legacy_root = plan.resolve_legacy_root(base_path)
+        legacy_path = interval_state.resolve_legacy_path(base_path)
+        _ = interval_state.resolve_partition_path(base_path)
+
+        if not legacy_path.exists():
+            raise FileNotFoundError(f"Legacy path does not exist: {legacy_path}")
+
+        ticker_files_all = sorted(legacy_path.glob("*.parquet"))
+        if max_tickers is not None:
+            ticker_files = ticker_files_all[:max_tickers]
+        else:
+            ticker_files = ticker_files_all
+
+        checked = 0
+        mismatches: list[str] = []
+        for ticker_file in ticker_files:
+            ticker = ticker_file.stem
+            legacy_request = StorageRequest(
+                root=legacy_root, interval=interval, ticker=ticker
+            )
+            legacy_df = self._legacy_backend.read(legacy_request)
+
+            partition_request = StorageRequest(
+                root=base_path / "data",
+                interval=interval,
+                ticker=ticker,
+                market=venue.market,
+                source=venue.source,
+                dataset=DATASET_NAME,
+            )
+            partition_df = self._partition_backend.read(partition_request)
+
+            legacy_rows = int(len(legacy_df))
+            partition_rows = int(len(partition_df))
+            if legacy_rows != partition_rows:
+                mismatches.append(
+                    f"{ticker}: row_count legacy={legacy_rows} partition={partition_rows}"
+                )
+                checked += 1
+                continue
+
+            legacy_checksum = self._frame_checksum(legacy_df)
+            partition_checksum = self._frame_checksum(partition_df)
+            if legacy_checksum != partition_checksum:
+                mismatches.append(
+                    f"{ticker}: checksum mismatch legacy={legacy_checksum} partition={partition_checksum}"
+                )
+
+            checked += 1
+
+        return {
+            "checked": checked,
+            "mismatches": mismatches,
+            "available": len(ticker_files_all),
+            "max_tickers": max_tickers,
         }
 
     @staticmethod

@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 from typer.testing import CliRunner
 
-from yf_parqed.main import app as cli_app
+from yf_parqed.yfinance_cli import app as cli_app
 from yf_parqed.tools.partition_migrate import app as migrate_app
 from yf_parqed.run_lock import GlobalRunLock
 

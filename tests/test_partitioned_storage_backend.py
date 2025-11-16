@@ -222,7 +222,35 @@ def test_read_removes_corrupt_partition_and_fails(backend, tmp_path, empty_frame
     )
     corrupt_path.write_text("not parquet")
 
-    with pytest.raises(RuntimeError):
+    with pytest.raises(RuntimeError, match="Failed to read.*partition"):
         backend.read(request)
 
+    # Corrupt file should be DELETED (truly unreadable)
     assert not corrupt_path.exists()
+
+
+def test_read_preserves_schema_mismatch_partition(backend, tmp_path, empty_frame):
+    """Test that partitions with schema issues are preserved, not deleted."""
+    request = make_request(tmp_path)
+    df = make_sample_df(["2024-01-05"])
+    backend.save(request, df, empty_frame())
+
+    # Create a partition file with missing columns (schema mismatch)
+    bad_schema_path = (
+        tmp_path / "us/yahoo/stocks_1d/ticker=AAPL/year=2024/month=01/data.parquet"
+    )
+    bad_df = pd.DataFrame(
+        {
+            "stock": ["AAPL"],
+            "date": [pd.Timestamp("2024-01-05")],
+            "open": [100.0],
+            # Missing required columns: high, low, close, volume, sequence
+        }
+    )
+    bad_df.to_parquet(bad_schema_path, index=False)
+
+    with pytest.raises(RuntimeError, match="Failed to read.*partition"):
+        backend.read(request)
+
+    # File with schema mismatch should be PRESERVED for inspection
+    assert bad_schema_path.exists()

@@ -7,6 +7,7 @@ intervals.json
 intervals.json.*
 migration_plan.json
 stocks_*/
+data/*
 backup_ticker_files/*
 
 # Byte-compiled / optimized / DLL files

@@ -8,13 +8,83 @@ import time
 
 import pandas as pd
 from loguru import logger
+import pyarrow as pa
+import pyarrow.parquet as pq
 
 from .partition_path_builder import PartitionPathBuilder
+from .parquet_recovery import ParquetRecoveryError, safe_read_parquet
 from .storage_backend import StorageInterface, StorageRequest
 
 
 class PartitionedStorageBackend(StorageInterface):
     """Partition-aware parquet storage backend."""
+
+    def save_xetra_trades(
+        self,
+        trades_df: pd.DataFrame,
+        venue: str,
+        trade_date,
+        market: str = "xetra",
+        source: str = "delayed",
+    ):
+        """
+        Save raw Xetra trades in venue-first partitioned Parquet files.
+
+        If file already exists, merges new trades with existing data.
+        This supports incremental storage where files are added progressively.
+
+        Path: {root}/{market}/{source}/trades/venue=VENUE/year=YYYY/month=MM/day=DD/trades.parquet
+        Atomic write: temp file, fsync, replace.
+        """
+        import shutil
+        from datetime import date as dt_date
+
+        if isinstance(trade_date, str):
+            trade_date = pd.to_datetime(trade_date).date()
+        elif isinstance(trade_date, pd.Timestamp):
+            trade_date = trade_date.date()
+        elif not isinstance(trade_date, dt_date):
+            raise ValueError("trade_date must be str, pd.Timestamp, or date")
+        year = trade_date.year
+        month = f"{trade_date.month:02d}"
+        day = f"{trade_date.day:02d}"
+        base_dir = (
+            self._path_builder._root
+            / market
+            / source
+            / "trades"
+            / f"venue={venue}"
+            / f"year={year}"
+            / f"month={month}"
+            / f"day={day}"
+        )
+        base_dir.mkdir(parents=True, exist_ok=True)
+        out_path = base_dir / "trades.parquet"
+
+        # Merge with existing data if file exists
+        if out_path.exists():
+            try:
+                existing_df = pd.read_parquet(out_path)
+                trades_df = pd.concat([existing_df, trades_df], ignore_index=True)
+                logger.debug(f"Merged {len(trades_df)} trades with existing data")
+            except Exception as e:
+                logger.warning(
+                    f"Failed to read existing file for merge: {e}, overwriting"
+                )
+
+        temp_path = out_path.with_suffix(".tmp")
+        try:
+            table = pa.Table.from_pandas(trades_df)
+            pq.write_table(table, str(temp_path))
+            with open(temp_path, "rb") as fd:
+                os.fsync(fd.fileno())
+            shutil.move(str(temp_path), str(out_path))
+            logger.info(f"Saved Xetra trades: {out_path} ({len(trades_df)} rows)")
+        except Exception as e:
+            logger.warning(f"Failed to save trades for {venue} {trade_date}: {e}")
+            if temp_path.exists():
+                temp_path.unlink()
+            raise
 
     def __init__(
         self,
@@ -24,12 +94,22 @@ class PartitionedStorageBackend(StorageInterface):
         column_provider: Callable[[], list[str]],
         path_builder: PartitionPathBuilder,
         compression: str | None = "gzip",
+        fsync: bool = True,
+        row_group_size: int | None = None,
     ) -> None:
         self._empty_frame_factory = empty_frame_factory
         self._normalizer = normalizer
         self._column_provider = column_provider
         self._path_builder = path_builder
         self._compression = compression
+        self._fsync = bool(fsync)
+        # pyarrow expects a string compression name; map None -> 'NONE'
+        self._pyarrow_compression = (
+            self._compression if self._compression is not None else "NONE"
+        )
+        self._row_group_size = (
+            int(row_group_size) if row_group_size is not None else None
+        )
 
     def save(
         self,
@@ -76,18 +156,32 @@ class PartitionedStorageBackend(StorageInterface):
 
         frames: list[pd.DataFrame] = []
         required = set(self._column_provider())
+        failed_files: list[tuple[Path, str]] = []
+
         for path in partition_files:
             try:
-                df = pd.read_parquet(path)
-            except (ValueError, FileNotFoundError, OSError) as exc:
-                self._safe_remove(path)
-                raise RuntimeError(f"Failed to read partition file: {path}") from exc
+                df = safe_read_parquet(
+                    path=path,
+                    required_columns=required,
+                    normalizer=self._normalizer,
+                    empty_frame_factory=self._empty_frame_factory,
+                )
+                frames.append(df)
+            except ParquetRecoveryError as exc:
+                # Recovery failed - file either deleted (if corrupt) or preserved (if schema issue)
+                # Log the error and track the failure
+                logger.error(f"Failed to read partition {path}: {exc}")
+                failed_files.append((path, str(exc)))
 
-            if df.empty or not required.issubset(df.columns):
-                self._safe_remove(path)
-                raise RuntimeError(f"Partition file missing required columns: {path}")
-
-            frames.append(df)
+        # If we failed to read any partition files, raise an error with details
+        if failed_files:
+            error_summary = "\n".join(
+                f"  - {path.relative_to(ticker_root)}: {reason}"
+                for path, reason in failed_files
+            )
+            raise RuntimeError(
+                f"Failed to read {len(failed_files)} partition file(s) for {request.ticker}:\n{error_summary}"
+            )
 
         if not frames:
             return self._empty_frame_factory()
@@ -149,20 +243,43 @@ class PartitionedStorageBackend(StorageInterface):
             # atomic write: write to same-dir temp file, fsync, then os.replace
             suffix = uuid.uuid4().hex
             temp_name = (
-                f"data.parquet.tmp-{os.getpid()}-{int(time.time()*1000)}-{suffix}"
+                f"data.parquet.tmp-{os.getpid()}-{int(time.time() * 1000)}-{suffix}"
             )
             temp_path = path.with_name(temp_name)
             try:
-                partition_df.to_parquet(
-                    temp_path, index=False, compression=self._compression
-                )
+                # write temp parquet for this month partition and time the write
+                write_start = time.perf_counter()
+                # If a row_group_size is provided, use pyarrow.write_table for finer control
+                if self._row_group_size is not None:
+                    try:
+                        table = pa.Table.from_pandas(partition_df, preserve_index=False)
+                        pq.write_table(
+                            table,
+                            str(temp_path),
+                            compression=self._pyarrow_compression,
+                            row_group_size=self._row_group_size,
+                        )
+                    except Exception:
+                        # Fallback to pandas method if pyarrow write fails for any reason
+                        partition_df.to_parquet(
+                            temp_path, index=False, compression=self._compression
+                        )
+                else:
+                    partition_df.to_parquet(
+                        temp_path, index=False, compression=self._compression
+                    )
+                _ = time.perf_counter() - write_start
+                # per-month temp-file writes are cheap and verbose; omit detailed logs
+                # (higher-level per-ticker timings are recorded by the migration service)
                 # ensure data is flushed to disk
-                try:
-                    with open(temp_path, "rb") as fd:
-                        os.fsync(fd.fileno())
-                except OSError:
-                    # best-effort: if fsync fails, proceed to replace anyway
-                    logger.debug("fsync failed for %s", str(temp_path))
+                # optional fsync: expensive but ensures data is persisted before rename
+                if self._fsync:
+                    try:
+                        with open(temp_path, "rb") as fd:
+                            os.fsync(fd.fileno())
+                    except OSError:
+                        # best-effort: if fsync fails, proceed to replace anyway
+                        logger.debug("fsync failed for {path}", path=str(temp_path))
 
                 # atomic replace
                 try:
@@ -173,13 +290,15 @@ class PartitionedStorageBackend(StorageInterface):
                     try:
                         temp_path.unlink(missing_ok=True)
                     except Exception:
-                        logger.debug("Failed to remove temp file %s", str(temp_path))
+                        logger.debug(
+                            "Failed to remove temp file {path}", path=str(temp_path)
+                        )
                     raise
             except Exception:
                 logger.exception(
-                    "Failed to write partition file for %s month %s",
-                    request.ticker,
-                    month_ts,
+                    "Failed to write partition file for {ticker} month {month}",
+                    ticker=request.ticker,
+                    month=str(month_ts),
                 )
                 raise
 
@@ -214,10 +333,3 @@ class PartitionedStorageBackend(StorageInterface):
             raise ValueError("No ticker data present for partitioned save")
         if tickers != {request.ticker}:
             raise ValueError("Partitioned storage only supports single-ticker writes")
-
-    def _safe_remove(self, path: Path) -> None:
-        try:
-            path.unlink(missing_ok=True)
-        except TypeError:
-            if path.exists():
-                path.unlink()

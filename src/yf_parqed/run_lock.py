@@ -44,7 +44,7 @@ class GlobalRunLock:
         try:
             self.owner_file.write_text(json.dumps(meta))
         except Exception as exc:  # best-effort
-            logger.debug("Failed to write lock owner metadata: %s", exc)
+            logger.debug("Failed to write lock owner metadata: {exc}", exc=exc)
         return True
 
     def owner_info(self) -> dict[str, Any] | None:
@@ -67,7 +67,9 @@ class GlobalRunLock:
                     self.lock_dir.rmdir()
                 except Exception:
                     # if directory isn't empty or rmdir fails, leave it for operator
-                    logger.debug("Unable to remove lock dir %s", str(self.lock_dir))
+                    logger.debug(
+                        "Unable to remove lock dir {path}", path=str(self.lock_dir)
+                    )
         except Exception:
             logger.debug("Exception while releasing lock", exc_info=True)
 
@@ -93,14 +95,20 @@ class GlobalRunLock:
                     try:
                         tmp.unlink()
                     except Exception:
-                        logger.debug("Failed to remove tmp file %s", str(tmp))
+                        logger.debug("Failed to remove tmp file {path}", path=str(tmp))
                 else:
                     try:
                         os.replace(str(tmp), str(final))
                     except Exception as exc:
-                        logger.warning("Failed to recover tmp file %s: %s", tmp, exc)
+                        logger.warning(
+                            "Failed to recover tmp file {path}: {err}",
+                            path=str(tmp),
+                            err=exc,
+                        )
                 processed += 1
             except Exception:
-                logger.debug("Error handling tmp file %s", tmp, exc_info=True)
+                logger.debug(
+                    "Error handling tmp file {path}", path=str(tmp), exc_info=True
+                )
 
         return processed

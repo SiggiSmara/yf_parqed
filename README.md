@@ -37,6 +37,53 @@ Note: Partition-Aware storage is implemented and shipped (2025-10-19). See `docs
 
 Legacy-only workflows continue to function. You can migrate venues one at a time and mix legacy + partitioned sources in the same workspace.
 
+## Migration CLI (fast mode and flags)
+
+The repository includes a Typer-based CLI helper `yf-parqed-migrate` to create a migration plan and move legacy per-ticker parquet files into the partitioned, Hive-style layout. During development we added several operational levers to tune performance vs durability. This section summarizes the most-used options and the safe defaults.
+
+Key flags
+
+- `--fast` — A convenience preset that enables faster migration defaults: `--overwrite-existing`, `--no-fsync`, and `--row-group-size=65536`. Use this for large batch migrations when you can tolerate re-checking data with `verify` afterwards. This flag still keeps checksum verification enabled.
+
+- `--overwrite-existing` — Destructive. Deletes the target interval partition folder before writing. Use when you want a clean copy and don't need to preserve existing partition files.
+
+- `--no-fsync` — Disables calling `fsync()` on temporary partition files before the atomic rename. This speeds up writes but reduces immediate durability: data may still be in OS buffers until the kernel flushes to disk.
+
+- `--row-group-size <N>` — When provided, uses pyarrow to write parquet files with the specified row group size. Large values (e.g. 65536) can increase write throughput and reduce CPU overhead in many cases.
+
+- `--compression <gzip|snappy|none>` — Optional compression codec for partition parquet files. The special value `none` disables compression. The `--fast` preset defaults to gzip unless you explicitly pass a codec.
+
+Verification
+
+- `yf-parqed-migrate verify <venue> <interval>` — Compares legacy vs partitioned data for each ticker using row counts and SHA256 checksums. Run this after using `--fast` if you disabled fsync or overwrote existing data.
+
+Safety notes
+
+- `--fast` bundles settings that trade durability for speed. It intentionally leaves checksum verification enabled; however, combining `--fast` with `--overwrite-existing` is destructive. Always run `verify` after a large or destructive migration when using `--fast`.
+
+- `--no-fsync` improves throughput but increases risk during power-loss or kernel crashes. Use on fast SSDs or in environments with reliable power if possible.
+
+- The migration CLI will refuse to run unless your legacy files live under `data/legacy/` to avoid accidental cross-directory deletes.
+
+Examples
+
+- Create a plan and run a safe (default) migration:
+
+```bash
+yf-parqed-migrate init --venue us:yahoo --interval 1m --interval 1h
+yf-parqed-migrate migrate --base-dir /path/to/workspace
+```
+
+- Fast migration (destructive overwrite, faster writes):
+
+```bash
+yf-parqed-migrate migrate --base-dir /path/to/workspace --fast --max-tickers 500
+# then verify
+yf-parqed-migrate verify us:yahoo 1m --base-dir /path/to/workspace --max-tickers 500
+```
+
+This README entry documents the operational knobs added to the migration flow. If you prefer the `--compression` option removed from the CLI entirely, I can remove it and update the tests accordingly; currently both the preset and explicit `--compression` stay supported for backward compatibility.
+
 ## How to install
 
 At some point I might publish this to PyPI but until then simply clone the repo and use pip or your favorite package management tool to install the package: `pip install .`

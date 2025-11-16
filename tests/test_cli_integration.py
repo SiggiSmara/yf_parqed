@@ -7,7 +7,7 @@ import pandas as pd
 import pytest
 from typer.testing import CliRunner
 
-from yf_parqed import main
+from yf_parqed import yfinance_cli as main
 from yf_parqed.primary_class import YFParqed
 
 

@@ -1,0 +1,890 @@
+2025-11-04 20:25:32.102 | INFO     | yf_parqed.xetra_service:fetch_and_store_missing_trades:277 - Checking for missing trades: DETR
+2025-11-04 20:25:32.277 | INFO     | yf_parqed.xetra_fetcher:list_available_files:281 - Found 2473 posttrade files for DETR on 2025-11-04
+2025-11-04 20:25:32.303 | INFO     | yf_parqed.xetra_fetcher:list_available_files:292 - Filtered to 1142 files within trading hours
+2025-11-04 20:25:32.406 | INFO     | yf_parqed.xetra_fetcher:list_available_files:281 - Found 2473 posttrade files for DETR on 2025-11-03
+2025-11-04 20:25:32.430 | INFO     | yf_parqed.xetra_fetcher:list_available_files:292 - Filtered to 1142 files within trading hours
+2025-11-04 20:25:32.431 | INFO     | yf_parqed.xetra_service:get_missing_dates:131 - Missing: DETR 2025-11-04 (not stored locally)
+2025-11-04 20:25:32.431 | INFO     | yf_parqed.xetra_service:get_missing_dates:131 - Missing: DETR 2025-11-03 (not stored locally)
+2025-11-04 20:25:32.431 | INFO     | yf_parqed.xetra_service:fetch_and_store_missing_trades:291 - Found 2 missing dates for DETR: ['2025-11-04', '2025-11-03']
+2025-11-04 20:25:32.431 | INFO     | yf_parqed.xetra_service:fetch_and_store_missing_trades:301 - Fetching DETR trades for 2025-11-04
+2025-11-04 20:25:32.499 | INFO     | yf_parqed.xetra_fetcher:list_available_files:281 - Found 2473 posttrade files for DETR on 2025-11-04
+2025-11-04 20:25:32.525 | INFO     | yf_parqed.xetra_fetcher:list_available_files:292 - Filtered to 1142 files within trading hours
+2025-11-04 20:25:32.525 | INFO     | yf_parqed.xetra_service:fetch_all_trades_for_date:221 - Found 1142 files for DETR on 2025-11-04
+2025-11-04 20:25:32.525 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T17_00.json.gz for DETR on 2025-11-04
+2025-11-04 20:25:32.773 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T17_00.json.gz: 20 bytes
+2025-11-04 20:25:32.774 | WARNING  | yf_parqed.xetra_parser:parse:92 - Parsed empty trade array from JSON
+2025-11-04 20:25:32.778 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 0 trades from DETR-posttrade-2025-11-04T17_00.json.gz (0 unique ISINs)
+2025-11-04 20:25:32.778 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T16_59.json.gz for DETR on 2025-11-04
+2025-11-04 20:25:34.217 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T16_59.json.gz: 20 bytes
+2025-11-04 20:25:34.217 | WARNING  | yf_parqed.xetra_parser:parse:92 - Parsed empty trade array from JSON
+2025-11-04 20:25:34.220 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 0 trades from DETR-posttrade-2025-11-04T16_59.json.gz (0 unique ISINs)
+2025-11-04 20:25:34.220 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T16_58.json.gz for DETR on 2025-11-04
+2025-11-04 20:25:35.686 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T16_58.json.gz: 20 bytes
+2025-11-04 20:25:35.686 | WARNING  | yf_parqed.xetra_parser:parse:92 - Parsed empty trade array from JSON
+2025-11-04 20:25:35.689 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 0 trades from DETR-posttrade-2025-11-04T16_58.json.gz (0 unique ISINs)
+2025-11-04 20:25:35.689 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T16_57.json.gz for DETR on 2025-11-04
+2025-11-04 20:25:37.243 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T16_57.json.gz: 20 bytes
+2025-11-04 20:25:37.243 | WARNING  | yf_parqed.xetra_parser:parse:92 - Parsed empty trade array from JSON
+2025-11-04 20:25:37.246 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 0 trades from DETR-posttrade-2025-11-04T16_57.json.gz (0 unique ISINs)
+2025-11-04 20:25:37.246 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T16_56.json.gz for DETR on 2025-11-04
+2025-11-04 20:25:38.724 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T16_56.json.gz: 20 bytes
+2025-11-04 20:25:38.724 | WARNING  | yf_parqed.xetra_parser:parse:92 - Parsed empty trade array from JSON
+2025-11-04 20:25:38.727 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 0 trades from DETR-posttrade-2025-11-04T16_56.json.gz (0 unique ISINs)
+2025-11-04 20:25:38.727 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T16_55.json.gz for DETR on 2025-11-04
+2025-11-04 20:25:40.300 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T16_55.json.gz: 20 bytes
+2025-11-04 20:25:40.300 | WARNING  | yf_parqed.xetra_parser:parse:92 - Parsed empty trade array from JSON
+2025-11-04 20:25:40.302 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 0 trades from DETR-posttrade-2025-11-04T16_55.json.gz (0 unique ISINs)
+2025-11-04 20:25:40.303 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T16_54.json.gz for DETR on 2025-11-04
+2025-11-04 20:25:41.727 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T16_54.json.gz: 20 bytes
+2025-11-04 20:25:41.728 | WARNING  | yf_parqed.xetra_parser:parse:92 - Parsed empty trade array from JSON
+2025-11-04 20:25:41.731 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 0 trades from DETR-posttrade-2025-11-04T16_54.json.gz (0 unique ISINs)
+2025-11-04 20:25:41.731 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T16_53.json.gz for DETR on 2025-11-04
+2025-11-04 20:25:43.275 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T16_53.json.gz: 20 bytes
+2025-11-04 20:25:43.275 | WARNING  | yf_parqed.xetra_parser:parse:92 - Parsed empty trade array from JSON
+2025-11-04 20:25:43.277 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 0 trades from DETR-posttrade-2025-11-04T16_53.json.gz (0 unique ISINs)
+2025-11-04 20:25:43.277 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T16_52.json.gz for DETR on 2025-11-04
+2025-11-04 20:25:44.695 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T16_52.json.gz: 20 bytes
+2025-11-04 20:25:44.695 | WARNING  | yf_parqed.xetra_parser:parse:92 - Parsed empty trade array from JSON
+2025-11-04 20:25:44.698 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 0 trades from DETR-posttrade-2025-11-04T16_52.json.gz (0 unique ISINs)
+2025-11-04 20:25:44.699 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T16_51.json.gz for DETR on 2025-11-04
+2025-11-04 20:25:46.209 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T16_51.json.gz: 20 bytes
+2025-11-04 20:25:46.209 | WARNING  | yf_parqed.xetra_parser:parse:92 - Parsed empty trade array from JSON
+2025-11-04 20:25:46.212 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 0 trades from DETR-posttrade-2025-11-04T16_51.json.gz (0 unique ISINs)
+2025-11-04 20:25:46.212 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T16_50.json.gz for DETR on 2025-11-04
+2025-11-04 20:25:47.750 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T16_50.json.gz: 20 bytes
+2025-11-04 20:25:47.750 | WARNING  | yf_parqed.xetra_parser:parse:92 - Parsed empty trade array from JSON
+2025-11-04 20:25:47.753 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 0 trades from DETR-posttrade-2025-11-04T16_50.json.gz (0 unique ISINs)
+2025-11-04 20:25:47.754 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T16_49.json.gz for DETR on 2025-11-04
+2025-11-04 20:25:49.220 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T16_49.json.gz: 20 bytes
+2025-11-04 20:25:49.220 | WARNING  | yf_parqed.xetra_parser:parse:92 - Parsed empty trade array from JSON
+2025-11-04 20:25:49.223 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 0 trades from DETR-posttrade-2025-11-04T16_49.json.gz (0 unique ISINs)
+2025-11-04 20:25:49.223 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T16_48.json.gz for DETR on 2025-11-04
+2025-11-04 20:25:50.783 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T16_48.json.gz: 20 bytes
+2025-11-04 20:25:50.783 | WARNING  | yf_parqed.xetra_parser:parse:92 - Parsed empty trade array from JSON
+2025-11-04 20:25:50.785 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 0 trades from DETR-posttrade-2025-11-04T16_48.json.gz (0 unique ISINs)
+2025-11-04 20:25:50.786 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T16_47.json.gz for DETR on 2025-11-04
+2025-11-04 20:25:52.224 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T16_47.json.gz: 20 bytes
+2025-11-04 20:25:52.224 | WARNING  | yf_parqed.xetra_parser:parse:92 - Parsed empty trade array from JSON
+2025-11-04 20:25:52.227 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 0 trades from DETR-posttrade-2025-11-04T16_47.json.gz (0 unique ISINs)
+2025-11-04 20:25:52.227 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T16_46.json.gz for DETR on 2025-11-04
+2025-11-04 20:25:53.726 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T16_46.json.gz: 20 bytes
+2025-11-04 20:25:53.726 | WARNING  | yf_parqed.xetra_parser:parse:92 - Parsed empty trade array from JSON
+2025-11-04 20:25:53.730 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 0 trades from DETR-posttrade-2025-11-04T16_46.json.gz (0 unique ISINs)
+2025-11-04 20:25:53.730 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T16_45.json.gz for DETR on 2025-11-04
+2025-11-04 20:25:55.217 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T16_45.json.gz: 20 bytes
+2025-11-04 20:25:55.218 | WARNING  | yf_parqed.xetra_parser:parse:92 - Parsed empty trade array from JSON
+2025-11-04 20:25:55.220 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 0 trades from DETR-posttrade-2025-11-04T16_45.json.gz (0 unique ISINs)
+2025-11-04 20:25:55.220 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T16_44.json.gz for DETR on 2025-11-04
+2025-11-04 20:25:56.730 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T16_44.json.gz: 452 bytes
+2025-11-04 20:25:56.737 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 2 trades with 22 columns
+2025-11-04 20:25:56.737 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 2 trades from DETR-posttrade-2025-11-04T16_44.json.gz (2 unique ISINs)
+2025-11-04 20:25:56.737 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T16_43.json.gz for DETR on 2025-11-04
+2025-11-04 20:25:58.245 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T16_43.json.gz: 557 bytes
+2025-11-04 20:25:58.250 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 4 trades with 22 columns
+2025-11-04 20:25:58.250 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 4 trades from DETR-posttrade-2025-11-04T16_43.json.gz (3 unique ISINs)
+2025-11-04 20:25:58.250 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T16_42.json.gz for DETR on 2025-11-04
+2025-11-04 20:25:59.788 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T16_42.json.gz: 580 bytes
+2025-11-04 20:25:59.793 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 4 trades with 22 columns
+2025-11-04 20:25:59.793 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 4 trades from DETR-posttrade-2025-11-04T16_42.json.gz (4 unique ISINs)
+2025-11-04 20:25:59.793 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T16_41.json.gz for DETR on 2025-11-04
+2025-11-04 20:26:01.228 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T16_41.json.gz: 1,068 bytes
+2025-11-04 20:26:01.233 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 15 trades with 22 columns
+2025-11-04 20:26:01.233 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 15 trades from DETR-posttrade-2025-11-04T16_41.json.gz (8 unique ISINs)
+2025-11-04 20:26:01.233 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T16_40.json.gz for DETR on 2025-11-04
+2025-11-04 20:26:02.769 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T16_40.json.gz: 1,575 bytes
+2025-11-04 20:26:02.774 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 28 trades with 22 columns
+2025-11-04 20:26:02.775 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 28 trades from DETR-posttrade-2025-11-04T16_40.json.gz (8 unique ISINs)
+2025-11-04 20:26:02.775 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T16_39.json.gz for DETR on 2025-11-04
+2025-11-04 20:26:04.243 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T16_39.json.gz: 1,367 bytes
+2025-11-04 20:26:04.248 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 19 trades with 22 columns
+2025-11-04 20:26:04.248 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 19 trades from DETR-posttrade-2025-11-04T16_39.json.gz (14 unique ISINs)
+2025-11-04 20:26:04.248 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T16_38.json.gz for DETR on 2025-11-04
+2025-11-04 20:26:05.758 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T16_38.json.gz: 1,516 bytes
+2025-11-04 20:26:05.763 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 22 trades with 22 columns
+2025-11-04 20:26:05.763 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 22 trades from DETR-posttrade-2025-11-04T16_38.json.gz (14 unique ISINs)
+2025-11-04 20:26:05.763 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T16_37.json.gz for DETR on 2025-11-04
+2025-11-04 20:26:07.234 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T16_37.json.gz: 1,462 bytes
+2025-11-04 20:26:07.239 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 20 trades with 22 columns
+2025-11-04 20:26:07.239 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 20 trades from DETR-posttrade-2025-11-04T16_37.json.gz (15 unique ISINs)
+2025-11-04 20:26:07.239 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T16_36.json.gz for DETR on 2025-11-04
+2025-11-04 20:26:08.836 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T16_36.json.gz: 155,606 bytes
+2025-11-04 20:26:08.909 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 3441 trades with 22 columns
+2025-11-04 20:26:08.916 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 3441 trades from DETR-posttrade-2025-11-04T16_36.json.gz (3276 unique ISINs)
+2025-11-04 20:26:08.916 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T16_35.json.gz for DETR on 2025-11-04
+2025-11-04 20:26:10.258 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T16_35.json.gz: 40,291 bytes
+2025-11-04 20:26:10.274 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 821 trades with 22 columns
+2025-11-04 20:26:10.276 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 821 trades from DETR-posttrade-2025-11-04T16_35.json.gz (775 unique ISINs)
+2025-11-04 20:26:10.277 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T16_34.json.gz for DETR on 2025-11-04
+2025-11-04 20:26:11.799 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T16_34.json.gz: 20 bytes
+2025-11-04 20:26:11.799 | WARNING  | yf_parqed.xetra_parser:parse:92 - Parsed empty trade array from JSON
+2025-11-04 20:26:11.801 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 0 trades from DETR-posttrade-2025-11-04T16_34.json.gz (0 unique ISINs)
+2025-11-04 20:26:11.801 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T16_33.json.gz for DETR on 2025-11-04
+2025-11-04 20:26:13.282 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T16_33.json.gz: 20 bytes
+2025-11-04 20:26:13.282 | WARNING  | yf_parqed.xetra_parser:parse:92 - Parsed empty trade array from JSON
+2025-11-04 20:26:13.284 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 0 trades from DETR-posttrade-2025-11-04T16_33.json.gz (0 unique ISINs)
+2025-11-04 20:26:13.284 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T16_32.json.gz for DETR on 2025-11-04
+2025-11-04 20:26:14.723 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T16_32.json.gz: 20 bytes
+2025-11-04 20:26:14.724 | WARNING  | yf_parqed.xetra_parser:parse:92 - Parsed empty trade array from JSON
+2025-11-04 20:26:14.726 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 0 trades from DETR-posttrade-2025-11-04T16_32.json.gz (0 unique ISINs)
+2025-11-04 20:26:14.726 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T16_31.json.gz for DETR on 2025-11-04
+2025-11-04 20:26:16.504 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T16_31.json.gz: 20 bytes
+2025-11-04 20:26:16.504 | WARNING  | yf_parqed.xetra_parser:parse:92 - Parsed empty trade array from JSON
+2025-11-04 20:26:16.506 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 0 trades from DETR-posttrade-2025-11-04T16_31.json.gz (0 unique ISINs)
+2025-11-04 20:26:16.506 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T16_30.json.gz for DETR on 2025-11-04
+2025-11-04 20:26:17.654 | WARNING  | yf_parqed.xetra_fetcher:download_file:357 - Rate limited (429) on attempt 1/3. Retrying in 2s...
+2025-11-04 20:26:19.774 | WARNING  | yf_parqed.xetra_fetcher:download_file:357 - Rate limited (429) on attempt 2/3. Retrying in 4s...
+2025-11-04 20:26:24.045 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T16_30.json.gz: 10,377 bytes
+2025-11-04 20:26:24.054 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 194 trades with 22 columns
+2025-11-04 20:26:24.055 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 194 trades from DETR-posttrade-2025-11-04T16_30.json.gz (130 unique ISINs)
+2025-11-04 20:26:24.055 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T16_29.json.gz for DETR on 2025-11-04
+2025-11-04 20:26:24.283 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T16_29.json.gz: 78,179 bytes
+2025-11-04 20:26:24.313 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 1700 trades with 22 columns
+2025-11-04 20:26:24.315 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 1700 trades from DETR-posttrade-2025-11-04T16_29.json.gz (518 unique ISINs)
+2025-11-04 20:26:24.316 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T16_28.json.gz for DETR on 2025-11-04
+2025-11-04 20:26:25.781 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T16_28.json.gz: 64,444 bytes
+2025-11-04 20:26:25.805 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 1401 trades with 22 columns
+2025-11-04 20:26:25.808 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 1401 trades from DETR-posttrade-2025-11-04T16_28.json.gz (402 unique ISINs)
+2025-11-04 20:26:25.808 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T16_27.json.gz for DETR on 2025-11-04
+2025-11-04 20:26:27.278 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T16_27.json.gz: 66,363 bytes
+2025-11-04 20:26:27.307 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 1380 trades with 22 columns
+2025-11-04 20:26:27.311 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 1380 trades from DETR-posttrade-2025-11-04T16_27.json.gz (463 unique ISINs)
+2025-11-04 20:26:27.311 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T16_26.json.gz for DETR on 2025-11-04
+2025-11-04 20:26:28.768 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T16_26.json.gz: 53,765 bytes
+2025-11-04 20:26:28.792 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 1186 trades with 22 columns
+2025-11-04 20:26:28.795 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 1186 trades from DETR-posttrade-2025-11-04T16_26.json.gz (283 unique ISINs)
+2025-11-04 20:26:28.795 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T16_25.json.gz for DETR on 2025-11-04
+2025-11-04 20:26:30.300 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T16_25.json.gz: 51,573 bytes
+2025-11-04 20:26:30.324 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 1119 trades with 22 columns
+2025-11-04 20:26:30.326 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 1119 trades from DETR-posttrade-2025-11-04T16_25.json.gz (326 unique ISINs)
+2025-11-04 20:26:30.327 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T16_24.json.gz for DETR on 2025-11-04
+2025-11-04 20:26:31.781 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T16_24.json.gz: 38,274 bytes
+2025-11-04 20:26:31.801 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 822 trades with 22 columns
+2025-11-04 20:26:31.803 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 822 trades from DETR-posttrade-2025-11-04T16_24.json.gz (247 unique ISINs)
+2025-11-04 20:26:31.803 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T16_23.json.gz for DETR on 2025-11-04
+2025-11-04 20:26:33.263 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T16_23.json.gz: 51,388 bytes
+2025-11-04 20:26:33.284 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 1062 trades with 22 columns
+2025-11-04 20:26:33.286 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 1062 trades from DETR-posttrade-2025-11-04T16_23.json.gz (373 unique ISINs)
+2025-11-04 20:26:33.286 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T16_22.json.gz for DETR on 2025-11-04
+2025-11-04 20:26:34.813 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T16_22.json.gz: 34,777 bytes
+2025-11-04 20:26:34.831 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 729 trades with 22 columns
+2025-11-04 20:26:34.833 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 729 trades from DETR-posttrade-2025-11-04T16_22.json.gz (239 unique ISINs)
+2025-11-04 20:26:34.833 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T16_21.json.gz for DETR on 2025-11-04
+2025-11-04 20:26:36.283 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T16_21.json.gz: 46,929 bytes
+2025-11-04 20:26:36.305 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 998 trades with 22 columns
+2025-11-04 20:26:36.307 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 998 trades from DETR-posttrade-2025-11-04T16_21.json.gz (277 unique ISINs)
+2025-11-04 20:26:36.307 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T16_20.json.gz for DETR on 2025-11-04
+2025-11-04 20:26:37.822 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T16_20.json.gz: 47,581 bytes
+2025-11-04 20:26:37.844 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 1021 trades with 22 columns
+2025-11-04 20:26:37.847 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 1021 trades from DETR-posttrade-2025-11-04T16_20.json.gz (284 unique ISINs)
+2025-11-04 20:26:37.847 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T16_19.json.gz for DETR on 2025-11-04
+2025-11-04 20:26:39.283 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T16_19.json.gz: 42,448 bytes
+2025-11-04 20:26:39.303 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 902 trades with 22 columns
+2025-11-04 20:26:39.305 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 902 trades from DETR-posttrade-2025-11-04T16_19.json.gz (276 unique ISINs)
+2025-11-04 20:26:39.305 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T16_18.json.gz for DETR on 2025-11-04
+2025-11-04 20:26:40.797 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T16_18.json.gz: 49,979 bytes
+2025-11-04 20:26:40.820 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 1052 trades with 22 columns
+2025-11-04 20:26:40.823 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 1052 trades from DETR-posttrade-2025-11-04T16_18.json.gz (356 unique ISINs)
+2025-11-04 20:26:40.823 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T16_17.json.gz for DETR on 2025-11-04
+2025-11-04 20:26:42.252 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T16_17.json.gz: 43,325 bytes
+2025-11-04 20:26:42.272 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 926 trades with 22 columns
+2025-11-04 20:26:42.275 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 926 trades from DETR-posttrade-2025-11-04T16_17.json.gz (304 unique ISINs)
+2025-11-04 20:26:42.275 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T16_16.json.gz for DETR on 2025-11-04
+2025-11-04 20:26:43.741 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T16_16.json.gz: 35,827 bytes
+2025-11-04 20:26:43.760 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 743 trades with 22 columns
+2025-11-04 20:26:43.762 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 743 trades from DETR-posttrade-2025-11-04T16_16.json.gz (263 unique ISINs)
+2025-11-04 20:26:43.762 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T16_15.json.gz for DETR on 2025-11-04
+2025-11-04 20:26:45.286 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T16_15.json.gz: 40,354 bytes
+2025-11-04 20:26:45.305 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 846 trades with 22 columns
+2025-11-04 20:26:45.307 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 846 trades from DETR-posttrade-2025-11-04T16_15.json.gz (276 unique ISINs)
+2025-11-04 20:26:45.307 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T16_14.json.gz for DETR on 2025-11-04
+2025-11-04 20:26:46.787 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T16_14.json.gz: 34,228 bytes
+2025-11-04 20:26:46.806 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 738 trades with 22 columns
+2025-11-04 20:26:46.808 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 738 trades from DETR-posttrade-2025-11-04T16_14.json.gz (229 unique ISINs)
+2025-11-04 20:26:46.808 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T16_13.json.gz for DETR on 2025-11-04
+2025-11-04 20:26:48.281 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T16_13.json.gz: 31,878 bytes
+2025-11-04 20:26:48.297 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 662 trades with 22 columns
+2025-11-04 20:26:48.299 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 662 trades from DETR-posttrade-2025-11-04T16_13.json.gz (221 unique ISINs)
+2025-11-04 20:26:48.299 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T16_12.json.gz for DETR on 2025-11-04
+2025-11-04 20:26:49.774 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T16_12.json.gz: 52,808 bytes
+2025-11-04 20:26:49.798 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 1155 trades with 22 columns
+2025-11-04 20:26:49.800 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 1155 trades from DETR-posttrade-2025-11-04T16_12.json.gz (345 unique ISINs)
+2025-11-04 20:26:49.800 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T16_11.json.gz for DETR on 2025-11-04
+2025-11-04 20:26:51.256 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T16_11.json.gz: 46,419 bytes
+2025-11-04 20:26:51.276 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 985 trades with 22 columns
+2025-11-04 20:26:51.279 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 985 trades from DETR-posttrade-2025-11-04T16_11.json.gz (301 unique ISINs)
+2025-11-04 20:26:51.279 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T16_10.json.gz for DETR on 2025-11-04
+2025-11-04 20:26:52.770 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T16_10.json.gz: 38,203 bytes
+2025-11-04 20:26:52.790 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 824 trades with 22 columns
+2025-11-04 20:26:52.792 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 824 trades from DETR-posttrade-2025-11-04T16_10.json.gz (260 unique ISINs)
+2025-11-04 20:26:52.792 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T16_09.json.gz for DETR on 2025-11-04
+2025-11-04 20:26:54.320 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T16_09.json.gz: 32,060 bytes
+2025-11-04 20:26:54.338 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 664 trades with 22 columns
+2025-11-04 20:26:54.340 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 664 trades from DETR-posttrade-2025-11-04T16_09.json.gz (263 unique ISINs)
+2025-11-04 20:26:54.341 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T16_08.json.gz for DETR on 2025-11-04
+2025-11-04 20:26:55.748 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T16_08.json.gz: 36,532 bytes
+2025-11-04 20:26:55.768 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 790 trades with 22 columns
+2025-11-04 20:26:55.770 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 790 trades from DETR-posttrade-2025-11-04T16_08.json.gz (240 unique ISINs)
+2025-11-04 20:26:55.770 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T16_07.json.gz for DETR on 2025-11-04
+2025-11-04 20:26:57.318 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T16_07.json.gz: 41,820 bytes
+2025-11-04 20:26:57.341 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 899 trades with 22 columns
+2025-11-04 20:26:57.343 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 899 trades from DETR-posttrade-2025-11-04T16_07.json.gz (293 unique ISINs)
+2025-11-04 20:26:57.343 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T16_06.json.gz for DETR on 2025-11-04
+2025-11-04 20:26:58.782 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T16_06.json.gz: 37,176 bytes
+2025-11-04 20:26:58.803 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 788 trades with 22 columns
+2025-11-04 20:26:58.805 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 788 trades from DETR-posttrade-2025-11-04T16_06.json.gz (248 unique ISINs)
+2025-11-04 20:26:58.806 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T16_05.json.gz for DETR on 2025-11-04
+2025-11-04 20:27:00.256 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T16_05.json.gz: 34,820 bytes
+2025-11-04 20:27:00.274 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 729 trades with 22 columns
+2025-11-04 20:27:00.276 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 729 trades from DETR-posttrade-2025-11-04T16_05.json.gz (245 unique ISINs)
+2025-11-04 20:27:00.276 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T16_04.json.gz for DETR on 2025-11-04
+2025-11-04 20:27:01.807 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T16_04.json.gz: 32,237 bytes
+2025-11-04 20:27:01.823 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 685 trades with 22 columns
+2025-11-04 20:27:01.825 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 685 trades from DETR-posttrade-2025-11-04T16_04.json.gz (248 unique ISINs)
+2025-11-04 20:27:01.825 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T16_03.json.gz for DETR on 2025-11-04
+2025-11-04 20:27:03.300 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T16_03.json.gz: 33,271 bytes
+2025-11-04 20:27:03.318 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 701 trades with 22 columns
+2025-11-04 20:27:03.320 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 701 trades from DETR-posttrade-2025-11-04T16_03.json.gz (255 unique ISINs)
+2025-11-04 20:27:03.320 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T16_02.json.gz for DETR on 2025-11-04
+2025-11-04 20:27:04.776 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T16_02.json.gz: 32,668 bytes
+2025-11-04 20:27:04.794 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 677 trades with 22 columns
+2025-11-04 20:27:04.796 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 677 trades from DETR-posttrade-2025-11-04T16_02.json.gz (248 unique ISINs)
+2025-11-04 20:27:04.796 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T16_01.json.gz for DETR on 2025-11-04
+2025-11-04 20:27:06.257 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T16_01.json.gz: 37,996 bytes
+2025-11-04 20:27:06.278 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 805 trades with 22 columns
+2025-11-04 20:27:06.281 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 805 trades from DETR-posttrade-2025-11-04T16_01.json.gz (253 unique ISINs)
+2025-11-04 20:27:06.281 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T16_00.json.gz for DETR on 2025-11-04
+2025-11-04 20:27:07.685 | WARNING  | yf_parqed.xetra_fetcher:download_file:357 - Rate limited (429) on attempt 1/3. Retrying in 2s...
+2025-11-04 20:27:09.806 | WARNING  | yf_parqed.xetra_fetcher:download_file:357 - Rate limited (429) on attempt 2/3. Retrying in 4s...
+2025-11-04 20:27:13.929 | ERROR    | yf_parqed.xetra_fetcher:download_file:364 - HTTP 429 error downloading DETR-posttrade-2025-11-04T16_00.json.gz: Client error '429 Too Many Requests' for url 'https://mfs.deutsche-boerse.com/api/download/DETR-posttrade-2025-11-04T16_00.json.gz'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/429
+2025-11-04 20:27:13.929 | ERROR    | yf_parqed.xetra_service:fetch_all_trades_for_date:229 - Failed to process DETR-posttrade-2025-11-04T16_00.json.gz: Client error '429 Too Many Requests' for url 'https://mfs.deutsche-boerse.com/api/download/DETR-posttrade-2025-11-04T16_00.json.gz'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/429
+2025-11-04 20:27:13.929 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T15_59.json.gz for DETR on 2025-11-04
+2025-11-04 20:27:14.060 | WARNING  | yf_parqed.xetra_fetcher:download_file:357 - Rate limited (429) on attempt 1/3. Retrying in 2s...
+2025-11-04 20:27:16.181 | WARNING  | yf_parqed.xetra_fetcher:download_file:357 - Rate limited (429) on attempt 2/3. Retrying in 4s...
+2025-11-04 20:27:20.302 | ERROR    | yf_parqed.xetra_fetcher:download_file:364 - HTTP 429 error downloading DETR-posttrade-2025-11-04T15_59.json.gz: Client error '429 Too Many Requests' for url 'https://mfs.deutsche-boerse.com/api/download/DETR-posttrade-2025-11-04T15_59.json.gz'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/429
+2025-11-04 20:27:20.302 | ERROR    | yf_parqed.xetra_service:fetch_all_trades_for_date:229 - Failed to process DETR-posttrade-2025-11-04T15_59.json.gz: Client error '429 Too Many Requests' for url 'https://mfs.deutsche-boerse.com/api/download/DETR-posttrade-2025-11-04T15_59.json.gz'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/429
+2025-11-04 20:27:20.302 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T15_58.json.gz for DETR on 2025-11-04
+2025-11-04 20:27:20.421 | WARNING  | yf_parqed.xetra_fetcher:download_file:357 - Rate limited (429) on attempt 1/3. Retrying in 2s...
+2025-11-04 20:27:22.837 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T15_58.json.gz: 39,305 bytes
+2025-11-04 20:27:22.860 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 833 trades with 22 columns
+2025-11-04 20:27:22.863 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 833 trades from DETR-posttrade-2025-11-04T15_58.json.gz (274 unique ISINs)
+2025-11-04 20:27:22.863 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T15_57.json.gz for DETR on 2025-11-04
+2025-11-04 20:27:23.092 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T15_57.json.gz: 39,257 bytes
+2025-11-04 20:27:23.113 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 808 trades with 22 columns
+2025-11-04 20:27:23.115 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 808 trades from DETR-posttrade-2025-11-04T15_57.json.gz (329 unique ISINs)
+2025-11-04 20:27:23.115 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T15_56.json.gz for DETR on 2025-11-04
+2025-11-04 20:27:24.623 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T15_56.json.gz: 41,216 bytes
+2025-11-04 20:27:24.643 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 874 trades with 22 columns
+2025-11-04 20:27:24.646 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 874 trades from DETR-posttrade-2025-11-04T15_56.json.gz (295 unique ISINs)
+2025-11-04 20:27:24.646 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T15_55.json.gz for DETR on 2025-11-04
+2025-11-04 20:27:26.091 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T15_55.json.gz: 33,517 bytes
+2025-11-04 20:27:26.109 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 707 trades with 22 columns
+2025-11-04 20:27:26.111 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 707 trades from DETR-posttrade-2025-11-04T15_55.json.gz (234 unique ISINs)
+2025-11-04 20:27:26.112 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T15_54.json.gz for DETR on 2025-11-04
+2025-11-04 20:27:27.572 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T15_54.json.gz: 36,683 bytes
+2025-11-04 20:27:27.590 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 775 trades with 22 columns
+2025-11-04 20:27:27.592 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 775 trades from DETR-posttrade-2025-11-04T15_54.json.gz (240 unique ISINs)
+2025-11-04 20:27:27.592 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T15_53.json.gz for DETR on 2025-11-04
+2025-11-04 20:27:29.086 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T15_53.json.gz: 40,949 bytes
+2025-11-04 20:27:29.107 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 884 trades with 22 columns
+2025-11-04 20:27:29.108 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 884 trades from DETR-posttrade-2025-11-04T15_53.json.gz (278 unique ISINs)
+2025-11-04 20:27:29.109 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T15_52.json.gz for DETR on 2025-11-04
+2025-11-04 20:27:30.565 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T15_52.json.gz: 33,565 bytes
+2025-11-04 20:27:30.584 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 726 trades with 22 columns
+2025-11-04 20:27:30.586 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 726 trades from DETR-posttrade-2025-11-04T15_52.json.gz (227 unique ISINs)
+2025-11-04 20:27:30.586 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T15_51.json.gz for DETR on 2025-11-04
+2025-11-04 20:27:32.113 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T15_51.json.gz: 34,664 bytes
+2025-11-04 20:27:32.130 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 720 trades with 22 columns
+2025-11-04 20:27:32.132 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 720 trades from DETR-posttrade-2025-11-04T15_51.json.gz (282 unique ISINs)
+2025-11-04 20:27:32.132 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T15_50.json.gz for DETR on 2025-11-04
+2025-11-04 20:27:33.551 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T15_50.json.gz: 42,352 bytes
+2025-11-04 20:27:33.572 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 910 trades with 22 columns
+2025-11-04 20:27:33.573 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 910 trades from DETR-posttrade-2025-11-04T15_50.json.gz (276 unique ISINs)
+2025-11-04 20:27:33.574 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T15_49.json.gz for DETR on 2025-11-04
+2025-11-04 20:27:35.092 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T15_49.json.gz: 37,591 bytes
+2025-11-04 20:27:35.110 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 797 trades with 22 columns
+2025-11-04 20:27:35.112 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 797 trades from DETR-posttrade-2025-11-04T15_49.json.gz (258 unique ISINs)
+2025-11-04 20:27:35.112 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T15_48.json.gz for DETR on 2025-11-04
+2025-11-04 20:27:36.596 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T15_48.json.gz: 38,813 bytes
+2025-11-04 20:27:36.615 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 841 trades with 22 columns
+2025-11-04 20:27:36.617 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 841 trades from DETR-posttrade-2025-11-04T15_48.json.gz (277 unique ISINs)
+2025-11-04 20:27:36.617 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T15_47.json.gz for DETR on 2025-11-04
+2025-11-04 20:27:38.049 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T15_47.json.gz: 35,834 bytes
+2025-11-04 20:27:38.067 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 734 trades with 22 columns
+2025-11-04 20:27:38.069 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 734 trades from DETR-posttrade-2025-11-04T15_47.json.gz (286 unique ISINs)
+2025-11-04 20:27:38.069 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T15_46.json.gz for DETR on 2025-11-04
+2025-11-04 20:27:39.600 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T15_46.json.gz: 32,485 bytes
+2025-11-04 20:27:39.618 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 675 trades with 22 columns
+2025-11-04 20:27:39.620 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 675 trades from DETR-posttrade-2025-11-04T15_46.json.gz (262 unique ISINs)
+2025-11-04 20:27:39.620 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T15_45.json.gz for DETR on 2025-11-04
+2025-11-04 20:27:41.165 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T15_45.json.gz: 49,721 bytes
+2025-11-04 20:27:41.189 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 1043 trades with 22 columns
+2025-11-04 20:27:41.191 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 1043 trades from DETR-posttrade-2025-11-04T15_45.json.gz (379 unique ISINs)
+2025-11-04 20:27:41.191 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T15_44.json.gz for DETR on 2025-11-04
+2025-11-04 20:27:42.574 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T15_44.json.gz: 38,430 bytes
+2025-11-04 20:27:42.594 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 807 trades with 22 columns
+2025-11-04 20:27:42.597 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 807 trades from DETR-posttrade-2025-11-04T15_44.json.gz (294 unique ISINs)
+2025-11-04 20:27:42.598 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T15_43.json.gz for DETR on 2025-11-04
+2025-11-04 20:27:44.060 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T15_43.json.gz: 34,278 bytes
+2025-11-04 20:27:44.076 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 709 trades with 22 columns
+2025-11-04 20:27:44.079 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 709 trades from DETR-posttrade-2025-11-04T15_43.json.gz (277 unique ISINs)
+2025-11-04 20:27:44.079 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T15_42.json.gz for DETR on 2025-11-04
+2025-11-04 20:27:45.561 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T15_42.json.gz: 47,601 bytes
+2025-11-04 20:27:45.584 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 1005 trades with 22 columns
+2025-11-04 20:27:45.587 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 1005 trades from DETR-posttrade-2025-11-04T15_42.json.gz (356 unique ISINs)
+2025-11-04 20:27:45.587 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T15_41.json.gz for DETR on 2025-11-04
+2025-11-04 20:27:47.085 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T15_41.json.gz: 37,475 bytes
+2025-11-04 20:27:47.107 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 792 trades with 22 columns
+2025-11-04 20:27:47.109 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 792 trades from DETR-posttrade-2025-11-04T15_41.json.gz (273 unique ISINs)
+2025-11-04 20:27:47.109 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T15_40.json.gz for DETR on 2025-11-04
+2025-11-04 20:27:48.609 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T15_40.json.gz: 33,905 bytes
+2025-11-04 20:27:48.628 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 747 trades with 22 columns
+2025-11-04 20:27:48.630 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 747 trades from DETR-posttrade-2025-11-04T15_40.json.gz (222 unique ISINs)
+2025-11-04 20:27:48.630 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T15_39.json.gz for DETR on 2025-11-04
+2025-11-04 20:27:50.087 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T15_39.json.gz: 32,326 bytes
+2025-11-04 20:27:50.105 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 678 trades with 22 columns
+2025-11-04 20:27:50.107 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 678 trades from DETR-posttrade-2025-11-04T15_39.json.gz (246 unique ISINs)
+2025-11-04 20:27:50.107 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T15_38.json.gz for DETR on 2025-11-04
+2025-11-04 20:27:51.592 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T15_38.json.gz: 33,716 bytes
+2025-11-04 20:27:51.610 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 710 trades with 22 columns
+2025-11-04 20:27:51.613 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 710 trades from DETR-posttrade-2025-11-04T15_38.json.gz (276 unique ISINs)
+2025-11-04 20:27:51.613 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T15_37.json.gz for DETR on 2025-11-04
+2025-11-04 20:27:53.080 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T15_37.json.gz: 32,009 bytes
+2025-11-04 20:27:53.142 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 680 trades with 22 columns
+2025-11-04 20:27:53.144 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 680 trades from DETR-posttrade-2025-11-04T15_37.json.gz (218 unique ISINs)
+2025-11-04 20:27:53.144 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T15_36.json.gz for DETR on 2025-11-04
+2025-11-04 20:27:54.583 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T15_36.json.gz: 44,608 bytes
+2025-11-04 20:27:54.606 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 967 trades with 22 columns
+2025-11-04 20:27:54.608 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 967 trades from DETR-posttrade-2025-11-04T15_36.json.gz (278 unique ISINs)
+2025-11-04 20:27:54.608 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T15_35.json.gz for DETR on 2025-11-04
+2025-11-04 20:27:56.130 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T15_35.json.gz: 36,227 bytes
+2025-11-04 20:27:56.152 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 832 trades with 22 columns
+2025-11-04 20:27:56.154 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 832 trades from DETR-posttrade-2025-11-04T15_35.json.gz (219 unique ISINs)
+2025-11-04 20:27:56.155 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T15_34.json.gz for DETR on 2025-11-04
+2025-11-04 20:27:57.636 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T15_34.json.gz: 32,219 bytes
+2025-11-04 20:27:57.654 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 673 trades with 22 columns
+2025-11-04 20:27:57.656 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 673 trades from DETR-posttrade-2025-11-04T15_34.json.gz (225 unique ISINs)
+2025-11-04 20:27:57.656 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T15_33.json.gz for DETR on 2025-11-04
+2025-11-04 20:27:59.101 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T15_33.json.gz: 33,152 bytes
+2025-11-04 20:27:59.120 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 748 trades with 22 columns
+2025-11-04 20:27:59.122 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 748 trades from DETR-posttrade-2025-11-04T15_33.json.gz (202 unique ISINs)
+2025-11-04 20:27:59.122 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T15_32.json.gz for DETR on 2025-11-04
+2025-11-04 20:28:00.702 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T15_32.json.gz: 36,401 bytes
+2025-11-04 20:28:00.721 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 772 trades with 22 columns
+2025-11-04 20:28:00.724 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 772 trades from DETR-posttrade-2025-11-04T15_32.json.gz (238 unique ISINs)
+2025-11-04 20:28:00.724 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T15_31.json.gz for DETR on 2025-11-04
+2025-11-04 20:28:02.101 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T15_31.json.gz: 31,192 bytes
+2025-11-04 20:28:02.119 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 653 trades with 22 columns
+2025-11-04 20:28:02.120 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 653 trades from DETR-posttrade-2025-11-04T15_31.json.gz (225 unique ISINs)
+2025-11-04 20:28:02.120 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T15_30.json.gz for DETR on 2025-11-04
+2025-11-04 20:28:03.586 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T15_30.json.gz: 38,917 bytes
+2025-11-04 20:28:03.605 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 821 trades with 22 columns
+2025-11-04 20:28:03.607 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 821 trades from DETR-posttrade-2025-11-04T15_30.json.gz (255 unique ISINs)
+2025-11-04 20:28:03.607 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T15_29.json.gz for DETR on 2025-11-04
+2025-11-04 20:28:05.180 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T15_29.json.gz: 47,833 bytes
+2025-11-04 20:28:05.205 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 1068 trades with 22 columns
+2025-11-04 20:28:05.208 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 1068 trades from DETR-posttrade-2025-11-04T15_29.json.gz (241 unique ISINs)
+2025-11-04 20:28:05.208 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T15_28.json.gz for DETR on 2025-11-04
+2025-11-04 20:28:06.492 | WARNING  | yf_parqed.xetra_fetcher:download_file:357 - Rate limited (429) on attempt 1/3. Retrying in 2s...
+2025-11-04 20:28:08.611 | WARNING  | yf_parqed.xetra_fetcher:download_file:357 - Rate limited (429) on attempt 2/3. Retrying in 4s...
+2025-11-04 20:28:12.729 | ERROR    | yf_parqed.xetra_fetcher:download_file:364 - HTTP 429 error downloading DETR-posttrade-2025-11-04T15_28.json.gz: Client error '429 Too Many Requests' for url 'https://mfs.deutsche-boerse.com/api/download/DETR-posttrade-2025-11-04T15_28.json.gz'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/429
+2025-11-04 20:28:12.729 | ERROR    | yf_parqed.xetra_service:fetch_all_trades_for_date:229 - Failed to process DETR-posttrade-2025-11-04T15_28.json.gz: Client error '429 Too Many Requests' for url 'https://mfs.deutsche-boerse.com/api/download/DETR-posttrade-2025-11-04T15_28.json.gz'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/429
+2025-11-04 20:28:12.729 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T15_27.json.gz for DETR on 2025-11-04
+2025-11-04 20:28:12.850 | WARNING  | yf_parqed.xetra_fetcher:download_file:357 - Rate limited (429) on attempt 1/3. Retrying in 2s...
+2025-11-04 20:28:14.973 | WARNING  | yf_parqed.xetra_fetcher:download_file:357 - Rate limited (429) on attempt 2/3. Retrying in 4s...
+2025-11-04 20:28:19.094 | ERROR    | yf_parqed.xetra_fetcher:download_file:364 - HTTP 429 error downloading DETR-posttrade-2025-11-04T15_27.json.gz: Client error '429 Too Many Requests' for url 'https://mfs.deutsche-boerse.com/api/download/DETR-posttrade-2025-11-04T15_27.json.gz'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/429
+2025-11-04 20:28:19.094 | ERROR    | yf_parqed.xetra_service:fetch_all_trades_for_date:229 - Failed to process DETR-posttrade-2025-11-04T15_27.json.gz: Client error '429 Too Many Requests' for url 'https://mfs.deutsche-boerse.com/api/download/DETR-posttrade-2025-11-04T15_27.json.gz'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/429
+2025-11-04 20:28:19.094 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T15_26.json.gz for DETR on 2025-11-04
+2025-11-04 20:28:19.215 | WARNING  | yf_parqed.xetra_fetcher:download_file:357 - Rate limited (429) on attempt 1/3. Retrying in 2s...
+2025-11-04 20:28:21.654 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T15_26.json.gz: 53,402 bytes
+2025-11-04 20:28:21.681 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 1140 trades with 22 columns
+2025-11-04 20:28:21.683 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 1140 trades from DETR-posttrade-2025-11-04T15_26.json.gz (493 unique ISINs)
+2025-11-04 20:28:21.683 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T15_25.json.gz for DETR on 2025-11-04
+2025-11-04 20:28:21.869 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T15_25.json.gz: 32,122 bytes
+2025-11-04 20:28:21.886 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 668 trades with 22 columns
+2025-11-04 20:28:21.888 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 668 trades from DETR-posttrade-2025-11-04T15_25.json.gz (228 unique ISINs)
+2025-11-04 20:28:21.888 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T15_24.json.gz for DETR on 2025-11-04
+2025-11-04 20:28:23.476 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T15_24.json.gz: 43,840 bytes
+2025-11-04 20:28:23.499 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 926 trades with 22 columns
+2025-11-04 20:28:23.502 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 926 trades from DETR-posttrade-2025-11-04T15_24.json.gz (322 unique ISINs)
+2025-11-04 20:28:23.502 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T15_23.json.gz for DETR on 2025-11-04
+2025-11-04 20:28:24.878 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T15_23.json.gz: 33,036 bytes
+2025-11-04 20:28:24.896 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 709 trades with 22 columns
+2025-11-04 20:28:24.898 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 709 trades from DETR-posttrade-2025-11-04T15_23.json.gz (212 unique ISINs)
+2025-11-04 20:28:24.898 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T15_22.json.gz for DETR on 2025-11-04
+2025-11-04 20:28:26.381 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T15_22.json.gz: 37,549 bytes
+2025-11-04 20:28:26.401 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 799 trades with 22 columns
+2025-11-04 20:28:26.403 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 799 trades from DETR-posttrade-2025-11-04T15_22.json.gz (250 unique ISINs)
+2025-11-04 20:28:26.403 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T15_21.json.gz for DETR on 2025-11-04
+2025-11-04 20:28:27.931 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T15_21.json.gz: 47,216 bytes
+2025-11-04 20:28:27.954 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 994 trades with 22 columns
+2025-11-04 20:28:27.957 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 994 trades from DETR-posttrade-2025-11-04T15_21.json.gz (352 unique ISINs)
+2025-11-04 20:28:27.957 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T15_20.json.gz for DETR on 2025-11-04
+2025-11-04 20:28:29.423 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T15_20.json.gz: 46,169 bytes
+2025-11-04 20:28:29.448 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 1019 trades with 22 columns
+2025-11-04 20:28:29.450 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 1019 trades from DETR-posttrade-2025-11-04T15_20.json.gz (287 unique ISINs)
+2025-11-04 20:28:29.450 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T15_19.json.gz for DETR on 2025-11-04
+2025-11-04 20:28:30.941 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T15_19.json.gz: 47,679 bytes
+2025-11-04 20:28:30.967 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 1032 trades with 22 columns
+2025-11-04 20:28:30.970 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 1032 trades from DETR-posttrade-2025-11-04T15_19.json.gz (303 unique ISINs)
+2025-11-04 20:28:30.970 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T15_18.json.gz for DETR on 2025-11-04
+2025-11-04 20:28:32.404 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T15_18.json.gz: 44,769 bytes
+2025-11-04 20:28:32.424 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 970 trades with 22 columns
+2025-11-04 20:28:32.426 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 970 trades from DETR-posttrade-2025-11-04T15_18.json.gz (294 unique ISINs)
+2025-11-04 20:28:32.426 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T15_17.json.gz for DETR on 2025-11-04
+2025-11-04 20:28:33.914 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T15_17.json.gz: 35,616 bytes
+2025-11-04 20:28:33.933 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 721 trades with 22 columns
+2025-11-04 20:28:33.935 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 721 trades from DETR-posttrade-2025-11-04T15_17.json.gz (319 unique ISINs)
+2025-11-04 20:28:33.935 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T15_16.json.gz for DETR on 2025-11-04
+2025-11-04 20:28:35.366 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T15_16.json.gz: 43,014 bytes
+2025-11-04 20:28:35.388 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 897 trades with 22 columns
+2025-11-04 20:28:35.390 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 897 trades from DETR-posttrade-2025-11-04T15_16.json.gz (346 unique ISINs)
+2025-11-04 20:28:35.391 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T15_15.json.gz for DETR on 2025-11-04
+2025-11-04 20:28:36.912 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T15_15.json.gz: 39,700 bytes
+2025-11-04 20:28:36.934 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 847 trades with 22 columns
+2025-11-04 20:28:36.937 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 847 trades from DETR-posttrade-2025-11-04T15_15.json.gz (250 unique ISINs)
+2025-11-04 20:28:36.937 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T15_14.json.gz for DETR on 2025-11-04
+2025-11-04 20:28:38.392 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T15_14.json.gz: 36,656 bytes
+2025-11-04 20:28:38.412 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 755 trades with 22 columns
+2025-11-04 20:28:38.414 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 755 trades from DETR-posttrade-2025-11-04T15_14.json.gz (301 unique ISINs)
+2025-11-04 20:28:38.415 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T15_13.json.gz for DETR on 2025-11-04
+2025-11-04 20:28:39.876 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T15_13.json.gz: 32,017 bytes
+2025-11-04 20:28:39.892 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 660 trades with 22 columns
+2025-11-04 20:28:39.893 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 660 trades from DETR-posttrade-2025-11-04T15_13.json.gz (250 unique ISINs)
+2025-11-04 20:28:39.894 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T15_12.json.gz for DETR on 2025-11-04
+2025-11-04 20:28:41.465 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T15_12.json.gz: 32,396 bytes
+2025-11-04 20:28:41.483 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 683 trades with 22 columns
+2025-11-04 20:28:41.486 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 683 trades from DETR-posttrade-2025-11-04T15_12.json.gz (247 unique ISINs)
+2025-11-04 20:28:41.486 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T15_11.json.gz for DETR on 2025-11-04
+2025-11-04 20:28:42.884 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T15_11.json.gz: 40,695 bytes
+2025-11-04 20:28:42.904 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 868 trades with 22 columns
+2025-11-04 20:28:42.906 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 868 trades from DETR-posttrade-2025-11-04T15_11.json.gz (293 unique ISINs)
+2025-11-04 20:28:42.907 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T15_10.json.gz for DETR on 2025-11-04
+2025-11-04 20:28:44.400 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T15_10.json.gz: 46,673 bytes
+2025-11-04 20:28:44.422 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 969 trades with 22 columns
+2025-11-04 20:28:44.425 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 969 trades from DETR-posttrade-2025-11-04T15_10.json.gz (346 unique ISINs)
+2025-11-04 20:28:44.425 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T15_09.json.gz for DETR on 2025-11-04
+2025-11-04 20:28:45.925 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T15_09.json.gz: 39,355 bytes
+2025-11-04 20:28:45.945 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 830 trades with 22 columns
+2025-11-04 20:28:45.947 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 830 trades from DETR-posttrade-2025-11-04T15_09.json.gz (276 unique ISINs)
+2025-11-04 20:28:45.947 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T15_08.json.gz for DETR on 2025-11-04
+2025-11-04 20:28:47.397 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T15_08.json.gz: 76,898 bytes
+2025-11-04 20:28:47.429 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 1681 trades with 22 columns
+2025-11-04 20:28:47.433 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 1681 trades from DETR-posttrade-2025-11-04T15_08.json.gz (495 unique ISINs)
+2025-11-04 20:28:47.434 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T15_07.json.gz for DETR on 2025-11-04
+2025-11-04 20:28:48.917 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T15_07.json.gz: 36,737 bytes
+2025-11-04 20:28:48.937 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 778 trades with 22 columns
+2025-11-04 20:28:48.939 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 778 trades from DETR-posttrade-2025-11-04T15_07.json.gz (283 unique ISINs)
+2025-11-04 20:28:48.939 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T15_06.json.gz for DETR on 2025-11-04
+2025-11-04 20:28:50.419 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T15_06.json.gz: 47,889 bytes
+2025-11-04 20:28:50.443 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 1027 trades with 22 columns
+2025-11-04 20:28:50.447 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 1027 trades from DETR-posttrade-2025-11-04T15_06.json.gz (335 unique ISINs)
+2025-11-04 20:28:50.447 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T15_05.json.gz for DETR on 2025-11-04
+2025-11-04 20:28:51.950 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T15_05.json.gz: 34,797 bytes
+2025-11-04 20:28:51.969 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 704 trades with 22 columns
+2025-11-04 20:28:51.971 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 704 trades from DETR-posttrade-2025-11-04T15_05.json.gz (300 unique ISINs)
+2025-11-04 20:28:51.971 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T15_04.json.gz for DETR on 2025-11-04
+2025-11-04 20:28:53.421 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T15_04.json.gz: 34,326 bytes
+2025-11-04 20:28:53.442 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 720 trades with 22 columns
+2025-11-04 20:28:53.445 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 720 trades from DETR-posttrade-2025-11-04T15_04.json.gz (279 unique ISINs)
+2025-11-04 20:28:53.446 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T15_03.json.gz for DETR on 2025-11-04
+2025-11-04 20:28:55.024 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T15_03.json.gz: 38,722 bytes
+2025-11-04 20:28:55.044 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 813 trades with 22 columns
+2025-11-04 20:28:55.048 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 813 trades from DETR-posttrade-2025-11-04T15_03.json.gz (299 unique ISINs)
+2025-11-04 20:28:55.048 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T15_02.json.gz for DETR on 2025-11-04
+2025-11-04 20:28:56.414 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T15_02.json.gz: 51,188 bytes
+2025-11-04 20:28:56.443 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 1105 trades with 22 columns
+2025-11-04 20:28:56.447 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 1105 trades from DETR-posttrade-2025-11-04T15_02.json.gz (318 unique ISINs)
+2025-11-04 20:28:56.447 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T15_01.json.gz for DETR on 2025-11-04
+2025-11-04 20:28:57.927 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T15_01.json.gz: 36,415 bytes
+2025-11-04 20:28:57.946 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 743 trades with 22 columns
+2025-11-04 20:28:57.948 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 743 trades from DETR-posttrade-2025-11-04T15_01.json.gz (271 unique ISINs)
+2025-11-04 20:28:57.948 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T15_00.json.gz for DETR on 2025-11-04
+2025-11-04 20:28:59.402 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T15_00.json.gz: 61,245 bytes
+2025-11-04 20:28:59.427 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 1335 trades with 22 columns
+2025-11-04 20:28:59.430 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 1335 trades from DETR-posttrade-2025-11-04T15_00.json.gz (383 unique ISINs)
+2025-11-04 20:28:59.430 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T14_59.json.gz for DETR on 2025-11-04
+2025-11-04 20:29:00.902 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T14_59.json.gz: 52,828 bytes
+2025-11-04 20:29:00.928 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 1129 trades with 22 columns
+2025-11-04 20:29:00.932 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 1129 trades from DETR-posttrade-2025-11-04T14_59.json.gz (383 unique ISINs)
+2025-11-04 20:29:00.932 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T14_58.json.gz for DETR on 2025-11-04
+2025-11-04 20:29:02.420 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T14_58.json.gz: 39,208 bytes
+2025-11-04 20:29:02.442 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 839 trades with 22 columns
+2025-11-04 20:29:02.444 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 839 trades from DETR-posttrade-2025-11-04T14_58.json.gz (272 unique ISINs)
+2025-11-04 20:29:02.445 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T14_57.json.gz for DETR on 2025-11-04
+2025-11-04 20:29:03.903 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T14_57.json.gz: 38,777 bytes
+2025-11-04 20:29:03.923 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 807 trades with 22 columns
+2025-11-04 20:29:03.927 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 807 trades from DETR-posttrade-2025-11-04T14_57.json.gz (301 unique ISINs)
+2025-11-04 20:29:03.927 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T14_56.json.gz for DETR on 2025-11-04
+2025-11-04 20:29:05.315 | WARNING  | yf_parqed.xetra_fetcher:download_file:357 - Rate limited (429) on attempt 1/3. Retrying in 2s...
+2025-11-04 20:29:07.435 | WARNING  | yf_parqed.xetra_fetcher:download_file:357 - Rate limited (429) on attempt 2/3. Retrying in 4s...
+2025-11-04 20:29:11.561 | ERROR    | yf_parqed.xetra_fetcher:download_file:364 - HTTP 429 error downloading DETR-posttrade-2025-11-04T14_56.json.gz: Client error '429 Too Many Requests' for url 'https://mfs.deutsche-boerse.com/api/download/DETR-posttrade-2025-11-04T14_56.json.gz'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/429
+2025-11-04 20:29:11.561 | ERROR    | yf_parqed.xetra_service:fetch_all_trades_for_date:229 - Failed to process DETR-posttrade-2025-11-04T14_56.json.gz: Client error '429 Too Many Requests' for url 'https://mfs.deutsche-boerse.com/api/download/DETR-posttrade-2025-11-04T14_56.json.gz'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/429
+2025-11-04 20:29:11.561 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T14_55.json.gz for DETR on 2025-11-04
+2025-11-04 20:29:11.682 | WARNING  | yf_parqed.xetra_fetcher:download_file:357 - Rate limited (429) on attempt 1/3. Retrying in 2s...
+2025-11-04 20:29:13.804 | WARNING  | yf_parqed.xetra_fetcher:download_file:357 - Rate limited (429) on attempt 2/3. Retrying in 4s...
+2025-11-04 20:29:17.925 | ERROR    | yf_parqed.xetra_fetcher:download_file:364 - HTTP 429 error downloading DETR-posttrade-2025-11-04T14_55.json.gz: Client error '429 Too Many Requests' for url 'https://mfs.deutsche-boerse.com/api/download/DETR-posttrade-2025-11-04T14_55.json.gz'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/429
+2025-11-04 20:29:17.925 | ERROR    | yf_parqed.xetra_service:fetch_all_trades_for_date:229 - Failed to process DETR-posttrade-2025-11-04T14_55.json.gz: Client error '429 Too Many Requests' for url 'https://mfs.deutsche-boerse.com/api/download/DETR-posttrade-2025-11-04T14_55.json.gz'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/429
+2025-11-04 20:29:17.925 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T14_54.json.gz for DETR on 2025-11-04
+2025-11-04 20:29:18.045 | WARNING  | yf_parqed.xetra_fetcher:download_file:357 - Rate limited (429) on attempt 1/3. Retrying in 2s...
+2025-11-04 20:29:20.167 | WARNING  | yf_parqed.xetra_fetcher:download_file:357 - Rate limited (429) on attempt 2/3. Retrying in 4s...
+2025-11-04 20:29:24.548 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T14_54.json.gz: 48,052 bytes
+2025-11-04 20:29:24.573 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 1003 trades with 22 columns
+2025-11-04 20:29:24.575 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 1003 trades from DETR-posttrade-2025-11-04T14_54.json.gz (377 unique ISINs)
+2025-11-04 20:29:24.576 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T14_53.json.gz for DETR on 2025-11-04
+2025-11-04 20:29:24.800 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T14_53.json.gz: 53,305 bytes
+2025-11-04 20:29:24.824 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 1118 trades with 22 columns
+2025-11-04 20:29:24.827 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 1118 trades from DETR-posttrade-2025-11-04T14_53.json.gz (404 unique ISINs)
+2025-11-04 20:29:24.827 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T14_52.json.gz for DETR on 2025-11-04
+2025-11-04 20:29:26.279 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T14_52.json.gz: 36,819 bytes
+2025-11-04 20:29:26.298 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 756 trades with 22 columns
+2025-11-04 20:29:26.301 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 756 trades from DETR-posttrade-2025-11-04T14_52.json.gz (308 unique ISINs)
+2025-11-04 20:29:26.301 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T14_51.json.gz for DETR on 2025-11-04
+2025-11-04 20:29:27.806 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T14_51.json.gz: 41,300 bytes
+2025-11-04 20:29:27.828 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 886 trades with 22 columns
+2025-11-04 20:29:27.831 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 886 trades from DETR-posttrade-2025-11-04T14_51.json.gz (281 unique ISINs)
+2025-11-04 20:29:27.831 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T14_50.json.gz for DETR on 2025-11-04
+2025-11-04 20:29:29.275 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T14_50.json.gz: 45,372 bytes
+2025-11-04 20:29:29.297 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 945 trades with 22 columns
+2025-11-04 20:29:29.299 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 945 trades from DETR-posttrade-2025-11-04T14_50.json.gz (324 unique ISINs)
+2025-11-04 20:29:29.299 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T14_49.json.gz for DETR on 2025-11-04
+2025-11-04 20:29:30.842 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T14_49.json.gz: 42,986 bytes
+2025-11-04 20:29:30.862 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 902 trades with 22 columns
+2025-11-04 20:29:30.864 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 902 trades from DETR-posttrade-2025-11-04T14_49.json.gz (303 unique ISINs)
+2025-11-04 20:29:30.864 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T14_48.json.gz for DETR on 2025-11-04
+2025-11-04 20:29:32.367 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T14_48.json.gz: 53,605 bytes
+2025-11-04 20:29:32.393 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 1157 trades with 22 columns
+2025-11-04 20:29:32.397 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 1157 trades from DETR-posttrade-2025-11-04T14_48.json.gz (358 unique ISINs)
+2025-11-04 20:29:32.397 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T14_47.json.gz for DETR on 2025-11-04
+2025-11-04 20:29:33.869 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T14_47.json.gz: 44,784 bytes
+2025-11-04 20:29:33.892 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 934 trades with 22 columns
+2025-11-04 20:29:33.895 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 934 trades from DETR-posttrade-2025-11-04T14_47.json.gz (327 unique ISINs)
+2025-11-04 20:29:33.895 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T14_46.json.gz for DETR on 2025-11-04
+2025-11-04 20:29:35.321 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T14_46.json.gz: 41,273 bytes
+2025-11-04 20:29:35.341 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 866 trades with 22 columns
+2025-11-04 20:29:35.343 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 866 trades from DETR-posttrade-2025-11-04T14_46.json.gz (277 unique ISINs)
+2025-11-04 20:29:35.343 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T14_45.json.gz for DETR on 2025-11-04
+2025-11-04 20:29:36.785 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T14_45.json.gz: 46,562 bytes
+2025-11-04 20:29:36.807 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 989 trades with 22 columns
+2025-11-04 20:29:36.810 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 989 trades from DETR-posttrade-2025-11-04T14_45.json.gz (290 unique ISINs)
+2025-11-04 20:29:36.810 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T14_44.json.gz for DETR on 2025-11-04
+2025-11-04 20:29:38.309 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T14_44.json.gz: 56,709 bytes
+2025-11-04 20:29:38.338 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 1261 trades with 22 columns
+2025-11-04 20:29:38.341 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 1261 trades from DETR-posttrade-2025-11-04T14_44.json.gz (373 unique ISINs)
+2025-11-04 20:29:38.341 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T14_43.json.gz for DETR on 2025-11-04
+2025-11-04 20:29:39.800 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T14_43.json.gz: 45,581 bytes
+2025-11-04 20:29:39.821 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 974 trades with 22 columns
+2025-11-04 20:29:39.824 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 974 trades from DETR-posttrade-2025-11-04T14_43.json.gz (318 unique ISINs)
+2025-11-04 20:29:39.824 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T14_42.json.gz for DETR on 2025-11-04
+2025-11-04 20:29:41.331 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T14_42.json.gz: 65,103 bytes
+2025-11-04 20:29:41.361 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 1369 trades with 22 columns
+2025-11-04 20:29:41.365 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 1369 trades from DETR-posttrade-2025-11-04T14_42.json.gz (499 unique ISINs)
+2025-11-04 20:29:41.366 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T14_41.json.gz for DETR on 2025-11-04
+2025-11-04 20:29:42.806 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T14_41.json.gz: 52,301 bytes
+2025-11-04 20:29:42.833 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 1123 trades with 22 columns
+2025-11-04 20:29:42.837 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 1123 trades from DETR-posttrade-2025-11-04T14_41.json.gz (349 unique ISINs)
+2025-11-04 20:29:42.837 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T14_40.json.gz for DETR on 2025-11-04
+2025-11-04 20:29:44.322 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T14_40.json.gz: 53,042 bytes
+2025-11-04 20:29:44.346 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 1119 trades with 22 columns
+2025-11-04 20:29:44.349 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 1119 trades from DETR-posttrade-2025-11-04T14_40.json.gz (350 unique ISINs)
+2025-11-04 20:29:44.349 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T14_39.json.gz for DETR on 2025-11-04
+2025-11-04 20:29:45.821 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T14_39.json.gz: 43,649 bytes
+2025-11-04 20:29:45.853 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 923 trades with 22 columns
+2025-11-04 20:29:45.858 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 923 trades from DETR-posttrade-2025-11-04T14_39.json.gz (334 unique ISINs)
+2025-11-04 20:29:45.858 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T14_38.json.gz for DETR on 2025-11-04
+2025-11-04 20:29:47.311 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T14_38.json.gz: 50,040 bytes
+2025-11-04 20:29:47.335 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 1096 trades with 22 columns
+2025-11-04 20:29:47.338 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 1096 trades from DETR-posttrade-2025-11-04T14_38.json.gz (344 unique ISINs)
+2025-11-04 20:29:47.338 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T14_37.json.gz for DETR on 2025-11-04
+2025-11-04 20:29:48.801 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T14_37.json.gz: 54,817 bytes
+2025-11-04 20:29:48.826 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 1177 trades with 22 columns
+2025-11-04 20:29:48.829 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 1177 trades from DETR-posttrade-2025-11-04T14_37.json.gz (374 unique ISINs)
+2025-11-04 20:29:48.830 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T14_36.json.gz for DETR on 2025-11-04
+2025-11-04 20:29:50.306 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T14_36.json.gz: 53,012 bytes
+2025-11-04 20:29:50.332 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 1138 trades with 22 columns
+2025-11-04 20:29:50.335 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 1138 trades from DETR-posttrade-2025-11-04T14_36.json.gz (330 unique ISINs)
+2025-11-04 20:29:50.335 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T14_35.json.gz for DETR on 2025-11-04
+2025-11-04 20:29:52.032 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T14_35.json.gz: 61,073 bytes
+2025-11-04 20:29:52.060 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 1372 trades with 22 columns
+2025-11-04 20:29:52.064 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 1372 trades from DETR-posttrade-2025-11-04T14_35.json.gz (343 unique ISINs)
+2025-11-04 20:29:52.064 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T14_34.json.gz for DETR on 2025-11-04
+2025-11-04 20:29:53.285 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T14_34.json.gz: 54,484 bytes
+2025-11-04 20:29:53.311 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 1145 trades with 22 columns
+2025-11-04 20:29:53.315 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 1145 trades from DETR-posttrade-2025-11-04T14_34.json.gz (365 unique ISINs)
+2025-11-04 20:29:53.315 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T14_33.json.gz for DETR on 2025-11-04
+2025-11-04 20:29:54.802 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T14_33.json.gz: 62,417 bytes
+2025-11-04 20:29:54.830 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 1331 trades with 22 columns
+2025-11-04 20:29:54.832 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 1331 trades from DETR-posttrade-2025-11-04T14_33.json.gz (398 unique ISINs)
+2025-11-04 20:29:54.832 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T14_32.json.gz for DETR on 2025-11-04
+2025-11-04 20:29:56.344 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T14_32.json.gz: 59,155 bytes
+2025-11-04 20:29:56.371 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 1262 trades with 22 columns
+2025-11-04 20:29:56.373 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 1262 trades from DETR-posttrade-2025-11-04T14_32.json.gz (379 unique ISINs)
+2025-11-04 20:29:56.373 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T14_31.json.gz for DETR on 2025-11-04
+2025-11-04 20:29:57.898 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T14_31.json.gz: 59,925 bytes
+2025-11-04 20:29:57.926 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 1299 trades with 22 columns
+2025-11-04 20:29:57.929 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 1299 trades from DETR-posttrade-2025-11-04T14_31.json.gz (352 unique ISINs)
+2025-11-04 20:29:57.929 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T14_30.json.gz for DETR on 2025-11-04
+2025-11-04 20:29:59.338 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T14_30.json.gz: 92,998 bytes
+2025-11-04 20:29:59.382 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 2027 trades with 22 columns
+2025-11-04 20:29:59.386 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 2027 trades from DETR-posttrade-2025-11-04T14_30.json.gz (451 unique ISINs)
+2025-11-04 20:29:59.386 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T14_29.json.gz for DETR on 2025-11-04
+2025-11-04 20:30:00.892 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T14_29.json.gz: 39,918 bytes
+2025-11-04 20:30:00.913 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 860 trades with 22 columns
+2025-11-04 20:30:00.915 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 860 trades from DETR-posttrade-2025-11-04T14_29.json.gz (279 unique ISINs)
+2025-11-04 20:30:00.916 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T14_28.json.gz for DETR on 2025-11-04
+2025-11-04 20:30:02.276 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T14_28.json.gz: 34,522 bytes
+2025-11-04 20:30:02.295 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 756 trades with 22 columns
+2025-11-04 20:30:02.298 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 756 trades from DETR-posttrade-2025-11-04T14_28.json.gz (234 unique ISINs)
+2025-11-04 20:30:02.298 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T14_27.json.gz for DETR on 2025-11-04
+2025-11-04 20:30:03.824 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T14_27.json.gz: 38,594 bytes
+2025-11-04 20:30:03.843 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 839 trades with 22 columns
+2025-11-04 20:30:03.845 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 839 trades from DETR-posttrade-2025-11-04T14_27.json.gz (287 unique ISINs)
+2025-11-04 20:30:03.846 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T14_26.json.gz for DETR on 2025-11-04
+2025-11-04 20:30:05.292 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T14_26.json.gz: 25,895 bytes
+2025-11-04 20:30:05.307 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 546 trades with 22 columns
+2025-11-04 20:30:05.308 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 546 trades from DETR-posttrade-2025-11-04T14_26.json.gz (222 unique ISINs)
+2025-11-04 20:30:05.309 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T14_25.json.gz for DETR on 2025-11-04
+2025-11-04 20:30:06.797 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T14_25.json.gz: 44,700 bytes
+2025-11-04 20:30:06.821 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 974 trades with 22 columns
+2025-11-04 20:30:06.824 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 974 trades from DETR-posttrade-2025-11-04T14_25.json.gz (324 unique ISINs)
+2025-11-04 20:30:06.824 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T14_24.json.gz for DETR on 2025-11-04
+2025-11-04 20:30:08.210 | WARNING  | yf_parqed.xetra_fetcher:download_file:357 - Rate limited (429) on attempt 1/3. Retrying in 2s...
+2025-11-04 20:30:10.333 | WARNING  | yf_parqed.xetra_fetcher:download_file:357 - Rate limited (429) on attempt 2/3. Retrying in 4s...
+2025-11-04 20:30:14.458 | ERROR    | yf_parqed.xetra_fetcher:download_file:364 - HTTP 429 error downloading DETR-posttrade-2025-11-04T14_24.json.gz: Client error '429 Too Many Requests' for url 'https://mfs.deutsche-boerse.com/api/download/DETR-posttrade-2025-11-04T14_24.json.gz'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/429
+2025-11-04 20:30:14.458 | ERROR    | yf_parqed.xetra_service:fetch_all_trades_for_date:229 - Failed to process DETR-posttrade-2025-11-04T14_24.json.gz: Client error '429 Too Many Requests' for url 'https://mfs.deutsche-boerse.com/api/download/DETR-posttrade-2025-11-04T14_24.json.gz'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/429
+2025-11-04 20:30:14.458 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T14_23.json.gz for DETR on 2025-11-04
+2025-11-04 20:30:14.576 | WARNING  | yf_parqed.xetra_fetcher:download_file:357 - Rate limited (429) on attempt 1/3. Retrying in 2s...
+2025-11-04 20:30:16.696 | WARNING  | yf_parqed.xetra_fetcher:download_file:357 - Rate limited (429) on attempt 2/3. Retrying in 4s...
+2025-11-04 20:30:21.075 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T14_23.json.gz: 27,633 bytes
+2025-11-04 20:30:21.091 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 593 trades with 22 columns
+2025-11-04 20:30:21.092 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 593 trades from DETR-posttrade-2025-11-04T14_23.json.gz (217 unique ISINs)
+2025-11-04 20:30:21.093 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T14_22.json.gz for DETR on 2025-11-04
+2025-11-04 20:30:21.313 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T14_22.json.gz: 22,797 bytes
+2025-11-04 20:30:21.329 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 490 trades with 22 columns
+2025-11-04 20:30:21.331 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 490 trades from DETR-posttrade-2025-11-04T14_22.json.gz (177 unique ISINs)
+2025-11-04 20:30:21.332 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T14_21.json.gz for DETR on 2025-11-04
+2025-11-04 20:30:22.803 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T14_21.json.gz: 29,479 bytes
+2025-11-04 20:30:22.821 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 614 trades with 22 columns
+2025-11-04 20:30:22.824 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 614 trades from DETR-posttrade-2025-11-04T14_21.json.gz (247 unique ISINs)
+2025-11-04 20:30:22.824 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T14_20.json.gz for DETR on 2025-11-04
+2025-11-04 20:30:24.328 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T14_20.json.gz: 28,868 bytes
+2025-11-04 20:30:24.343 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 603 trades with 22 columns
+2025-11-04 20:30:24.346 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 603 trades from DETR-posttrade-2025-11-04T14_20.json.gz (232 unique ISINs)
+2025-11-04 20:30:24.346 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T14_19.json.gz for DETR on 2025-11-04
+2025-11-04 20:30:25.815 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T14_19.json.gz: 26,189 bytes
+2025-11-04 20:30:25.831 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 559 trades with 22 columns
+2025-11-04 20:30:25.833 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 559 trades from DETR-posttrade-2025-11-04T14_19.json.gz (191 unique ISINs)
+2025-11-04 20:30:25.833 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T14_18.json.gz for DETR on 2025-11-04
+2025-11-04 20:30:27.359 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T14_18.json.gz: 30,898 bytes
+2025-11-04 20:30:27.378 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 672 trades with 22 columns
+2025-11-04 20:30:27.380 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 672 trades from DETR-posttrade-2025-11-04T14_18.json.gz (219 unique ISINs)
+2025-11-04 20:30:27.380 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T14_17.json.gz for DETR on 2025-11-04
+2025-11-04 20:30:28.808 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T14_17.json.gz: 26,553 bytes
+2025-11-04 20:30:28.825 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 563 trades with 22 columns
+2025-11-04 20:30:28.828 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 563 trades from DETR-posttrade-2025-11-04T14_17.json.gz (199 unique ISINs)
+2025-11-04 20:30:28.828 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T14_16.json.gz for DETR on 2025-11-04
+2025-11-04 20:30:30.340 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T14_16.json.gz: 21,960 bytes
+2025-11-04 20:30:30.356 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 457 trades with 22 columns
+2025-11-04 20:30:30.357 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 457 trades from DETR-posttrade-2025-11-04T14_16.json.gz (183 unique ISINs)
+2025-11-04 20:30:30.357 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T14_15.json.gz for DETR on 2025-11-04
+2025-11-04 20:30:31.850 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T14_15.json.gz: 22,004 bytes
+2025-11-04 20:30:31.865 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 461 trades with 22 columns
+2025-11-04 20:30:31.867 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 461 trades from DETR-posttrade-2025-11-04T14_15.json.gz (193 unique ISINs)
+2025-11-04 20:30:31.867 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T14_14.json.gz for DETR on 2025-11-04
+2025-11-04 20:30:33.323 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T14_14.json.gz: 23,141 bytes
+2025-11-04 20:30:33.339 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 495 trades with 22 columns
+2025-11-04 20:30:33.340 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 495 trades from DETR-posttrade-2025-11-04T14_14.json.gz (181 unique ISINs)
+2025-11-04 20:30:33.341 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T14_13.json.gz for DETR on 2025-11-04
+2025-11-04 20:30:34.807 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T14_13.json.gz: 27,790 bytes
+2025-11-04 20:30:34.823 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 590 trades with 22 columns
+2025-11-04 20:30:34.824 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 590 trades from DETR-posttrade-2025-11-04T14_13.json.gz (197 unique ISINs)
+2025-11-04 20:30:34.824 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T14_12.json.gz for DETR on 2025-11-04
+2025-11-04 20:30:36.347 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T14_12.json.gz: 26,603 bytes
+2025-11-04 20:30:36.362 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 569 trades with 22 columns
+2025-11-04 20:30:36.364 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 569 trades from DETR-posttrade-2025-11-04T14_12.json.gz (201 unique ISINs)
+2025-11-04 20:30:36.364 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T14_11.json.gz for DETR on 2025-11-04
+2025-11-04 20:30:37.802 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T14_11.json.gz: 28,056 bytes
+2025-11-04 20:30:37.817 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 587 trades with 22 columns
+2025-11-04 20:30:37.819 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 587 trades from DETR-posttrade-2025-11-04T14_11.json.gz (223 unique ISINs)
+2025-11-04 20:30:37.819 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T14_10.json.gz for DETR on 2025-11-04
+2025-11-04 20:30:39.308 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T14_10.json.gz: 22,922 bytes
+2025-11-04 20:30:39.322 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 489 trades with 22 columns
+2025-11-04 20:30:39.323 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 489 trades from DETR-posttrade-2025-11-04T14_10.json.gz (180 unique ISINs)
+2025-11-04 20:30:39.324 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T14_09.json.gz for DETR on 2025-11-04
+2025-11-04 20:30:40.876 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T14_09.json.gz: 24,884 bytes
+2025-11-04 20:30:40.891 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 586 trades with 22 columns
+2025-11-04 20:30:40.892 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 586 trades from DETR-posttrade-2025-11-04T14_09.json.gz (148 unique ISINs)
+2025-11-04 20:30:40.892 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T14_08.json.gz for DETR on 2025-11-04
+2025-11-04 20:30:42.377 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T14_08.json.gz: 27,770 bytes
+2025-11-04 20:30:42.392 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 603 trades with 22 columns
+2025-11-04 20:30:42.395 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 603 trades from DETR-posttrade-2025-11-04T14_08.json.gz (197 unique ISINs)
+2025-11-04 20:30:42.395 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T14_07.json.gz for DETR on 2025-11-04
+2025-11-04 20:30:43.871 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T14_07.json.gz: 26,240 bytes
+2025-11-04 20:30:43.887 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 564 trades with 22 columns
+2025-11-04 20:30:43.888 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 564 trades from DETR-posttrade-2025-11-04T14_07.json.gz (205 unique ISINs)
+2025-11-04 20:30:43.888 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T14_06.json.gz for DETR on 2025-11-04
+2025-11-04 20:30:45.334 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T14_06.json.gz: 21,308 bytes
+2025-11-04 20:30:45.347 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 435 trades with 22 columns
+2025-11-04 20:30:45.349 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 435 trades from DETR-posttrade-2025-11-04T14_06.json.gz (195 unique ISINs)
+2025-11-04 20:30:45.349 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T14_05.json.gz for DETR on 2025-11-04
+2025-11-04 20:30:46.892 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T14_05.json.gz: 24,809 bytes
+2025-11-04 20:30:46.908 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 537 trades with 22 columns
+2025-11-04 20:30:46.910 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 537 trades from DETR-posttrade-2025-11-04T14_05.json.gz (195 unique ISINs)
+2025-11-04 20:30:46.910 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T14_04.json.gz for DETR on 2025-11-04
+2025-11-04 20:30:48.320 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T14_04.json.gz: 26,313 bytes
+2025-11-04 20:30:48.335 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 566 trades with 22 columns
+2025-11-04 20:30:48.336 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 566 trades from DETR-posttrade-2025-11-04T14_04.json.gz (206 unique ISINs)
+2025-11-04 20:30:48.337 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T14_03.json.gz for DETR on 2025-11-04
+2025-11-04 20:30:49.888 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T14_03.json.gz: 26,627 bytes
+2025-11-04 20:30:49.902 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 563 trades with 22 columns
+2025-11-04 20:30:49.904 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 563 trades from DETR-posttrade-2025-11-04T14_03.json.gz (206 unique ISINs)
+2025-11-04 20:30:49.904 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T14_02.json.gz for DETR on 2025-11-04
+2025-11-04 20:30:51.382 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T14_02.json.gz: 42,797 bytes
+2025-11-04 20:30:51.403 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 931 trades with 22 columns
+2025-11-04 20:30:51.405 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 931 trades from DETR-posttrade-2025-11-04T14_02.json.gz (327 unique ISINs)
+2025-11-04 20:30:51.405 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T14_01.json.gz for DETR on 2025-11-04
+2025-11-04 20:30:52.787 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T14_01.json.gz: 29,674 bytes
+2025-11-04 20:30:52.805 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 613 trades with 22 columns
+2025-11-04 20:30:52.806 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 613 trades from DETR-posttrade-2025-11-04T14_01.json.gz (252 unique ISINs)
+2025-11-04 20:30:52.806 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T14_00.json.gz for DETR on 2025-11-04
+2025-11-04 20:30:54.337 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T14_00.json.gz: 27,211 bytes
+2025-11-04 20:30:54.353 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 580 trades with 22 columns
+2025-11-04 20:30:54.354 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 580 trades from DETR-posttrade-2025-11-04T14_00.json.gz (198 unique ISINs)
+2025-11-04 20:30:54.354 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T13_59.json.gz for DETR on 2025-11-04
+2025-11-04 20:30:55.805 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T13_59.json.gz: 22,133 bytes
+2025-11-04 20:30:55.819 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 473 trades with 22 columns
+2025-11-04 20:30:55.821 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 473 trades from DETR-posttrade-2025-11-04T13_59.json.gz (179 unique ISINs)
+2025-11-04 20:30:55.821 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T13_58.json.gz for DETR on 2025-11-04
+2025-11-04 20:30:57.351 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T13_58.json.gz: 28,168 bytes
+2025-11-04 20:30:57.368 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 613 trades with 22 columns
+2025-11-04 20:30:57.370 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 613 trades from DETR-posttrade-2025-11-04T13_58.json.gz (197 unique ISINs)
+2025-11-04 20:30:57.370 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T13_57.json.gz for DETR on 2025-11-04
+2025-11-04 20:30:58.800 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T13_57.json.gz: 22,599 bytes
+2025-11-04 20:30:58.815 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 458 trades with 22 columns
+2025-11-04 20:30:58.817 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 458 trades from DETR-posttrade-2025-11-04T13_57.json.gz (216 unique ISINs)
+2025-11-04 20:30:58.817 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T13_56.json.gz for DETR on 2025-11-04
+2025-11-04 20:31:00.311 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T13_56.json.gz: 24,263 bytes
+2025-11-04 20:31:00.324 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 494 trades with 22 columns
+2025-11-04 20:31:00.326 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 494 trades from DETR-posttrade-2025-11-04T13_56.json.gz (212 unique ISINs)
+2025-11-04 20:31:00.326 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T13_55.json.gz for DETR on 2025-11-04
+2025-11-04 20:31:01.813 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T13_55.json.gz: 24,530 bytes
+2025-11-04 20:31:01.828 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 516 trades with 22 columns
+2025-11-04 20:31:01.829 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 516 trades from DETR-posttrade-2025-11-04T13_55.json.gz (202 unique ISINs)
+2025-11-04 20:31:01.829 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T13_54.json.gz for DETR on 2025-11-04
+2025-11-04 20:31:03.311 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T13_54.json.gz: 24,852 bytes
+2025-11-04 20:31:03.324 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 526 trades with 22 columns
+2025-11-04 20:31:03.325 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 526 trades from DETR-posttrade-2025-11-04T13_54.json.gz (205 unique ISINs)
+2025-11-04 20:31:03.326 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T13_53.json.gz for DETR on 2025-11-04
+2025-11-04 20:31:04.725 | WARNING  | yf_parqed.xetra_fetcher:download_file:357 - Rate limited (429) on attempt 1/3. Retrying in 2s...
+2025-11-04 20:31:06.845 | WARNING  | yf_parqed.xetra_fetcher:download_file:357 - Rate limited (429) on attempt 2/3. Retrying in 4s...
+2025-11-04 20:31:10.972 | ERROR    | yf_parqed.xetra_fetcher:download_file:364 - HTTP 429 error downloading DETR-posttrade-2025-11-04T13_53.json.gz: Client error '429 Too Many Requests' for url 'https://mfs.deutsche-boerse.com/api/download/DETR-posttrade-2025-11-04T13_53.json.gz'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/429
+2025-11-04 20:31:10.972 | ERROR    | yf_parqed.xetra_service:fetch_all_trades_for_date:229 - Failed to process DETR-posttrade-2025-11-04T13_53.json.gz: Client error '429 Too Many Requests' for url 'https://mfs.deutsche-boerse.com/api/download/DETR-posttrade-2025-11-04T13_53.json.gz'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/429
+2025-11-04 20:31:10.972 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T13_52.json.gz for DETR on 2025-11-04
+2025-11-04 20:31:11.096 | WARNING  | yf_parqed.xetra_fetcher:download_file:357 - Rate limited (429) on attempt 1/3. Retrying in 2s...
+2025-11-04 20:31:13.214 | WARNING  | yf_parqed.xetra_fetcher:download_file:357 - Rate limited (429) on attempt 2/3. Retrying in 4s...
+2025-11-04 20:31:17.335 | ERROR    | yf_parqed.xetra_fetcher:download_file:364 - HTTP 429 error downloading DETR-posttrade-2025-11-04T13_52.json.gz: Client error '429 Too Many Requests' for url 'https://mfs.deutsche-boerse.com/api/download/DETR-posttrade-2025-11-04T13_52.json.gz'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/429
+2025-11-04 20:31:17.335 | ERROR    | yf_parqed.xetra_service:fetch_all_trades_for_date:229 - Failed to process DETR-posttrade-2025-11-04T13_52.json.gz: Client error '429 Too Many Requests' for url 'https://mfs.deutsche-boerse.com/api/download/DETR-posttrade-2025-11-04T13_52.json.gz'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/429
+2025-11-04 20:31:17.335 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T13_51.json.gz for DETR on 2025-11-04
+2025-11-04 20:31:17.457 | WARNING  | yf_parqed.xetra_fetcher:download_file:357 - Rate limited (429) on attempt 1/3. Retrying in 2s...
+2025-11-04 20:31:19.576 | WARNING  | yf_parqed.xetra_fetcher:download_file:357 - Rate limited (429) on attempt 2/3. Retrying in 4s...
+2025-11-04 20:31:23.905 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T13_51.json.gz: 18,881 bytes
+2025-11-04 20:31:23.918 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 374 trades with 22 columns
+2025-11-04 20:31:23.919 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 374 trades from DETR-posttrade-2025-11-04T13_51.json.gz (186 unique ISINs)
+2025-11-04 20:31:23.920 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T13_50.json.gz for DETR on 2025-11-04
+2025-11-04 20:31:24.169 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T13_50.json.gz: 23,862 bytes
+2025-11-04 20:31:24.184 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 514 trades with 22 columns
+2025-11-04 20:31:24.185 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 514 trades from DETR-posttrade-2025-11-04T13_50.json.gz (187 unique ISINs)
+2025-11-04 20:31:24.185 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T13_49.json.gz for DETR on 2025-11-04
+2025-11-04 20:31:25.638 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T13_49.json.gz: 19,660 bytes
+2025-11-04 20:31:25.651 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 400 trades with 22 columns
+2025-11-04 20:31:25.652 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 400 trades from DETR-posttrade-2025-11-04T13_49.json.gz (182 unique ISINs)
+2025-11-04 20:31:25.652 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T13_48.json.gz for DETR on 2025-11-04
+2025-11-04 20:31:27.130 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T13_48.json.gz: 18,143 bytes
+2025-11-04 20:31:27.142 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 368 trades with 22 columns
+2025-11-04 20:31:27.143 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 368 trades from DETR-posttrade-2025-11-04T13_48.json.gz (186 unique ISINs)
+2025-11-04 20:31:27.143 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T13_47.json.gz for DETR on 2025-11-04
+2025-11-04 20:31:28.748 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T13_47.json.gz: 19,402 bytes
+2025-11-04 20:31:28.761 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 405 trades with 22 columns
+2025-11-04 20:31:28.762 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 405 trades from DETR-posttrade-2025-11-04T13_47.json.gz (163 unique ISINs)
+2025-11-04 20:31:28.763 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T13_46.json.gz for DETR on 2025-11-04
+2025-11-04 20:31:30.188 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T13_46.json.gz: 28,286 bytes
+2025-11-04 20:31:30.203 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 585 trades with 22 columns
+2025-11-04 20:31:30.204 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 585 trades from DETR-posttrade-2025-11-04T13_46.json.gz (260 unique ISINs)
+2025-11-04 20:31:30.205 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T13_45.json.gz for DETR on 2025-11-04
+2025-11-04 20:31:31.666 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T13_45.json.gz: 23,519 bytes
+2025-11-04 20:31:31.680 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 478 trades with 22 columns
+2025-11-04 20:31:31.682 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 478 trades from DETR-posttrade-2025-11-04T13_45.json.gz (222 unique ISINs)
+2025-11-04 20:31:31.682 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T13_44.json.gz for DETR on 2025-11-04
+2025-11-04 20:31:33.171 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T13_44.json.gz: 23,610 bytes
+2025-11-04 20:31:33.186 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 486 trades with 22 columns
+2025-11-04 20:31:33.187 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 486 trades from DETR-posttrade-2025-11-04T13_44.json.gz (190 unique ISINs)
+2025-11-04 20:31:33.188 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T13_43.json.gz for DETR on 2025-11-04
+2025-11-04 20:31:34.635 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T13_43.json.gz: 25,014 bytes
+2025-11-04 20:31:34.649 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 526 trades with 22 columns
+2025-11-04 20:31:34.651 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 526 trades from DETR-posttrade-2025-11-04T13_43.json.gz (193 unique ISINs)
+2025-11-04 20:31:34.651 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T13_42.json.gz for DETR on 2025-11-04
+2025-11-04 20:31:36.150 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T13_42.json.gz: 21,606 bytes
+2025-11-04 20:31:36.163 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 436 trades with 22 columns
+2025-11-04 20:31:36.165 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 436 trades from DETR-posttrade-2025-11-04T13_42.json.gz (191 unique ISINs)
+2025-11-04 20:31:36.165 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T13_41.json.gz for DETR on 2025-11-04
+2025-11-04 20:31:37.675 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T13_41.json.gz: 22,981 bytes
+2025-11-04 20:31:37.688 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 480 trades with 22 columns
+2025-11-04 20:31:37.690 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 480 trades from DETR-posttrade-2025-11-04T13_41.json.gz (207 unique ISINs)
+2025-11-04 20:31:37.690 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T13_40.json.gz for DETR on 2025-11-04
+2025-11-04 20:31:39.177 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T13_40.json.gz: 23,974 bytes
+2025-11-04 20:31:39.192 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 491 trades with 22 columns
+2025-11-04 20:31:39.194 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 491 trades from DETR-posttrade-2025-11-04T13_40.json.gz (199 unique ISINs)
+2025-11-04 20:31:39.194 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T13_39.json.gz for DETR on 2025-11-04
+2025-11-04 20:31:40.673 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T13_39.json.gz: 22,929 bytes
+2025-11-04 20:31:40.687 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 476 trades with 22 columns
+2025-11-04 20:31:40.689 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 476 trades from DETR-posttrade-2025-11-04T13_39.json.gz (193 unique ISINs)
+2025-11-04 20:31:40.689 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T13_38.json.gz for DETR on 2025-11-04
+2025-11-04 20:31:42.215 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T13_38.json.gz: 24,230 bytes
+2025-11-04 20:31:42.230 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 486 trades with 22 columns
+2025-11-04 20:31:42.232 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 486 trades from DETR-posttrade-2025-11-04T13_38.json.gz (222 unique ISINs)
+2025-11-04 20:31:42.232 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T13_37.json.gz for DETR on 2025-11-04
+2025-11-04 20:31:43.632 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T13_37.json.gz: 26,789 bytes
+2025-11-04 20:31:43.648 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 541 trades with 22 columns
+2025-11-04 20:31:43.650 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 541 trades from DETR-posttrade-2025-11-04T13_37.json.gz (241 unique ISINs)
+2025-11-04 20:31:43.650 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T13_36.json.gz for DETR on 2025-11-04
+2025-11-04 20:31:45.202 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T13_36.json.gz: 22,431 bytes
+2025-11-04 20:31:45.221 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 471 trades with 22 columns
+2025-11-04 20:31:45.222 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 471 trades from DETR-posttrade-2025-11-04T13_36.json.gz (193 unique ISINs)
+2025-11-04 20:31:45.222 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T13_35.json.gz for DETR on 2025-11-04
+2025-11-04 20:31:46.676 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T13_35.json.gz: 21,390 bytes
+2025-11-04 20:31:46.690 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 436 trades with 22 columns
+2025-11-04 20:31:46.691 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 436 trades from DETR-posttrade-2025-11-04T13_35.json.gz (185 unique ISINs)
+2025-11-04 20:31:46.691 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T13_34.json.gz for DETR on 2025-11-04
+2025-11-04 20:31:48.126 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T13_34.json.gz: 23,695 bytes
+2025-11-04 20:31:48.142 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 516 trades with 22 columns
+2025-11-04 20:31:48.143 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 516 trades from DETR-posttrade-2025-11-04T13_34.json.gz (198 unique ISINs)
+2025-11-04 20:31:48.143 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T13_33.json.gz for DETR on 2025-11-04
+2025-11-04 20:31:49.660 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T13_33.json.gz: 23,192 bytes
+2025-11-04 20:31:49.675 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 479 trades with 22 columns
+2025-11-04 20:31:49.676 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 479 trades from DETR-posttrade-2025-11-04T13_33.json.gz (195 unique ISINs)
+2025-11-04 20:31:49.677 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T13_32.json.gz for DETR on 2025-11-04
+2025-11-04 20:31:51.186 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T13_32.json.gz: 25,599 bytes
+2025-11-04 20:31:51.202 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 531 trades with 22 columns
+2025-11-04 20:31:51.203 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 531 trades from DETR-posttrade-2025-11-04T13_32.json.gz (221 unique ISINs)
+2025-11-04 20:31:51.203 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T13_31.json.gz for DETR on 2025-11-04
+2025-11-04 20:31:52.744 | INFO     | yf_parqed.xetra_fetcher:download_file:349 - Downloaded DETR-posttrade-2025-11-04T13_31.json.gz: 25,820 bytes
+2025-11-04 20:31:52.758 | INFO     | yf_parqed.xetra_parser:parse:116 - Successfully parsed 514 trades with 22 columns
+2025-11-04 20:31:52.759 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:192 - Parsed 514 trades from DETR-posttrade-2025-11-04T13_31.json.gz (239 unique ISINs)
+2025-11-04 20:31:52.759 | INFO     | yf_parqed.xetra_service:fetch_and_parse_trades:181 - Fetching DETR-posttrade-2025-11-04T13_30.json.gz for DETR on 2025-11-04

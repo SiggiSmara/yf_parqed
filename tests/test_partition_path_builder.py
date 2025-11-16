@@ -103,3 +103,67 @@ def test_ticker_root_returns_expected_path(builder: PartitionPathBuilder) -> Non
         ticker="AAPL",
     )
     assert result == Path("data/us/yahoo/stocks_1d/ticker=AAPL")
+
+
+def test_invalid_timestamp_type_raises_typeerror(builder: PartitionPathBuilder) -> None:
+    """Test that passing invalid timestamp type raises TypeError."""
+    with pytest.raises(
+        TypeError, match="timestamp must be a date or datetime instance"
+    ):
+        builder.build(
+            market="us",
+            source="yahoo",
+            dataset="stocks",
+            interval="1d",
+            ticker="AAPL",
+            timestamp="2025-01-01",  # String instead of date/datetime
+        )
+
+
+def test_ticker_root_requires_interval(builder: PartitionPathBuilder) -> None:
+    """Test that ticker_root raises ValueError when interval is missing."""
+    with pytest.raises(ValueError, match="interval is required"):
+        builder.ticker_root(
+            market="us",
+            source="yahoo",
+            dataset="stocks",
+            interval="",
+            ticker="AAPL",
+        )
+
+
+def test_ticker_root_requires_ticker(builder: PartitionPathBuilder) -> None:
+    """Test that ticker_root raises ValueError when ticker is missing."""
+    with pytest.raises(ValueError, match="ticker is required"):
+        builder.ticker_root(
+            market="us",
+            source="yahoo",
+            dataset="stocks",
+            interval="1d",
+            ticker="",
+        )
+
+
+def test_ticker_root_requires_market_and_source(builder: PartitionPathBuilder) -> None:
+    """Test that ticker_root raises ValueError when market or source is missing."""
+    with pytest.raises(
+        ValueError, match="market and source are required for partitioned paths"
+    ):
+        builder.ticker_root(
+            market=None,
+            source="yahoo",
+            dataset="stocks",
+            interval="1d",
+            ticker="AAPL",
+        )
+
+    with pytest.raises(
+        ValueError, match="market and source are required for partitioned paths"
+    ):
+        builder.ticker_root(
+            market="us",
+            source=None,
+            dataset="stocks",
+            interval="1d",
+            ticker="AAPL",
+        )

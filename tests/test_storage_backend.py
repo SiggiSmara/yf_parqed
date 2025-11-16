@@ -170,7 +170,7 @@ class TestStorageBackendRead:
         assert not path.exists()
 
     def test_read_deletes_file_with_missing_columns(self, storage, temp_dir):
-        """read() should delete files missing required columns."""
+        """read() should preserve files with missing columns for operator inspection."""
         request = make_request(temp_dir, ticker="INCOMPLETE")
         path = request.legacy_path()
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -189,7 +189,8 @@ class TestStorageBackendRead:
         result = storage.read(request)
 
         assert result.empty
-        assert not path.exists()
+        # File should be PRESERVED for operator inspection (not deleted)
+        assert path.exists()
 
 
 class TestStorageBackendSave:

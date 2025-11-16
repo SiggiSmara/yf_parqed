@@ -269,8 +269,7 @@ def main() -> None:
 
     sample = _select_tickers(ticker_files, args.sample_size, args.seed)
     print(
-        f"Selected {len(sample)} tickers from {legacy_interval_dir} "
-        f"(seed={args.seed})."
+        f"Selected {len(sample)} tickers from {legacy_interval_dir} (seed={args.seed})."
     )
     print("Tickers:", ", ".join(path.stem for path in sample))
 

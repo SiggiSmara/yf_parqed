@@ -1,0 +1,36 @@
+{
+    "schema_version": 1,
+    "generated_at": "2025-10-19T16:06:02Z",
+    "created_by": "yf-parqed-migrate",
+    "legacy_root": "data/legacy",
+    "venues": [
+        {
+            "id": "us:yahoo",
+            "market": "US",
+            "source": "yahoo",
+            "status": "pending",
+            "last_updated": "2025-10-19T16:06:02Z",
+            "intervals": {
+                "1d": {
+                    "legacy_path": "data/legacy/stocks_1d",
+                    "partition_path": "data/us/yahoo/stocks_1d",
+                    "status": "complete",
+                    "totals": {
+                        "legacy_rows": 12196455,
+                        "partition_rows": 12196455
+                    },
+                    "jobs": {
+                        "total": 7961,
+                        "completed": 7961
+                    },
+                    "resume_token": null,
+                    "verification": {
+                        "method": "row_counts+checksum",
+                        "verified_at": "2025-10-19T16:06:02Z"
+                    },
+                    "backups": []
+                }
+            }
+        }
+    ]
+}

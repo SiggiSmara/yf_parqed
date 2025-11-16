@@ -23,12 +23,16 @@ def _load_service(
     created_by: str,
     *,
     compression: str | None = "gzip",
+    fsync: bool = True,
+    row_group_size: int | None = None,
 ) -> PartitionMigrationService:
     config = ConfigService(base_dir)
     return PartitionMigrationService(
         config,
         created_by=created_by,
         compression=compression,
+        fsync=fsync,
+        row_group_size=row_group_size,
     )
 
 
@@ -54,20 +58,6 @@ def _configure_logging(base_dir: Path, log_file: Optional[Path]) -> None:
         diagnose=False,
     )
     logger.debug("File logging enabled at {path}", path=str(resolved))
-
-
-def _resolve_compression_option(value: Optional[str]) -> str | None:
-    if value is None:
-        return "gzip"
-
-    codec = value.strip().lower()
-    if not codec or codec in {"default", "auto"}:
-        return "gzip"
-
-    if codec in {"none", "no", "false", "off", "uncompressed"}:
-        return None
-
-    return codec
 
 
 def _format_bytes(size: int | None) -> str:
@@ -103,7 +93,7 @@ def _print_disk_estimate(estimate: dict[str, object]) -> None:
         partition_root = str(totals.get("partition_root", ""))
         console.print(
             f"Partition root: {partition_root}"
-            f" (available { _format_bytes(_safe_int(totals.get('available_partition_bytes'))) })"
+            f" (available {_format_bytes(_safe_int(totals.get('available_partition_bytes')))})"
         )
         console.print(
             "Estimated writes: "
@@ -114,7 +104,7 @@ def _print_disk_estimate(estimate: dict[str, object]) -> None:
         projected = _safe_int(totals.get("projected_free_after"))
         if projected is not None:
             console.print(
-                "Projected free space after migration: " f"{_format_bytes(projected)}"
+                f"Projected free space after migration: {_format_bytes(projected)}"
             )
 
         delete_legacy = bool(totals.get("delete_legacy"))
@@ -391,8 +381,8 @@ def mark(
 
 @app.command()
 def migrate(
-    venue: Optional[str] = typer.Argument(
-        None, help="Venue identifier (defaults to plan)"
+    venue: str = typer.Argument(
+        "us:yahoo", help="Venue identifier (default: us:yahoo)"
     ),
     interval: Optional[str] = typer.Argument(
         None, help="Interval to migrate (e.g. 1m)"
@@ -409,14 +399,15 @@ def migrate(
         min=1,
         help="Process at most this many tickers (useful for sampling runs)",
     ),
-    compression: str = typer.Option(
-        "gzip",
+    row_group_size: Optional[int] = typer.Option(
+        None,
+        "--row-group-size",
+        help="Row group size to use when writing partition parquet files (pyarrow).",
+    ),
+    compression: Optional[str] = typer.Option(
+        None,
         "--compression",
-        "-c",
-        help=(
-            "Compression codec for partition parquet writes (e.g. gzip, snappy, none)."
-        ),
-        show_default=True,
+        help="Compression codec to use for partition parquet files (e.g. gzip, snappy, none).",
     ),
     all_intervals: bool = typer.Option(
         False,
@@ -428,6 +419,21 @@ def migrate(
     ),
     base_dir: Path = typer.Option(Path.cwd(), help="Working directory"),
     non_interactive: bool = typer.Option(False, help="Run in non-interactive mode"),
+    overwrite_existing: bool = typer.Option(
+        False,
+        "--overwrite-existing",
+        help="Delete the target interval partition folder before starting (destructive)",
+    ),
+    no_fsync: bool = typer.Option(
+        False,
+        "--no-fsync",
+        help="Disable fsync on temp partition files for faster writes (less durable).",
+    ),
+    fast: bool = typer.Option(
+        False,
+        "--fast",
+        help="Enable fast migration defaults: overwrite-existing + no-fsync + row_group_size=65536",
+    ),
     log_file: Optional[Path] = typer.Option(
         None,
         "--log-file",
@@ -478,18 +484,38 @@ def migrate(
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=1)
 
-    compression_value = _resolve_compression_option(compression)
+    # If fast mode is requested, enable the performance defaults
+    if fast:
+        console.print(
+            "[yellow]Fast mode: enabling overwrite-existing, disabling fsync, and using row_group_size=65536[/yellow]"
+        )
+        overwrite_existing = True
+        no_fsync = True
+        if row_group_size is None:
+            row_group_size = 65536
+
+    # map CLI compression value 'none' to None for the service
+    comp_val: str | None
+    if compression is None:
+        comp_val = "gzip"
+    elif compression == "none":
+        console.print("Compression disabled")
+        comp_val = None
+    else:
+        comp_val = compression
+
     service = _load_service(
         base_dir,
         created_by,
-        compression=compression_value,
+        compression=comp_val,
+        fsync=not no_fsync,
+        row_group_size=row_group_size,
     )
-    if compression_value is None:
+
+    if no_fsync:
         console.print(
-            "[yellow]Compression disabled for partition writes (output will be larger).[/yellow]"
+            "[yellow]fsync disabled: writes will be faster but less durable until OS flush.[/yellow]"
         )
-    elif compression_value != "gzip":
-        console.print(f"Using '{compression_value}' compression for partition writes.")
     try:
         estimate = service.estimate_disk_requirements(
             venue,
@@ -518,6 +544,7 @@ def migrate(
                 interval_name,
                 delete_legacy=delete_legacy,
                 max_tickers=max_tickers,
+                overwrite_existing=overwrite_existing,
             )
         except (FileNotFoundError, FileExistsError, ValueError) as exc:
             console.print(f"[red]{exc}[/red]")
@@ -543,6 +570,93 @@ def migrate(
         lock.release()
     except Exception:
         logger.debug("Failed to release global run lock", exc_info=True)
+
+
+@app.command()
+def verify(
+    venue: Optional[str] = typer.Argument(
+        None, help="Venue identifier (defaults to plan)"
+    ),
+    interval: Optional[str] = typer.Argument(None, help="Interval to verify (e.g. 1m)"),
+    max_tickers: Optional[int] = typer.Option(
+        None,
+        "--max-tickers",
+        "-n",
+        min=1,
+        help="Verify at most this many tickers (useful for sampling runs)",
+    ),
+    base_dir: Path = typer.Option(Path.cwd(), help="Working directory"),
+    created_by: str = typer.Option(
+        "yf-parqed-verify", help="Identifier stored in plan"
+    ),
+    log_file: Optional[Path] = typer.Option(
+        None,
+        "--log-file",
+        help="Optional log file path (relative to base dir if not absolute)",
+    ),
+) -> None:
+    """Verify that migrated partition data matches legacy data for a venue/interval."""
+    _configure_logging(base_dir, log_file)
+    service = _load_service(base_dir, created_by)
+    plan = _load_plan(base_dir)
+    venue = venue or _default_venue(plan)
+
+    try:
+        intervals, _ = _resolve_intervals(
+            plan=plan,
+            venue_id=venue,
+            interval=interval,
+            migrate_all=False,
+        )
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1)
+
+    overall_results: list[tuple[str, dict[str, object]]] = []
+    for interval_name in intervals:
+        console.print(f"Verifying {venue}/{interval_name}...")
+        try:
+            result = service.verify_interval(
+                venue, interval_name, max_tickers=max_tickers
+            )
+        except (FileNotFoundError, ValueError) as exc:
+            console.print(f"[red]{exc}[/red]")
+            raise typer.Exit(code=1)
+
+        # Normalize mismatches to a list for safe handling
+        raw_mismatches = result.get("mismatches")
+        if not raw_mismatches:
+            mismatches_list: list[str] = []
+        elif isinstance(raw_mismatches, list):
+            mismatches_list = raw_mismatches
+        else:
+            # Fallback: represent the value as a single string entry
+            mismatches_list = [str(raw_mismatches)]
+
+        # Safely coerce checked count
+        total = 0
+        try:
+            total_raw = result.get("checked", 0) or 0
+            # convert via str() to avoid type-checker errors on opaque objects
+            total = int(str(total_raw))
+        except Exception:
+            total = 0
+
+        if not mismatches_list:
+            console.print(
+                f"[green]Verification passed for {interval_name}: checked {total} tickers[/green]"
+            )
+        else:
+            console.print(
+                f"[red]Verification found {len(mismatches_list)} mismatches out of {total} checked tickers[/red]"
+            )
+            for m in mismatches_list[:20]:
+                console.print(f"  - {m}")
+
+        overall_results.append((interval_name, result))
+
+    if len(overall_results) > 1:
+        console.print("[green]Verification completed for requested intervals.[/green]")
 
 
 if __name__ == "__main__":

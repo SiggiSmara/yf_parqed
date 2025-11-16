@@ -22,13 +22,16 @@ This document records user-facing changes by release. Each section should captur
 
 ---
 
-## 2025-10-19 — Version 0.3.1 (Partition-Aware Storage Rollout)
+## 2025-10-19 — Version 0.3.1 (Partition-Aware Storage + Xetra Foundation)
 
 - Completed the Partition-Aware Storage ADR and shipped operational safeguards: monthly Hive-style partitions, same-dir temp writes with fsync + atomic replace, a mkdir-based global run-lock with operator cleanup tooling, and a migration CLI that verifies parity before toggling the runtime to partitioned mode. Full test suite passed locally (177 tests).
+
+- **Xetra Delayed Data Foundation (Phase 1 Complete)**: Delivered production-ready infrastructure for Deutsche Börse Xetra 15-minute delayed trade data ingestion. Added `xetra-parqed` CLI with 5 commands (`fetch-trades`, `check-status`, `list-files`, `check-partial`, `consolidate-month`) and 100% test coverage. Implemented empirically validated rate limiting (0.6s/30req/35s cooldown, R²=0.97, zero 429 errors over 810 files) and trading hours filtering (56.5% file reduction). Raw per-trade data storage operational with daily partitions (`venue=VENUE/year/month/day/`) and monthly consolidation. Core services: XetraFetcher (97% coverage), XetraParser (100% coverage), XetraService (80% coverage). Total: 1,943 lines, 129 Xetra-specific tests. **Note**: OHLCV aggregation (1m/1h/1d intervals) pending Phase 2 implementation. See [Xetra ADR](adr/2025-10-12-xetra-delayed-data.md) for details.
 
   Notes:
 
   - The migration CLI supports plan persistence, per-venue verification, and `--non-interactive` automation-friendly runs. Operators should run the `partition-migrate status` command prior to any destructive actions and may use `partition-toggle` to control rollout scope.
+  - The `xetra-parqed` CLI is fully operational for raw trade data collection. OHLCV interval generation (Phase 2) required for drop-in compatibility with Yahoo Finance analytics workflows.
 
 
 ## 2025-10-12 — Documentation Restructure

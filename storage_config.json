@@ -1,0 +1,7 @@
+{
+    "partitioned": false,
+    "markets": {},
+    "sources": {
+        "us/yahoo": true
+    }
+}

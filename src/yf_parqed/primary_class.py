@@ -477,7 +477,9 @@ class YFParqed:
             logger.debug(f"Data path: {storage_request.legacy_path()}")
         else:
             logger.debug(
-                "Using partitioned storage for %s interval %s", stock, interval
+                "Using partitioned storage for {stock} interval {interval}",
+                stock=stock,
+                interval=interval,
             )
 
         last_data_date = self.registry.get_last_data_date(stock, interval)

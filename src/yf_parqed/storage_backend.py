@@ -7,6 +7,8 @@ from typing import Callable, Protocol
 import pandas as pd
 from loguru import logger
 
+from .parquet_recovery import ParquetRecoveryError, safe_read_parquet
+
 
 @dataclass(frozen=True)
 class StorageRequest:
@@ -69,26 +71,22 @@ class StorageBackend(StorageInterface):
         if not data_path.is_file():
             return empty_df
 
-        try:
-            df = pd.read_parquet(data_path)
-        except (ValueError, FileNotFoundError, OSError):
-            logger.debug(
-                f"Unable to read parquet file for {data_path.stem}, deleting corrupt file"
-            )
-            self._remove_file(data_path)
-            return empty_df
-
         required = set(self._column_provider())
-        if df.empty or not required.issubset(df.columns):
-            logger.debug(
-                f"Invalid dataframe schema for {data_path.stem}, deleting file before rehydrating"
-            )
-            self._remove_file(data_path)
-            return empty_df
 
-        df = self._normalizer(df)
-        df.set_index(["stock", "date"], inplace=True)
-        return df
+        try:
+            df = safe_read_parquet(
+                path=data_path,
+                required_columns=required,
+                normalizer=self._normalizer,
+                empty_frame_factory=self._empty_frame_factory,
+            )
+            df.set_index(["stock", "date"], inplace=True)
+            return df
+        except ParquetRecoveryError as exc:
+            # Recovery failed - log details and return empty
+            # File is either deleted (if corrupt) or preserved (if schema mismatch)
+            logger.error(f"Failed to read {data_path}: {exc}")
+            return empty_df
 
     def save(
         self,
@@ -133,12 +131,3 @@ class StorageBackend(StorageInterface):
         data_path.parent.mkdir(parents=True, exist_ok=True)
         combined.to_parquet(data_path, index=False, compression="gzip")
         return combined.set_index(["stock", "date"])
-
-    def _remove_file(self, path: Path) -> None:
-        """Safely remove a file, handling both old and new pathlib APIs."""
-        try:
-            path.unlink(missing_ok=True)
-        except TypeError:
-            # Older Python versions don't have missing_ok parameter
-            if path.exists():
-                path.unlink()

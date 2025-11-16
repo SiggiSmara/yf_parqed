@@ -173,8 +173,7 @@ def update_data(
     if not lock.try_acquire():
         owner = lock.owner_info() or {}
         msg = (
-            "Another update or migration run appears to be in progress. "
-            f"Owner: {owner}"
+            f"Another update or migration run appears to be in progress. Owner: {owner}"
         )
         logger.error(msg)
         # If running non-interactively (cron), attempt automatic recovery

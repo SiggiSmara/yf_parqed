@@ -113,6 +113,7 @@ class StubMigrationService:
         *,
         delete_legacy: bool = False,
         max_tickers: int | None = None,
+        overwrite_existing: bool = False,
     ):
         self.calls.append(("migrate", venue, interval, delete_legacy, max_tickers))
         return self.migrate_return
@@ -506,6 +507,153 @@ def test_cli_migrate_end_to_end(tmp_path: Path) -> None:
     # Legacy remains since we did not pass --delete-legacy
     assert (legacy_root / "AAA.parquet").exists()
     assert not (tmp_path / "custom_backups").exists()
+
+
+def test_fast_flag_enables_defaults(monkeypatch, tmp_path: Path) -> None:
+    """Ensure --fast sets overwrite_existing, disables fsync and sets row_group_size to 65536."""
+    captured: dict = {"load_calls": [], "migrate_calls": []}
+
+    class FakeService:
+        def __init__(self):
+            pass
+
+        def estimate_disk_requirements(self, venue, intervals, *, delete_legacy):
+            captured["load_calls"].append((venue, tuple(intervals), delete_legacy))
+            return {
+                "intervals": {name: {"legacy_bytes": 1024} for name in intervals},
+                "totals": {
+                    "legacy_bytes": 1024 * len(list(intervals)),
+                    "partition_bytes": 1024 * len(list(intervals)),
+                    "overhead_bytes": 0,
+                    "required_partition_bytes": 1024 * len(list(intervals)),
+                    "available_partition_bytes": 10**9,
+                    "partition_root": ".",
+                    "delete_legacy": False,
+                    "projected_free_after": 10**9,
+                },
+                "can_proceed": True,
+                "limitations": [],
+                "suggest_delete_legacy": False,
+            }
+
+        def migrate_interval(
+            self,
+            venue,
+            interval,
+            *,
+            delete_legacy=False,
+            max_tickers=None,
+            overwrite_existing=False,
+        ):
+            captured["migrate_calls"].append(
+                (venue, interval, delete_legacy, max_tickers, overwrite_existing)
+            )
+            return {
+                "jobs_total": 0,
+                "jobs_completed": 0,
+                "legacy_rows": 0,
+                "partition_rows": 0,
+                "checksums": {},
+                "available_jobs": 0,
+                "persisted": True,
+                "partial_run": False,
+                "tickers": [],
+            }
+
+    def _fake_load_service(base, created_by, **kwargs):
+        # record the kwargs passed when creating service
+        captured["service_kwargs"] = kwargs
+        return FakeService()
+
+    monkeypatch.setattr(partition_migrate, "_load_service", _fake_load_service)
+    monkeypatch.setattr(
+        partition_migrate, "_load_plan", lambda base: _single_interval_plan()
+    )
+
+    result = runner.invoke(
+        partition_migrate.app,
+        ["migrate", "--base-dir", str(tmp_path), "--fast", "--max-tickers", "1"],
+    )
+    assert result.exit_code == 0
+    # service should have been created with fsync=False and row_group_size=65536
+    assert captured.get("service_kwargs") is not None
+    assert captured["service_kwargs"].get("fsync") is False
+    assert captured["service_kwargs"].get("row_group_size") == 65536
+    # migrate_interval should have been called with overwrite_existing=True
+    assert captured["migrate_calls"]
+    _, _, _, _, overwrite_flag = captured["migrate_calls"][0]
+    assert overwrite_flag is True
+
+
+def test_explicit_nofsync_and_row_group_flags(monkeypatch, tmp_path: Path) -> None:
+    """Ensure explicit --no-fsync and --row-group-size values are forwarded to the service."""
+    captured_kwargs = {}
+
+    def _fake_load_service(base, created_by, **kwargs):
+        captured_kwargs.update(kwargs)
+
+        class FakeStubService:
+            def estimate_disk_requirements(
+                self, venue, intervals, *, delete_legacy=False
+            ):
+                interval_list = list(intervals)
+                return {
+                    "intervals": {
+                        name: {"legacy_bytes": 1024} for name in interval_list
+                    },
+                    "totals": {
+                        "legacy_bytes": 1024 * len(interval_list),
+                        "partition_bytes": 1024 * len(interval_list),
+                        "overhead_bytes": 0,
+                        "required_partition_bytes": 1024 * len(interval_list),
+                        "available_partition_bytes": 10**9,
+                        "partition_root": ".",
+                        "delete_legacy": delete_legacy,
+                        "projected_free_after": 10**9,
+                    },
+                    "can_proceed": True,
+                    "limitations": [],
+                    "suggest_delete_legacy": False,
+                }
+
+            def migrate_interval(
+                self,
+                venue,
+                interval,
+                *,
+                delete_legacy=False,
+                max_tickers=None,
+                overwrite_existing=False,
+            ):
+                return StubMigrationService().migrate_interval(
+                    venue,
+                    interval,
+                    delete_legacy=delete_legacy,
+                    max_tickers=max_tickers,
+                )
+
+        return FakeStubService()
+
+    monkeypatch.setattr(partition_migrate, "_load_service", _fake_load_service)
+    monkeypatch.setattr(
+        partition_migrate, "_load_plan", lambda base: _single_interval_plan()
+    )
+
+    result = runner.invoke(
+        partition_migrate.app,
+        [
+            "migrate",
+            "--base-dir",
+            str(tmp_path),
+            "--no-fsync",
+            "--row-group-size",
+            "131072",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured_kwargs.get("fsync") is False
+    assert captured_kwargs.get("row_group_size") == 131072
 
 
 def test_migrate_prompt_accepts_interval_name(monkeypatch, tmp_path: Path) -> None:

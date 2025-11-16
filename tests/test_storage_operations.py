@@ -146,7 +146,8 @@ class TestStorageOperations:
         df = yf_parqed.read_yf(data_path)
 
         assert df.empty
-        assert not data_path.exists()
+        # Empty files are now PRESERVED for operator inspection (not deleted)
+        assert data_path.exists()
 
     def test_save_yf_preserves_higher_sequence_values(self):
         """When new rows provide lower sequence numbers, keep the highest-sequence snapshot."""
@@ -201,11 +202,14 @@ class TestStorageOperations:
             }
         )
         partial_df.to_parquet(data_path, index=False)
+        partial_df.to_parquet(data_path, index=False)
 
         df = yf_parqed.read_yf(data_path)
 
         assert df.empty
-        assert not data_path.exists()
+        # Preserve partial files that are readable but missing columns so operators
+        # can inspect and remediate them. Only unreadable/corrupt files are deleted.
+        assert data_path.exists()
 
     def test_save_yf_normalizes_numeric_types(self):
         """save_yf coerces numeric columns to stable dtypes to avoid drift between writes."""
