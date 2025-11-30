@@ -67,8 +67,8 @@ class XetraService:
         """
         Determine which dates have available data from Xetra but are not yet stored locally.
 
-        Deutsche Börse keeps approximately 24 hours of data. This method checks:
-        1. What dates are available from the API (today and yesterday)
+        This method checks:
+        1. What dates are available from the API (extracts all unique dates from available files)
         2. What dates are already stored locally
         3. Returns dates that need to be fetched
 
@@ -85,26 +85,36 @@ class XetraService:
             >>> dates = service.get_missing_dates('DETR')
             >>> print(dates)  # e.g., ['2025-11-04', '2025-11-03']
         """
-        today = datetime.now().date()
-        yesterday = today - timedelta(days=1)
+        # Get ALL available files from API
+        try:
+            all_files = self.fetcher.list_available_files(venue)
+        except Exception as e:
+            logger.error(f"Could not list files for {venue}: {e}")
+            return []
 
-        # Check which dates have files available from API
-        available_dates = []
-        for check_date in [today, yesterday]:
-            date_str = check_date.strftime("%Y-%m-%d")
+        if not all_files:
+            logger.info(f"No files available from API for {venue}")
+            return []
+
+        # Extract unique dates from filenames
+        # Filename format: DETR-posttrade-2025-10-31T13_54.json.gz
+        available_dates_set = set()
+        for filename in all_files:
             try:
-                files = self.list_files(venue, date_str)
-                if files:
-                    available_dates.append(date_str)
-                    logger.debug(
-                        f"API has {len(files)} files for {venue} on {date_str}"
-                    )
-            except Exception as e:
-                logger.debug(f"Could not check {venue} on {date_str}: {e}")
+                if "T" in filename:
+                    file_date = filename.rsplit("T", 1)[0][-10:]  # Last 10 chars before T
+                    # Validate date format
+                    datetime.strptime(file_date, "%Y-%m-%d")
+                    available_dates_set.add(file_date)
+            except (IndexError, ValueError):
+                # Skip files we can't parse
+                continue
 
-        if not available_dates:
+        if not available_dates_set:
             logger.info(f"No dates available from API for {venue}")
             return []
+
+        available_dates = sorted(list(available_dates_set))
 
         # Check which dates are already stored locally AND complete
         missing_dates = []
