@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 from typing import List, Optional
 from pathlib import Path
+import json
 
 import pandas as pd
 from loguru import logger
@@ -116,7 +117,8 @@ class XetraService:
 
         available_dates = sorted(list(available_dates_set))
 
-        # Check which dates are already stored locally AND complete
+        # Check which dates need to be fetched (either missing or incomplete)
+        # Return all available dates - the incremental logic will check which files are already stored
         missing_dates = []
         for date_str in available_dates:
             trade_date = datetime.strptime(date_str, "%Y-%m-%d")
@@ -141,8 +143,9 @@ class XetraService:
                 missing_dates.append(date_str)
                 logger.info(f"Missing: {venue} {date_str} (not stored locally)")
             else:
-                # File exists - skip it (incremental logic will handle partial downloads)
-                logger.debug(f"Already stored: {venue} {date_str}")
+                # File exists but may be incomplete - include it so incremental logic can check
+                missing_dates.append(date_str)
+                logger.debug(f"Checking {venue} {date_str} for missing files (incremental)")
 
         return missing_dates
 
@@ -378,41 +381,68 @@ class XetraService:
                     / f"day={day}"
                 )
                 parquet_path = base_dir / "trades.parquet"
+                
+                # Use centralized download log instead of per-day metadata
+                download_log_path = self.backend._path_builder._root / market / source / ".download_log.parquet"
 
-                already_stored_timestamps = set()
+                # Track which timestamps have been downloaded (including empty files)
+                already_downloaded_timestamps = set()
+                
+                # Check centralized download log
+                if download_log_path.exists():
+                    try:
+                        import pandas as pd
+                        
+                        # Read only rows for this venue and date
+                        df_log = pd.read_parquet(download_log_path)
+                        df_filtered = df_log[
+                            (df_log['venue'] == venue) & 
+                            (df_log['date'] == date_str)
+                        ]
+                        
+                        if len(df_filtered) > 0:
+                            already_downloaded_timestamps = set(df_filtered['timestamp'].unique())
+                            logger.info(
+                                f"Found {len(already_downloaded_timestamps)} completed downloads from log for {date_str}"
+                            )
+                    except Exception as e:
+                        logger.warning(f"Could not read download log for {date_str}: {e}")
+                
+                # Also check parquet file for timestamps with actual trade data
+                # (timestamps not yet tracked in download log)
                 if parquet_path.exists():
                     try:
-                        import pyarrow.parquet as pq
+                        import pandas as pd
 
-                        table = pq.read_table(parquet_path, columns=["time"])
-                        df_existing = table.to_pandas()
+                        # Use pandas to avoid schema issues (it handles type conversions automatically)
+                        df_existing = pd.read_parquet(parquet_path, columns=["trade_time"])
 
-                        if len(df_existing) == 0:
-                            # Empty parquet file - download all files for this date
-                            logger.info(
-                                f"Empty parquet file exists for {date_str}, will download all files"
-                            )
-                            already_stored_timestamps = set()
-                        else:
+                        if len(df_existing) > 0:
+                            parquet_timestamps_before = len(already_downloaded_timestamps)
                             # Extract minute-level timestamps (YYYY-MM-DDTHH_MM format from filenames)
                             # Timestamps in data are like "2025-11-04 09:00:00.123456"
                             # Convert to "2025-11-04T09_00" format to match filenames
-                            for ts in df_existing["time"]:
+                            for ts in df_existing["trade_time"]:
                                 # Format: YYYY-MM-DDTHH_MM
                                 timestamp_str = ts.strftime("%Y-%m-%dT%H_%M")
-                                already_stored_timestamps.add(timestamp_str)
+                                already_downloaded_timestamps.add(timestamp_str)
 
+                            parquet_timestamps_added = len(already_downloaded_timestamps) - parquet_timestamps_before
+                            if parquet_timestamps_added > 0:
+                                logger.info(
+                                    f"Found {parquet_timestamps_added} additional timestamps from parquet for {date_str}"
+                                )
+                            
                             logger.info(
-                                f"Found {len(already_stored_timestamps)} unique minute timestamps already stored for {date_str}"
+                                f"Total tracked timestamps: {len(already_downloaded_timestamps)} (download log + data timestamps)"
                             )
                     except Exception as e:
-                        # Can't read parquet file - download all files for this date
+                        # Can't read parquet file - continue with what we have from log
                         logger.warning(
-                            f"Could not read existing timestamps for {date_str}: {e}, will download all files"
+                            f"Could not read parquet timestamps for {date_str}: {e}"
                         )
-                        already_stored_timestamps = set()
 
-                # Filter files to only those not yet stored
+                # Filter files to only those not yet downloaded
                 files_to_fetch = []
                 for filename in files:
                     # Extract timestamp from filename: "DETR-posttrade-2025-11-04T09_00.json.gz"
@@ -420,7 +450,7 @@ class XetraService:
                         timestamp_part = filename.split("DETR-posttrade-")[1].split(
                             ".json.gz"
                         )[0]  # "2025-11-04T09_00"
-                        if timestamp_part not in already_stored_timestamps:
+                        if timestamp_part not in already_downloaded_timestamps:
                             files_to_fetch.append(filename)
                     except IndexError:
                         # Can't parse filename, include it to be safe
@@ -438,6 +468,7 @@ class XetraService:
 
                 date_trades = 0
                 date_files = 0
+                completed_timestamps_this_run = []
 
                 # Process each file individually - store immediately after each file
                 for i, filename in enumerate(files_to_fetch, 1):
@@ -454,14 +485,67 @@ class XetraService:
                             date_files += 1
                             total_trades += len(df)
                             total_files += 1
+                        else:
+                            # Empty file (no trades) - still count as processed
+                            # This prevents re-downloading empty files on subsequent runs
+                            date_files += 1
+                            total_files += 1
+                            logger.debug(f"Processed empty file {filename} for {date_str}")
 
-                            if i % 50 == 0 or i == len(
-                                files_to_fetch
-                            ):  # Log every 50 files and at end
-                                logger.info(
-                                    f"✓ [{i}/{len(files_to_fetch)}] Stored {date_files} files, "
-                                    f"{date_trades:,} trades for {date_str}"
-                                )
+                        # Track this timestamp as completed (whether it had data or not)
+                        try:
+                            timestamp_part = filename.split("DETR-posttrade-")[1].split(".json.gz")[0]
+                            completed_timestamps_this_run.append({
+                                'venue': venue,
+                                'date': date_str,
+                                'timestamp': timestamp_part,
+                                'has_data': not df.empty,
+                                'trade_count': len(df) if not df.empty else 0,
+                                'downloaded_at': datetime.now()
+                            })
+                            already_downloaded_timestamps.add(timestamp_part)
+                        except IndexError:
+                            pass  # Can't parse filename
+
+                        # Append to centralized download log every 10 files to enable resume
+                        if (i % 10 == 0 or i == len(files_to_fetch)) and completed_timestamps_this_run:
+                            try:
+                                import pandas as pd
+                                
+                                # Create DataFrame from new log entries
+                                df_new_log = pd.DataFrame(completed_timestamps_this_run)
+                                
+                                # Append to existing log or create new one
+                                log_dir = download_log_path.parent
+                                log_dir.mkdir(parents=True, exist_ok=True)
+                                
+                                if download_log_path.exists():
+                                    # Append to existing log
+                                    df_existing_log = pd.read_parquet(download_log_path)
+                                    df_combined = pd.concat([df_existing_log, df_new_log], ignore_index=True)
+                                    # Remove duplicates (in case of retry)
+                                    df_combined = df_combined.drop_duplicates(
+                                        subset=['venue', 'date', 'timestamp'], 
+                                        keep='last'
+                                    )
+                                    df_combined.to_parquet(download_log_path, index=False)
+                                else:
+                                    # Create new log
+                                    df_new_log.to_parquet(download_log_path, index=False)
+                                
+                                # Clear the buffer after saving
+                                completed_timestamps_this_run = []
+                                
+                            except Exception as e:
+                                logger.warning(f"Could not save download log: {e}")
+
+                        if i % 50 == 0 or i == len(
+                            files_to_fetch
+                        ):  # Log every 50 files and at end
+                            logger.info(
+                                f"✓ [{i}/{len(files_to_fetch)}] Processed {date_files} files, "
+                                f"{date_trades:,} trades for {date_str}"
+                            )
 
                     except Exception as e:
                         logger.error(f"Failed to process {filename}: {e}")
