@@ -25,6 +25,9 @@ xetra-parqed \
   --interval 1 \
   --pid-file /tmp/xetra-detr.pid
 
+# For production with proper permissions, use /run/xetra/detr.pid
+# (requires directory creation: sudo mkdir -p /run/xetra && sudo chown xetra:xetra /run/xetra)
+
 # Note: By default, only runs during 08:30-18:00 CET/CEST
 # Use --active-hours "00:00-23:59" for 24/7 operation
 ```
@@ -71,9 +74,13 @@ xetra-parqed --log-file logs/xetra.log fetch-trades DETR --daemon --interval 1 -
 - **Automatic cleanup**: PID file removed on graceful shutdown
 
 ```bash
-# Use PID file to prevent duplicates
+# Use PID file to prevent duplicates (development)
 xetra-parqed --log-file logs/xetra.log fetch-trades DETR \
-  --daemon --pid-file /var/run/xetra-detr.pid
+  --daemon --pid-file /tmp/xetra-detr.pid
+
+# Production: use /run/xetra/ (created by systemd RuntimeDirectory)
+xetra-parqed --log-file logs/xetra.log fetch-trades DETR \
+  --daemon --pid-file /run/xetra/detr.pid
 ```
 
 ### 4. Graceful Shutdown
@@ -119,7 +126,7 @@ ExecStart=/opt/yf_parqed/.venv/bin/xetra-parqed \
     fetch-trades DETR \
     --daemon \
     --interval 1 \
-    --pid-file /var/run/xetra-detr.pid
+    --pid-file /run/xetra/detr.pid
 
 # Graceful shutdown
 ExecStop=/bin/kill -TERM $MAINPID
@@ -134,7 +141,11 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/var/lib/xetra /var/log/xetra /var/run
+ReadWritePaths=/var/lib/xetra /var/log/xetra /run/xetra
+
+# Create PID directory at startup
+RuntimeDirectory=xetra
+RuntimeDirectoryMode=0755
 
 [Install]
 WantedBy=multi-user.target
@@ -288,6 +299,22 @@ rm /tmp/xetra-detr.pid
 tail -50 logs/xetra-detr.log
 ```
 
+### Permission denied or read-only file system for PID file
+If you see `OSError: [Errno 30] Read-only file system` or `PermissionError` for PID file:
+
+```bash
+# This happens when PID path doesn't match RuntimeDirectory
+# Correct: --pid-file /run/xetra/detr.pid (matches RuntimeDirectory=xetra)
+# Wrong: --pid-file /run/xetra-detr.pid (no directory separator)
+
+# Fix: Update service file and reload
+sudo systemctl daemon-reload
+sudo systemctl restart xetra@DETR
+
+# Verify RuntimeDirectory created the directory
+ls -la /run/xetra/
+```
+
 ### High memory usage
 - Check log rotation is working (old logs should be compressed)
 - Ensure download log is pruned periodically
@@ -384,8 +411,8 @@ For daemon mode, install `yf_parqed` system-wide following Linux Filesystem Hier
 /var/log/xetra/          # Application logs
 └── *.log                # Log files with rotation
 
-/var/run/                # Runtime state
-└── xetra-*.pid          # PID files
+/run/xetra/              # Runtime state (systemd RuntimeDirectory)
+└── *.pid                # PID files
 ```
 
 ### Installation Steps
@@ -395,17 +422,32 @@ For daemon mode, install `yf_parqed` system-wide following Linux Filesystem Hier
 sudo useradd -r -s /bin/false -d /var/lib/xetra xetra
 
 # 2. Create directory structure
-sudo mkdir -p /opt/yf_parqed /var/lib/xetra /var/log/xetra /var/run
-sudo chown -R xetra:xetra /var/lib/xetra /var/log/xetra
+sudo mkdir -p /opt/yf_parqed /var/lib/xetra /var/log/xetra /run/xetra
+sudo chown -R xetra:xetra /var/lib/xetra /var/log/xetra /run/xetra
 
-# 3. Install application code
+# 3. Install application code and dependencies
+# Add current user to xetra group for installation
+sudo usermod -aG xetra $USER
+
+# Reload group membership (choose one):
+# Option A: Log out and log back in
+# Option B: Start a new shell with updated groups
+newgrp xetra
+# Option C: Or just use 'sg xetra -c "command"' for single commands
+
+# Clone repository to /opt/yf_parqed
 sudo mkdir -p /opt/yf_parqed
-sudo chown xetra:xetra /opt/yf_parqed
-sudo -u xetra git clone https://github.com/SiggiSmara/yf_parqed.git /opt/yf_parqed
+sudo chgrp xetra /opt/yf_parqed
+sudo chmod 775 /opt/yf_parqed
+git clone https://github.com/SiggiSmara/yf_parqed.git /opt/yf_parqed
 cd /opt/yf_parqed
 
-# 4. Install Python dependencies
-sudo -u xetra uv sync
+# Install Python dependencies using current user's uv
+# (Assumes you already have uv installed: curl -LsSf https://astral.sh/uv/install.sh | sh)
+uv sync
+
+# 4. Transfer ownership to xetra user
+sudo chown -R xetra:xetra /opt/yf_parqed
 
 # 5. Verify installation
 sudo -u xetra /opt/yf_parqed/.venv/bin/xetra-parqed --help

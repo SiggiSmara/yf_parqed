@@ -19,7 +19,7 @@ ExecStart=/opt/yf_parqed/.venv/bin/xetra-parqed \
     fetch-trades %I \
     --daemon \
     --interval 1 \
-    --pid-file /var/run/xetra-%i.pid
+    --pid-file /run/xetra/%i.pid
 
 # Graceful shutdown
 ExecStop=/bin/kill -TERM $MAINPID
@@ -34,7 +34,11 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/var/lib/xetra /var/log/xetra /var/run
+ReadWritePaths=/var/lib/xetra /var/log/xetra /run/xetra
+
+# Create PID directory at startup
+RuntimeDirectory=xetra
+RuntimeDirectoryMode=0755
 
 [Install]
 WantedBy=multi-user.target
