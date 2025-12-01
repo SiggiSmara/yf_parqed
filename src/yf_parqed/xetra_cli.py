@@ -2,9 +2,140 @@ import typer
 from pathlib import Path
 from loguru import logger
 import sys
+import signal
+import time
+import os
+import atexit
+from datetime import datetime, timedelta, time as dt_time
+from zoneinfo import ZoneInfo
 from typing_extensions import Annotated
 
 app = typer.Typer()
+
+
+def _parse_active_hours(active_hours_str: str) -> tuple[dt_time, dt_time]:
+    """
+    Parse active hours string into time objects.
+    
+    Args:
+        active_hours_str: String like "08:30-18:00"
+        
+    Returns:
+        Tuple of (start_time, end_time)
+        
+    Raises:
+        ValueError: If format is invalid
+    """
+    try:
+        start_str, end_str = active_hours_str.split("-")
+        start_h, start_m = map(int, start_str.split(":"))
+        end_h, end_m = map(int, end_str.split(":"))
+        return dt_time(start_h, start_m), dt_time(end_h, end_m)
+    except (ValueError, AttributeError) as e:
+        raise ValueError(
+            f"Invalid active-hours format: {active_hours_str}. Expected HH:MM-HH:MM"
+        ) from e
+
+
+def _is_within_active_hours(
+    start_time: dt_time, end_time: dt_time, timezone: ZoneInfo = ZoneInfo("Europe/Berlin")
+) -> bool:
+    """
+    Check if current time is within active hours.
+    
+    Args:
+        start_time: Start of active period
+        end_time: End of active period
+        timezone: Timezone for checking (default: Europe/Berlin for CET/CEST)
+        
+    Returns:
+        True if current time is within active hours
+    """
+    now = datetime.now(timezone).time()
+    
+    # Handle midnight crossing (e.g., 22:00-02:00)
+    if start_time <= end_time:
+        return start_time <= now <= end_time
+    else:
+        return now >= start_time or now <= end_time
+
+
+def _seconds_until_active(
+    start_time: dt_time, end_time: dt_time, timezone: ZoneInfo = ZoneInfo("Europe/Berlin")
+) -> float:
+    """
+    Calculate seconds until next active period starts.
+    
+    Args:
+        start_time: Start of active period
+        end_time: End of active period
+        timezone: Timezone for checking
+        
+    Returns:
+        Seconds until active period (0 if currently active)
+    """
+    if _is_within_active_hours(start_time, end_time, timezone):
+        return 0.0
+    
+    now = datetime.now(timezone)
+    today_start = now.replace(hour=start_time.hour, minute=start_time.minute, second=0, microsecond=0)
+    
+    if now.time() < start_time:
+        # Start time is later today
+        return (today_start - now).total_seconds()
+    else:
+        # Start time is tomorrow
+        tomorrow_start = today_start + timedelta(days=1)
+        return (tomorrow_start - now).total_seconds()
+
+
+def _check_and_write_pid_file(pid_file: Path) -> None:
+    """
+    Check if another instance is running and write PID file.
+    
+    Args:
+        pid_file: Path to PID file
+        
+    Raises:
+        typer.Exit: If another instance is already running
+    """
+    if pid_file.exists():
+        try:
+            # Check if process is still running
+            with open(pid_file, "r") as f:
+                old_pid = int(f.read().strip())
+            
+            # Check if process exists
+            try:
+                os.kill(old_pid, 0)  # Signal 0 just checks if process exists
+                logger.error(
+                    f"Another instance is already running (PID {old_pid}). "
+                    f"Remove {pid_file} if this is stale."
+                )
+                raise typer.Exit(1)
+            except OSError:
+                # Process doesn't exist, remove stale PID file
+                logger.warning(f"Removing stale PID file (PID {old_pid} not running)")
+                pid_file.unlink()
+        except (ValueError, FileNotFoundError):
+            # Invalid PID file, remove it
+            logger.warning(f"Removing invalid PID file")
+            pid_file.unlink(missing_ok=True)
+    
+    # Write our PID
+    pid_file.parent.mkdir(parents=True, exist_ok=True)
+    with open(pid_file, "w") as f:
+        f.write(str(os.getpid()))
+    
+    logger.info(f"PID file created: {pid_file} (PID: {os.getpid()})")
+    
+    # Register cleanup
+    def cleanup_pid():
+        if pid_file.exists():
+            pid_file.unlink()
+            logger.info(f"PID file removed: {pid_file}")
+    
+    atexit.register(cleanup_pid)
 
 
 @app.callback()
@@ -13,13 +144,32 @@ def main(
         Path, typer.Option(help="Working directory, default is current directory")
     ] = Path.cwd(),
     log_level: Annotated[str, typer.Option(help="Log level")] = "INFO",
+    log_file: Annotated[
+        Path | None,
+        typer.Option(help="Log to file instead of stderr (enables rotation)"),
+    ] = None,
 ):
     """
     Xetra delayed data CLI - Deutsche Börse parquet storage.
     Use --wrk-dir to set working directory, --log-level to set logging verbosity.
+    Use --log-file for daemon mode with log rotation.
     """
     logger.remove()
-    logger.add(sys.stderr, level=log_level)
+    
+    if log_file:
+        # File logging with rotation for daemon mode
+        logger.add(
+            log_file,
+            level=log_level,
+            rotation="10 MB",  # Rotate when file reaches 10MB
+            retention="30 days",  # Keep logs for 30 days
+            compression="gz",  # Compress rotated logs
+            enqueue=True,  # Thread-safe logging
+            format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}",
+        )
+    else:
+        # Console logging for interactive use
+        logger.add(sys.stderr, level=log_level)
 
 
 @app.command()
@@ -39,6 +189,20 @@ def fetch_trades(
     no_store: Annotated[
         bool, typer.Option("--no-store", help="Display only, don't store")
     ] = False,
+    daemon: Annotated[
+        bool, typer.Option("--daemon", help="Run continuously as daemon")
+    ] = False,
+    interval: Annotated[
+        int, typer.Option("--interval", help="Hours between runs in daemon mode")
+    ] = 1,
+    active_hours: Annotated[
+        str | None,
+        typer.Option(help="Trading hours HH:MM-HH:MM in CET/CEST (default: venue-specific, e.g. 08:30-18:00)"),
+    ] = None,
+    pid_file: Annotated[
+        Path | None,
+        typer.Option(help="PID file to prevent multiple daemon instances"),
+    ] = None,
 ):
     """
     Intelligently fetch and store Xetra trades for a venue.
@@ -60,44 +224,192 @@ def fetch_trades(
       • DGAT - Xetra Gateways
       • DEUR - Eurex (derivatives exchange)
 
+    Daemon Mode:
+      Use --daemon to run continuously, fetching new data every --interval hours.
+      Recommended: use with --log-file and --pid-file for production.
+      
+      Trading Hours:
+      By default, daemon only runs during venue trading hours (08:30-18:00 CET/CEST).
+      Use --active-hours to override (e.g., "00:00-23:59" for 24/7 operation).
+
     Examples:
-        xetra-parqed fetch-trades DETR              # Fetch missing data for Xetra
+        xetra-parqed fetch-trades DETR              # Fetch missing data once
         xetra-parqed fetch-trades DETR --no-store   # Check what's available (dry run)
         xetra-parqed fetch-trades DEUR              # Fetch Eurex derivatives data
+        
+        # Daemon mode (respects trading hours)
+        xetra-parqed --log-file logs/xetra.log fetch-trades DETR --daemon --interval 1 --pid-file /tmp/xetra.pid
+        
+        # Daemon mode (24/7 operation)
+        xetra-parqed --log-file logs/xetra.log fetch-trades DETR --daemon --interval 1 --active-hours "00:00-23:59"
     """
     from .xetra_service import XetraService
 
     # Market and source are fixed for Xetra
     market = "de"
     source = "xetra"
+    
+    # Parse active hours (default to venue trading hours)
+    if active_hours:
+        start_time, end_time = _parse_active_hours(active_hours)
+    else:
+        # Default to Xetra trading hours (08:30-18:00 CET/CEST)
+        start_time, end_time = dt_time(8, 30), dt_time(18, 0)
+    
+    berlin_tz = ZoneInfo("Europe/Berlin")
+    
+    # PID file management for daemon mode
+    if pid_file and daemon:
+        _check_and_write_pid_file(pid_file)
+    
+    # Signal handler for graceful shutdown
+    shutdown_requested = {"flag": False}
+    
+    def signal_handler(signum, frame):
+        logger.info(f"Received signal {signum}, shutting down gracefully...")
+        shutdown_requested["flag"] = True
+    
+    if daemon:
+        signal.signal(signal.SIGTERM, signal_handler)
+        signal.signal(signal.SIGINT, signal_handler)
+    
+    def run_fetch_once():
+        """Execute one fetch cycle."""
+        with XetraService() as service:
+            if no_store:
+                # Dry run mode - just show what would be fetched
+                logger.info(f"Checking missing dates for {venue} (dry run mode)")
+                missing_dates = service.get_missing_dates(venue, market, source)
 
-    with XetraService() as service:
-        if no_store:
-            # Dry run mode - just show what would be fetched
-            logger.info(f"Checking missing dates for {venue} (dry run mode)")
-            missing_dates = service.get_missing_dates(venue, market, source)
-
-            if not missing_dates:
-                typer.echo(f"✓ All available data already stored for {venue}")
+                if not missing_dates:
+                    typer.echo(f"✓ All available data already stored for {venue}")
+                else:
+                    typer.echo(f"Would fetch {len(missing_dates)} date(s) for {venue}:")
+                    for date in missing_dates:
+                        typer.echo(f"  - {date}")
+                    typer.echo("\nRemove --no-store to fetch and store this data")
             else:
-                typer.echo(f"Would fetch {len(missing_dates)} date(s) for {venue}:")
-                for date in missing_dates:
-                    typer.echo(f"  - {date}")
-                typer.echo("\nRemove --no-store to fetch and store this data")
-        else:
-            # Actually fetch and store (using incremental mode for interrupt safety)
-            summary = service.fetch_and_store_missing_trades_incremental(
-                venue, market, source
+                # Actually fetch and store (using incremental mode for interrupt safety)
+                summary = service.fetch_and_store_missing_trades_incremental(
+                    venue, market, source
+                )
+
+                if summary["total_trades"] == 0:
+                    message = f"✓ All available data already stored for {venue}"
+                    logger.info(message)
+                    if not daemon:  # Only echo in non-daemon mode
+                        typer.echo(message)
+                else:
+                    message_parts = [f"\n✓ Fetched and stored trades for {venue}:"]
+                    if summary["dates_fetched"]:
+                        message_parts.append(
+                            f"  - Completed dates: {', '.join(summary['dates_fetched'])}"
+                        )
+                    message = "\n".join(message_parts)
+                    logger.info(message)
+                    if not daemon:
+                        typer.echo(message)
+                
+                return summary
+    
+    try:
+        if daemon:
+            logger.info(
+                f"Starting daemon mode for {venue}: fetching every {interval} hour(s)"
             )
-
-            if summary["total_trades"] == 0:
-                typer.echo(f"✓ All available data already stored for {venue}")
-            else:
-                typer.echo(f"\n✓ Fetched and stored trades for {venue}:")
-                if summary["dates_fetched"]:
-                    typer.echo(
-                        f"  - Completed dates: {', '.join(summary['dates_fetched'])}"
+            logger.info(
+                f"Active hours: {start_time.strftime('%H:%M')}-{end_time.strftime('%H:%M')} CET/CEST"
+            )
+            logger.info(f"PID: {Path('/proc/self').resolve().name if Path('/proc/self').exists() else 'unknown'}")
+            
+            run_count = 0
+            while not shutdown_requested["flag"]:
+                # Check if within active hours
+                if not _is_within_active_hours(start_time, end_time, berlin_tz):
+                    wait_seconds = _seconds_until_active(start_time, end_time, berlin_tz)
+                    next_active = datetime.now(berlin_tz) + timedelta(seconds=wait_seconds)
+                    logger.info(
+                        f"Outside active hours. Waiting until {next_active.strftime('%Y-%m-%d %H:%M:%S %Z')}"
                     )
+                    
+                    # Sleep in small intervals to check for shutdown
+                    sleep_interval = 60  # Check every minute
+                    for _ in range(int(wait_seconds / sleep_interval)):
+                        if shutdown_requested["flag"]:
+                            break
+                        time.sleep(sleep_interval)
+                    
+                    # Sleep remaining time
+                    if not shutdown_requested["flag"]:
+                        remaining = wait_seconds % sleep_interval
+                        if remaining > 0:
+                            time.sleep(remaining)
+                    
+                    if shutdown_requested["flag"]:
+                        break
+                    
+                    logger.info("Entering active hours, starting fetch cycle")
+                
+                run_count += 1
+                logger.info(f"=== Daemon run #{run_count} started at {datetime.now(berlin_tz).isoformat()} ===")
+                
+                try:
+                    run_fetch_once()
+                except Exception as e:
+                    logger.error(f"Error in daemon run #{run_count}: {e}", exc_info=True)
+                    # Continue running despite errors
+                
+                if shutdown_requested["flag"]:
+                    break
+                
+                # Calculate next run time
+                next_run = datetime.now(berlin_tz) + timedelta(hours=interval)
+                
+                # Check if next run is within active hours
+                next_run_time = next_run.time()
+                if not _is_within_active_hours(start_time, end_time, berlin_tz):
+                    # We're about to exit active hours
+                    wait_seconds = _seconds_until_active(start_time, end_time, berlin_tz)
+                    next_active = datetime.now(berlin_tz) + timedelta(seconds=wait_seconds)
+                    logger.info(
+                        f"=== Daemon run #{run_count} completed. "
+                        f"Next scheduled: {next_run.strftime('%Y-%m-%d %H:%M:%S %Z')} "
+                        f"(will wait until active hours at {next_active.strftime('%H:%M %Z')}) ==="
+                    )
+                elif start_time <= next_run_time <= end_time:
+                    logger.info(
+                        f"=== Daemon run #{run_count} completed. "
+                        f"Next run at {next_run.strftime('%Y-%m-%d %H:%M:%S %Z')} ==="
+                    )
+                else:
+                    # Next run falls outside active hours
+                    logger.info(
+                        f"=== Daemon run #{run_count} completed. "
+                        f"Next scheduled: {next_run.strftime('%Y-%m-%d %H:%M:%S %Z')} "
+                        f"(outside active hours, will wait) ==="
+                    )
+                
+                # Sleep in small intervals to check for shutdown signal
+                sleep_seconds = interval * 3600
+                sleep_interval = 10  # Check every 10 seconds
+                for _ in range(int(sleep_seconds / sleep_interval)):
+                    if shutdown_requested["flag"]:
+                        break
+                    time.sleep(sleep_interval)
+                
+                # Sleep remaining time
+                if not shutdown_requested["flag"]:
+                    remaining = sleep_seconds % sleep_interval
+                    if remaining > 0:
+                        time.sleep(remaining)
+            
+            logger.info("Daemon shutting down gracefully")
+        else:
+            # One-time run
+            summary = run_fetch_once()
+            
+            # Show summary for one-time runs
+            if summary and not no_store:
                 if summary["dates_partial"]:
                     typer.echo(
                         f"  - Partial dates: {', '.join(summary['dates_partial'])}"
@@ -119,6 +431,11 @@ def fetch_trades(
                         "\n⚠ Process had partial downloads - progress has been saved"
                     )
                     typer.echo("Re-run the command to resume from where you left off")
+    finally:
+        # Cleanup PID file
+        if pid_file and pid_file.exists():
+            pid_file.unlink()
+            logger.info(f"PID file removed: {pid_file}")
 
 
 @app.command()

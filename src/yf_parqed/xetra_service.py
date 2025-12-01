@@ -215,7 +215,7 @@ class XetraService:
             >>> print(len(df))
             150
         """
-        logger.info(f"Fetching {filename} for {venue} on {date}")
+        logger.debug(f"Fetching {filename} for {venue} on {date}")
 
         # Download gzipped file
         compressed_data = self.fetcher.download_file(venue, date, filename)
@@ -226,7 +226,7 @@ class XetraService:
         # Parse to DataFrame
         df = self.parser.parse(json_str)
 
-        logger.info(
+        logger.debug(
             f"Parsed {len(df)} trades from {filename} ({len(df['isin'].unique())} unique ISINs)"
         )
 
@@ -402,7 +402,7 @@ class XetraService:
                         
                         if len(df_filtered) > 0:
                             already_downloaded_timestamps = set(df_filtered['timestamp'].unique())
-                            logger.info(
+                            logger.debug(
                                 f"Found {len(already_downloaded_timestamps)} completed downloads from log for {date_str}"
                             )
                     except Exception as e:
@@ -429,11 +429,11 @@ class XetraService:
 
                             parquet_timestamps_added = len(already_downloaded_timestamps) - parquet_timestamps_before
                             if parquet_timestamps_added > 0:
-                                logger.info(
+                                logger.debug(
                                     f"Found {parquet_timestamps_added} additional timestamps from parquet for {date_str}"
                                 )
                             
-                            logger.info(
+                            logger.debug(
                                 f"Total tracked timestamps: {len(already_downloaded_timestamps)} (download log + data timestamps)"
                             )
                     except Exception as e:
@@ -936,7 +936,7 @@ class XetraService:
             return
 
         self.backend.save_xetra_trades(df, venue, trade_date, market, source)
-        logger.info(
+        logger.debug(
             f"Stored {len(df)} trades for {venue} on {trade_date.date()} "
             f"({len(df['isin'].unique())} unique ISINs)"
         )
