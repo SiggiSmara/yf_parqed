@@ -255,17 +255,14 @@ def fetch_trades(
             with XetraService() as service:
                 if not service.has_any_data(venue, market, source):
                     logger.info(f"No existing data found for {venue} - performing initial fetch of all available data")
-                    if hours_checker.is_within_hours():
-                        try:
-                            logger.info("Within trading hours, fetching all available data...")
-                            run_fetch_once()
-                            initial_fetch_done = True
-                            logger.info("Initial data fetch completed successfully")
-                        except Exception as e:
-                            logger.error(f"Error during initial data fetch: {e}", exc_info=True)
-                            logger.info("Will retry on next cycle")
-                    else:
-                        logger.info("Outside trading hours - will fetch all available data when trading hours start")
+                    try:
+                        logger.info("Fetching all available data (API is available 24/7)...")
+                        run_fetch_once()
+                        initial_fetch_done = True
+                        logger.info("Initial data fetch completed successfully")
+                    except Exception as e:
+                        logger.error(f"Error during initial data fetch: {e}", exc_info=True)
+                        logger.info("Will retry on next cycle")
 
             run_count = 0
             while not shutdown_requested["flag"]:
@@ -294,18 +291,6 @@ def fetch_trades(
                         break
 
                     logger.info("Entering active hours, starting fetch cycle")
-                    
-                    # If initial fetch wasn't done yet (started outside trading hours), do it now
-                    if not initial_fetch_done:
-                        with XetraService() as service:
-                            if not service.has_any_data(venue, market, source):
-                                logger.info("Performing deferred initial fetch of all available data")
-                                try:
-                                    run_fetch_once()
-                                    initial_fetch_done = True
-                                    logger.info("Initial data fetch completed successfully")
-                                except Exception as e:
-                                    logger.error(f"Error during initial data fetch: {e}", exc_info=True)
 
                 run_count += 1
                 logger.info(

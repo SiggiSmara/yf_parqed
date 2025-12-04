@@ -109,20 +109,20 @@ def test_daemon_skips_initial_fetch_when_data_exists():
 
 
 def test_daemon_defers_initial_fetch_when_outside_hours():
-    """Daemon waits for trading hours to perform initial fetch if started outside trading hours."""
+    """Daemon performs initial fetch immediately even when outside trading hours (API is 24/7)."""
     stub = StubXetraService(has_data=False)
 
     with patch("yf_parqed.xetra_cli.XetraService", return_value=stub):
         with freeze_time("2025-12-04 06:00:00+01:00"):  # 06:00 CET (outside trading hours 08:30-18:00)
             runner = CliRunner()
-            
+
             sleep_count = [0]
-            
+
             def mock_sleep(seconds):
                 sleep_count[0] += 1
-                # Exit immediately to avoid waiting for trading hours
+                # Exit after first sleep
                 raise KeyboardInterrupt()
-            
+
             with patch("time.sleep", mock_sleep):
                 result = runner.invoke(
                     main.app,
@@ -132,11 +132,9 @@ def test_daemon_defers_initial_fetch_when_outside_hours():
 
     # Should have checked for existing data
     assert len(stub.has_any_data_calls) >= 1
-    
-    # Should NOT have performed fetch yet (outside trading hours)
-    assert stub.fetch_calls == 0
 
-
+    # Should have performed fetch immediately (initial fetch doesn't wait for trading hours)
+    assert stub.fetch_calls == 1
 def test_has_any_data_returns_false_when_no_directory():
     """has_any_data returns False when venue directory doesn't exist."""
     from yf_parqed.xetra_service import XetraService
