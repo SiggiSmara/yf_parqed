@@ -173,6 +173,11 @@ def initialize():
     yf_parqed.save_intervals(["1m"])
     yf_parqed.update_current_list_of_stocks()
     yf_parqed.save_tickers()
+    
+    # Ensure storage_config.json exists with partitioned storage enabled
+    storage_config = yf_parqed.config.load_storage_config()
+    yf_parqed.config.save_storage_config(storage_config)
+    logger.info("Storage configuration initialized (partitioned backend)")
 
 
 @app.command()

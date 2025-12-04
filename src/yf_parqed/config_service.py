@@ -234,7 +234,7 @@ class ConfigService:
 
     def _default_storage_config(self) -> dict:
         return {
-            "partitioned": False,
+            "partitioned": True,  # Default to partitioned storage for new installations
             "markets": {},
             "sources": {},
         }
