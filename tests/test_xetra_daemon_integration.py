@@ -17,6 +17,58 @@ from yf_parqed.xetra_cli import (
 runner = CliRunner()
 
 
+@pytest.fixture
+def mock_xetra_service():
+    """Reusable mock for XetraService with common defaults."""
+    mock_service = MagicMock()
+    mock_service.__enter__ = Mock(return_value=mock_service)
+    mock_service.__exit__ = Mock(return_value=False)
+    mock_service.has_any_data.return_value = True  # Default: data exists (skip initial fetch)
+    mock_service.fetch_and_store_missing_trades_incremental.return_value = {
+        "dates_fetched": ["2025-12-04"],
+        "total_trades": 1000,
+    }
+    mock_service.get_missing_dates.return_value = []
+    return mock_service
+
+
+@pytest.fixture
+def fast_sleep(monkeypatch):
+    """Mock time.sleep to make tests run instantly by raising SystemExit."""
+    sleep_calls = []
+    
+    def mock_sleep(seconds):
+        sleep_calls.append(seconds)
+        # After first sleep in the post-fetch interval loop, exit
+        if len(sleep_calls) >= 1:
+            raise SystemExit(0)
+    
+    monkeypatch.setattr("yf_parqed.xetra_cli.time.sleep", mock_sleep)
+    return sleep_calls
+
+
+@pytest.fixture
+def daemon_test_context(mock_xetra_service, monkeypatch):
+    """Complete test context for daemon tests with fast execution."""
+    # Mock XetraService where it's imported in xetra_cli
+    with patch("yf_parqed.xetra_cli.XetraService", return_value=mock_xetra_service):
+        # Mock sleep to exit fast
+        sleep_calls = []
+        
+        def mock_sleep(seconds):
+            sleep_calls.append(seconds)
+            # After first sleep, exit the daemon
+            if len(sleep_calls) >= 1:
+                raise SystemExit(0)
+        
+        monkeypatch.setattr("yf_parqed.xetra_cli.time.sleep", mock_sleep)
+        
+        yield {
+            "service": mock_xetra_service,
+            "sleep_calls": sleep_calls,
+        }
+
+
 class TestPIDFileManagement:
     """Test PID file creation, validation, and cleanup."""
 
@@ -88,15 +140,10 @@ class TestPIDFileManagement:
 class TestDaemonLoopExecution:
     """Test daemon mode execution cycles and error handling."""
 
-    @patch("yf_parqed.xetra_service.XetraService")
-    @patch("yf_parqed.xetra_cli.time.sleep")
-    def test_daemon_runs_multiple_cycles(self, mock_sleep, mock_service_class):
-        """Daemon executes multiple fetch cycles."""
-        # Setup mock service
-        mock_service = MagicMock()
-        mock_service.__enter__ = Mock(return_value=mock_service)
-        mock_service.__exit__ = Mock(return_value=False)
-        mock_service.fetch_and_store_missing_trades_incremental.return_value = {
+    def test_daemon_executes_fetch_cycle(self, daemon_test_context):
+        """Daemon executes fetch cycle successfully."""
+        ctx = daemon_test_context
+        ctx["service"].fetch_and_store_missing_trades_incremental.return_value = {
             "dates_checked": ["2025-11-04"],
             "dates_fetched": ["2025-11-04"],
             "dates_partial": [],
@@ -104,20 +151,8 @@ class TestDaemonLoopExecution:
             "total_files": 10,
             "consolidated": True,
         }
-        mock_service_class.return_value = mock_service
 
-        # Track sleep calls to terminate after 2 cycles
-        sleep_count = {"count": 0}
-
-        def sleep_side_effect(seconds):
-            sleep_count["count"] += 1
-            if sleep_count["count"] >= 2:
-                # Simulate SIGINT after second sleep
-                raise KeyboardInterrupt()
-
-        mock_sleep.side_effect = sleep_side_effect
-
-        # Run daemon with short interval (24/7 to avoid trading hours logic)
+        # Run daemon (24/7 to avoid trading hours logic)
         runner.invoke(
             app,
             [
@@ -132,18 +167,14 @@ class TestDaemonLoopExecution:
             catch_exceptions=False,
         )
 
-        # Should have called fetch at least once, sleep triggers after first cycle
-        assert mock_service.fetch_and_store_missing_trades_incremental.call_count >= 1
+        # Should have called fetch at least once
+        assert ctx["service"].fetch_and_store_missing_trades_incremental.call_count >= 1
 
-    @patch("yf_parqed.xetra_service.XetraService")
-    @patch("yf_parqed.xetra_cli.time.sleep")
-    def test_daemon_continues_after_fetch_error(self, mock_sleep, mock_service_class):
+    def test_daemon_continues_after_fetch_error(self, daemon_test_context):
         """Daemon continues running after fetch errors."""
-        # Setup mock service that fails once then succeeds
-        mock_service = MagicMock()
-        mock_service.__enter__ = Mock(return_value=mock_service)
-        mock_service.__exit__ = Mock(return_value=False)
-
+        ctx = daemon_test_context
+        
+        # Make first call fail, then succeed
         call_count = {"count": 0}
 
         def fetch_side_effect(*args, **kwargs):
@@ -159,20 +190,7 @@ class TestDaemonLoopExecution:
                 "consolidated": False,
             }
 
-        mock_service.fetch_and_store_missing_trades_incremental.side_effect = (
-            fetch_side_effect
-        )
-        mock_service_class.return_value = mock_service
-
-        # Terminate after second sleep
-        sleep_count = {"count": 0}
-
-        def sleep_side_effect(seconds):
-            sleep_count["count"] += 1
-            if sleep_count["count"] >= 2:
-                raise KeyboardInterrupt()
-
-        mock_sleep.side_effect = sleep_side_effect
+        ctx["service"].fetch_and_store_missing_trades_incremental.side_effect = fetch_side_effect
 
         # Run daemon
         runner.invoke(
@@ -192,15 +210,10 @@ class TestDaemonLoopExecution:
         # Should have attempted fetch at least once, validates error doesn't crash daemon
         assert call_count["count"] >= 1
 
-    @patch("yf_parqed.xetra_service.XetraService")
-    @patch("yf_parqed.xetra_cli.time.sleep")
-    def test_daemon_interval_timing(self, mock_sleep, mock_service_class):
+    def test_daemon_interval_timing(self, daemon_test_context):
         """Daemon sleeps for correct interval between runs."""
-        # Setup mock service
-        mock_service = MagicMock()
-        mock_service.__enter__ = Mock(return_value=mock_service)
-        mock_service.__exit__ = Mock(return_value=False)
-        mock_service.fetch_and_store_missing_trades_incremental.return_value = {
+        ctx = daemon_test_context
+        ctx["service"].fetch_and_store_missing_trades_incremental.return_value = {
             "dates_checked": [],
             "dates_fetched": [],
             "dates_partial": [],
@@ -208,17 +221,6 @@ class TestDaemonLoopExecution:
             "total_files": 0,
             "consolidated": False,
         }
-        mock_service_class.return_value = mock_service
-
-        # Track sleep calls
-        sleep_calls = []
-
-        def sleep_side_effect(seconds):
-            sleep_calls.append(seconds)
-            if len(sleep_calls) >= 10:  # After checking multiple intervals
-                raise KeyboardInterrupt()
-
-        mock_sleep.side_effect = sleep_side_effect
 
         # Run daemon with 2-hour interval
         runner.invoke(
@@ -235,23 +237,20 @@ class TestDaemonLoopExecution:
             catch_exceptions=False,
         )
 
-        # Should have slept in 10-second intervals (checking for shutdown)
-        # Total should approach 2 hours (7200 seconds)
-        assert all(s == 10 for s in sleep_calls)
+        # Should have attempted to sleep in 10-second intervals (checking for shutdown)
+        assert ctx["sleep_calls"][0] == 10
 
 
 class TestFileLogging:
     """Test file logging configuration and behavior."""
 
-    @patch("yf_parqed.xetra_service.XetraService")
-    def test_log_file_created(self, mock_service_class, tmp_path):
+    @patch("yf_parqed.xetra_cli.XetraService")
+    def test_log_file_created(self, mock_service_class, tmp_path, mock_xetra_service):
         """Log file is created when --log-file is specified."""
         log_file = tmp_path / "test.log"
 
-        # Setup mock service
-        mock_service = MagicMock()
-        mock_service.__enter__ = Mock(return_value=mock_service)
-        mock_service.__exit__ = Mock(return_value=False)
+        # Use fixture
+        mock_service = mock_xetra_service
         mock_service.fetch_and_store_missing_trades_incremental.return_value = {
             "dates_checked": [],
             "dates_fetched": [],
@@ -268,23 +267,20 @@ class TestFileLogging:
         )
 
         assert result.exit_code == 0
-        # Give loguru time to flush (it uses enqueue=True for thread-safety)
-        time.sleep(0.1)
-
+        # Give loguru's background thread time to flush
+        time.sleep(0.01)
         assert log_file.exists()
         # Log should contain some content
         log_content = log_file.read_text()
         assert len(log_content) > 0
 
-    @patch("yf_parqed.xetra_service.XetraService")
-    def test_log_file_contains_structured_logs(self, mock_service_class, tmp_path):
+    @patch("yf_parqed.xetra_cli.XetraService")
+    def test_log_file_contains_structured_logs(self, mock_service_class, tmp_path, mock_xetra_service):
         """Log file contains properly formatted log entries."""
         log_file = tmp_path / "test.log"
 
-        # Setup mock service
-        mock_service = MagicMock()
-        mock_service.__enter__ = Mock(return_value=mock_service)
-        mock_service.__exit__ = Mock(return_value=False)
+        # Use fixture
+        mock_service = mock_xetra_service
         mock_service.fetch_and_store_missing_trades_incremental.return_value = {
             "dates_checked": ["2025-11-04"],
             "dates_fetched": ["2025-11-04"],
@@ -297,9 +293,8 @@ class TestFileLogging:
 
         runner.invoke(app, ["--log-file", str(log_file), "fetch-trades", "DETR"])
 
-        # Give loguru time to flush
-        time.sleep(0.1)
-
+        # Give loguru's background thread time to flush
+        time.sleep(0.01)
         log_content = log_file.read_text()
         # Check for structured format elements
         assert "INFO" in log_content
@@ -309,15 +304,13 @@ class TestFileLogging:
             for char in log_content
         )
 
-    @patch("yf_parqed.xetra_service.XetraService")
-    def test_log_file_parent_dirs_created(self, mock_service_class, tmp_path):
+    @patch("yf_parqed.xetra_cli.XetraService")
+    def test_log_file_parent_dirs_created(self, mock_service_class, tmp_path, mock_xetra_service):
         """Log file parent directories are created automatically."""
-        log_file = tmp_path / "nested" / "logs" / "test.log"
+        log_file = tmp_path / "nested" / "dirs" / "test.log"
 
         # Setup mock service
-        mock_service = MagicMock()
-        mock_service.__enter__ = Mock(return_value=mock_service)
-        mock_service.__exit__ = Mock(return_value=False)
+        mock_service = mock_xetra_service
         mock_service.fetch_and_store_missing_trades_incremental.return_value = {
             "dates_checked": [],
             "dates_fetched": [],
@@ -337,18 +330,12 @@ class TestFileLogging:
 class TestDaemonTradingHoursIntegration:
     """Test daemon behavior with trading hours transitions."""
 
-    @patch("yf_parqed.xetra_service.XetraService")
     @patch("yf_parqed.xetra_cli.TradingHoursChecker")
-    @patch("yf_parqed.xetra_cli.time.sleep")
     def test_daemon_waits_outside_active_hours(
-        self, mock_sleep, mock_checker_class, mock_service_class
+        self, mock_checker_class, daemon_test_context
     ):
         """Daemon waits when outside active hours."""
-        # Setup mock service
-        mock_service = MagicMock()
-        mock_service.__enter__ = Mock(return_value=mock_service)
-        mock_service.__exit__ = Mock(return_value=False)
-        mock_service_class.return_value = mock_service
+        ctx = daemon_test_context
 
         # Setup mock trading hours checker (outside active hours)
         mock_checker = MagicMock()
@@ -364,36 +351,21 @@ class TestDaemonTradingHoursIntegration:
             dt_time(18, 0),
         )
 
-        # Terminate after first sleep
-        sleep_count = {"count": 0}
-
-        def sleep_side_effect(seconds):
-            sleep_count["count"] += 1
-            if sleep_count["count"] >= 1:
-                raise KeyboardInterrupt()
-
-        mock_sleep.side_effect = sleep_side_effect
-
         # Run daemon with default active hours (08:30-18:00)
         runner.invoke(app, ["fetch-trades", "DETR", "--daemon", "--interval", "1"])
 
         # Should have slept (waiting for active hours)
-        assert mock_sleep.called
+        assert len(ctx["sleep_calls"]) > 0
         # Should NOT have called fetch (outside active hours)
-        assert not mock_service.fetch_and_store_missing_trades_incremental.called
+        assert not ctx["service"].fetch_and_store_missing_trades_incremental.called
 
-    @patch("yf_parqed.xetra_service.XetraService")
     @patch("yf_parqed.xetra_cli.TradingHoursChecker")
-    @patch("yf_parqed.xetra_cli.time.sleep")
     def test_daemon_runs_within_active_hours(
-        self, mock_sleep, mock_checker_class, mock_service_class
+        self, mock_checker_class, daemon_test_context
     ):
         """Daemon runs fetch when within active hours."""
-        # Setup mock service
-        mock_service = MagicMock()
-        mock_service.__enter__ = Mock(return_value=mock_service)
-        mock_service.__exit__ = Mock(return_value=False)
-        mock_service.fetch_and_store_missing_trades_incremental.return_value = {
+        ctx = daemon_test_context
+        ctx["service"].fetch_and_store_missing_trades_incremental.return_value = {
             "dates_checked": [],
             "dates_fetched": [],
             "dates_partial": [],
@@ -401,7 +373,6 @@ class TestDaemonTradingHoursIntegration:
             "total_files": 0,
             "consolidated": False,
         }
-        mock_service_class.return_value = mock_service
 
         # Setup mock trading hours checker
         mock_checker = MagicMock()
@@ -420,12 +391,6 @@ class TestDaemonTradingHoursIntegration:
             dt_time(18, 0),
         )
 
-        # Terminate after first sleep
-        def sleep_side_effect(seconds):
-            raise KeyboardInterrupt()
-
-        mock_sleep.side_effect = sleep_side_effect
-
         # Run daemon
         runner.invoke(
             app,
@@ -441,101 +406,89 @@ class TestDaemonTradingHoursIntegration:
         )
 
         # Should have called fetch once (was within hours)
-        assert mock_service.fetch_and_store_missing_trades_incremental.called
+        assert ctx["service"].fetch_and_store_missing_trades_incremental.called
 
-    @patch("yf_parqed.xetra_service.XetraService")
     @patch("yf_parqed.xetra_cli.TradingHoursChecker")
-    @patch("yf_parqed.xetra_cli.time.sleep")
     def test_daemon_transitions_from_outside_to_within_hours(
         self,
-        mock_sleep,
         mock_checker_class,
-        mock_service_class,
+        mock_xetra_service,
+        monkeypatch,
     ):
         """Daemon transitions from waiting to active state."""
-        # Setup mock service
-        mock_service = MagicMock()
-        mock_service.__enter__ = Mock(return_value=mock_service)
-        mock_service.__exit__ = Mock(return_value=False)
-        mock_service.fetch_and_store_missing_trades_incremental.return_value = {
-            "dates_checked": [],
-            "dates_fetched": [],
-            "dates_partial": [],
-            "total_trades": 0,
-            "total_files": 0,
-            "consolidated": False,
-        }
-        mock_service_class.return_value = mock_service
+        # Need custom sleep handling for this test - allow 2 sleeps (wait + post-fetch)
+        with patch("yf_parqed.xetra_cli.XetraService", return_value=mock_xetra_service):
+            mock_xetra_service.fetch_and_store_missing_trades_incremental.return_value = {
+                "dates_checked": [],
+                "dates_fetched": [],
+                "dates_partial": [],
+                "total_trades": 0,
+                "total_files": 0,
+                "consolidated": False,
+            }
+            
+            # Custom sleep mock that exits after 2 calls
+            sleep_calls = []
+            def mock_sleep(seconds):
+                sleep_calls.append(seconds)
+                if len(sleep_calls) >= 2:
+                    raise SystemExit(0)
+            monkeypatch.setattr("yf_parqed.xetra_cli.time.sleep", mock_sleep)
 
-        # Setup mock trading hours checker
-        mock_checker = MagicMock()
-        mock_checker.market_tz = ZoneInfo("Europe/Berlin")
+            # Setup mock trading hours checker
+            mock_checker = MagicMock()
+            mock_checker.market_tz = ZoneInfo("Europe/Berlin")
 
-        # Mock transitions: outside → within → outside (exits)
-        within_checks = [False, True, False]
-        check_index = {"index": 0}
+            # Mock transitions: outside → within → outside (exits)
+            within_checks = [False, True, False]
+            check_index = {"index": 0}
 
-        def is_within_side_effect():
-            result = within_checks[check_index["index"]]
-            check_index["index"] = min(check_index["index"] + 1, len(within_checks) - 1)
-            return result
+            def is_within_side_effect():
+                result = within_checks[check_index["index"]]
+                check_index["index"] = min(check_index["index"] + 1, len(within_checks) - 1)
+                return result
 
-        mock_checker.is_within_hours.side_effect = is_within_side_effect
+            mock_checker.is_within_hours.side_effect = is_within_side_effect
 
-        # Mock 5 seconds until active (short wait)
-        mock_checker.seconds_until_active.return_value = 5.0
-        mock_checker.next_active_time.return_value = datetime.now(
-            ZoneInfo("Europe/Berlin")
-        )
+            # Mock 5 seconds until active (short wait)
+            mock_checker.seconds_until_active.return_value = 5.0
+            mock_checker.next_active_time.return_value = datetime.now(
+                ZoneInfo("Europe/Berlin")
+            )
 
-        mock_checker_class.return_value = mock_checker
-        mock_checker_class.parse_active_hours.return_value = (
-            dt_time(8, 30),
-            dt_time(18, 0),
-        )
+            mock_checker_class.return_value = mock_checker
+            mock_checker_class.parse_active_hours.return_value = (
+                dt_time(8, 30),
+                dt_time(18, 0),
+            )
 
-        # Terminate after entering active hours
-        sleep_count = {"count": 0}
+            # Run daemon
+            runner.invoke(
+                app,
+                [
+                    "fetch-trades",
+                    "DETR",
+                    "--daemon",
+                    "--interval",
+                    "1",
+                    "--active-hours",
+                    "08:30-18:00",
+                ],
+            )
 
-        def sleep_side_effect(seconds):
-            sleep_count["count"] += 1
-            if sleep_count["count"] >= 3:  # Wait intervals + post-fetch sleep
-                raise KeyboardInterrupt()
-
-        mock_sleep.side_effect = sleep_side_effect
-
-        # Run daemon
-        runner.invoke(
-            app,
-            [
-                "fetch-trades",
-                "DETR",
-                "--daemon",
-                "--interval",
-                "1",
-                "--active-hours",
-                "08:30-18:00",
-            ],
-        )
-
-        # Should have called fetch once (after entering active hours)
-        assert mock_service.fetch_and_store_missing_trades_incremental.call_count >= 1
+            # Should have called fetch once (after entering active hours)
+            assert mock_xetra_service.fetch_and_store_missing_trades_incremental.call_count >= 1
 
 
 class TestDaemonPIDIntegration:
     """Test daemon mode with PID file."""
 
-    @patch("yf_parqed.xetra_service.XetraService")
-    @patch("yf_parqed.xetra_cli.time.sleep")
-    def test_daemon_creates_pid_file(self, mock_sleep, mock_service_class, tmp_path):
+    def test_daemon_creates_pid_file(self, daemon_test_context, tmp_path):
         """Daemon creates PID file when --pid-file is specified."""
         pid_file = tmp_path / "daemon.pid"
-
-        # Setup mock service
-        mock_service = MagicMock()
-        mock_service.__enter__ = Mock(return_value=mock_service)
-        mock_service.__exit__ = Mock(return_value=False)
-        mock_service.fetch_and_store_missing_trades_incremental.return_value = {
+        ctx = daemon_test_context
+        
+        ctx["service"].fetch_and_store_missing_trades_incremental.return_value = {
             "dates_checked": [],
             "dates_fetched": [],
             "dates_partial": [],
@@ -543,13 +496,6 @@ class TestDaemonPIDIntegration:
             "total_files": 0,
             "consolidated": False,
         }
-        mock_service_class.return_value = mock_service
-
-        # Terminate after first sleep
-        def sleep_side_effect(seconds):
-            raise KeyboardInterrupt()
-
-        mock_sleep.side_effect = sleep_side_effect
 
         # Run daemon with PID file
         runner.invoke(

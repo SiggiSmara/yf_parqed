@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 from typing_extensions import Annotated
 
 from .trading_hours_checker import TradingHoursChecker
+from .xetra_service import XetraService
 
 app = typer.Typer()
 
@@ -170,8 +171,6 @@ def fetch_trades(
         # Daemon mode (24/7 operation)
         xetra-parqed --log-file logs/xetra.log fetch-trades DETR --daemon --interval 1 --active-hours "00:00-23:59"
     """
-    from .xetra_service import XetraService
-
     # Market and source are fixed for Xetra
     market = "de"
     source = "xetra"
@@ -250,6 +249,24 @@ def fetch_trades(
                 f"PID: {Path('/proc/self').resolve().name if Path('/proc/self').exists() else 'unknown'}"
             )
 
+            # Check if this is initial startup with no data
+            # If so, fetch all available data (within trading hours)
+            initial_fetch_done = False
+            with XetraService() as service:
+                if not service.has_any_data(venue, market, source):
+                    logger.info(f"No existing data found for {venue} - performing initial fetch of all available data")
+                    if hours_checker.is_within_hours():
+                        try:
+                            logger.info("Within trading hours, fetching all available data...")
+                            run_fetch_once()
+                            initial_fetch_done = True
+                            logger.info("Initial data fetch completed successfully")
+                        except Exception as e:
+                            logger.error(f"Error during initial data fetch: {e}", exc_info=True)
+                            logger.info("Will retry on next cycle")
+                    else:
+                        logger.info("Outside trading hours - will fetch all available data when trading hours start")
+
             run_count = 0
             while not shutdown_requested["flag"]:
                 # Check if within active hours
@@ -277,6 +294,18 @@ def fetch_trades(
                         break
 
                     logger.info("Entering active hours, starting fetch cycle")
+                    
+                    # If initial fetch wasn't done yet (started outside trading hours), do it now
+                    if not initial_fetch_done:
+                        with XetraService() as service:
+                            if not service.has_any_data(venue, market, source):
+                                logger.info("Performing deferred initial fetch of all available data")
+                                try:
+                                    run_fetch_once()
+                                    initial_fetch_done = True
+                                    logger.info("Initial data fetch completed successfully")
+                                except Exception as e:
+                                    logger.error(f"Error during initial data fetch: {e}", exc_info=True)
 
                 run_count += 1
                 logger.info(
@@ -390,7 +419,6 @@ def check_status(
         xetra-parqed check-status DEUR    # Check Eurex status
     """
     from datetime import datetime, timedelta
-    from .xetra_service import XetraService
 
     market = "de"
     source = "xetra"
@@ -476,7 +504,6 @@ def list_files(
         xetra-parqed list-files DEUR                    # Today's Eurex files
     """
     from datetime import datetime
-    from .xetra_service import XetraService
 
     # Default to today if no date provided
     if date is None:
@@ -523,8 +550,6 @@ def check_partial(
         xetra-parqed check-partial DETR         # Check Xetra download status
         xetra-parqed check-partial DFRA         # Check Frankfurt status
     """
-    from .xetra_service import XetraService
-
     service = XetraService()
     status = service.check_partial_downloads(venue, market, source)
 
@@ -603,8 +628,6 @@ def consolidate_month(
         xetra-parqed consolidate-month DETR           # Interactive consolidation
         xetra-parqed consolidate-month DETR --all     # Consolidate all months
     """
-    from .xetra_service import XetraService
-
     service = XetraService()
 
     # Auto-detect months from stored data

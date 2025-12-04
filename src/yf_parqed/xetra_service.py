@@ -61,6 +61,34 @@ class XetraService:
         else:
             self.backend = backend
 
+    def has_any_data(self, venue: str, market: str = "de", source: str = "xetra") -> bool:
+        """
+        Check if any data exists for the specified venue.
+
+        Args:
+            venue: Venue code ('DETR', 'DFRA', 'DGAT', 'DEUR')
+            market: Market code (default: 'de')
+            source: Source code (default: 'xetra')
+
+        Returns:
+            True if any parquet files exist for this venue, False otherwise
+        """
+        # Check if venue directory exists and has any parquet files
+        venue_dir = (
+            self.backend._path_builder._root
+            / market
+            / source
+            / "trades"
+            / f"venue={venue}"
+        )
+        
+        if not venue_dir.exists():
+            return False
+        
+        # Check if any parquet files exist in the venue directory tree
+        parquet_files = list(venue_dir.rglob("*.parquet"))
+        return len(parquet_files) > 0
+
     def get_missing_dates(
         self, venue: str, market: str = "de", source: str = "xetra"
     ) -> List[str]:
