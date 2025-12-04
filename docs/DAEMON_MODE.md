@@ -347,18 +347,19 @@ yf-parqed --log-level DEBUG update-data --daemon
 
 ### Directory Layout
 ```
-/opt/yf_parqed/          # Application code
+/opt/yf_parqed/          # Application code (shared between YF and Xetra)
 ├── .venv/               # Python virtual environment
 ├── src/                 # Source code
 └── pyproject.toml       # Project configuration
 
-/var/lib/yf_parqed/      # Persistent data
+/var/lib/yf_parqed/      # Persistent data (shared root)
 ├── data/                # Partitioned parquet files
-│   └── us/yahoo/stocks_*/
+│   ├── us/yahoo/stocks_*/     # YF data (no collision risk)
+│   └── de/xetra/trades/       # Xetra data (if running both daemons)
 ├── stocks_*/            # Legacy parquet files (if applicable)
-├── tickers.json         # Ticker state
-├── intervals.json       # Configured intervals
-└── storage_config.json  # Storage backend config
+├── tickers.json         # Ticker state (YF)
+├── intervals.json       # Configured intervals (YF)
+└── storage_config.json  # Storage backend config (YF)
 
 /run/yf-parqed/          # Runtime state
 └── yf-parqed.pid        # PID file
@@ -367,29 +368,43 @@ yf-parqed --log-level DEBUG update-data --daemon
 ### Installation Steps
 
 ```bash
-# 1. Create dedicated user
+# 1. Create dedicated user for YF data
 sudo useradd -r -s /bin/false -d /var/lib/yf_parqed yfparqed
 
-# 2. Create directories
-sudo mkdir -p /opt/yf_parqed /var/lib/yf_parqed /run/yf-parqed
-sudo chown -R yfparqed:yfparqed /var/lib/yf_parqed /run/yf-parqed
+# 2. Create shared group for application and data access
+sudo groupadd yf_parqed_app 2>/dev/null || true
+sudo usermod -aG yf_parqed_app yfparqed
 
-# 3. Install application
+# 3. Create directories
+sudo mkdir -p /opt/yf_parqed /var/lib/yf_parqed/data /run/yf-parqed
+
+# 4. Set ownership for shared data directory
+# Both YF and Xetra (if used) will write to /var/lib/yf_parqed/data
+# Partition structure (us/yahoo vs de/xetra) prevents collisions
+sudo chown -R yfparqed:yf_parqed_app /var/lib/yf_parqed
+sudo chmod -R 775 /var/lib/yf_parqed/data  # Group write access
+sudo chown -R yfparqed:yfparqed /run/yf-parqed
+
+# 5. Install application (shared between YF and Xetra)
+# If /opt/yf_parqed already exists (e.g., from Xetra installation), skip to step 6
 cd /opt/yf_parqed
 git clone https://github.com/SiggiSmara/yf_parqed.git .
 uv sync
-sudo chown -R yfparqed:yfparqed /opt/yf_parqed
 
-# 4. Initialize data
+# Set shared ownership for application code
+sudo chgrp -R yf_parqed_app /opt/yf_parqed
+sudo chmod -R g+rX /opt/yf_parqed
+
+# 6. Initialize data
 cd /var/lib/yf_parqed
 sudo -u yfparqed /opt/yf_parqed/.venv/bin/yf-parqed --wrk-dir /var/lib/yf_parqed initialize
 
-# 5. Test daemon (foreground)
+# 7. Test daemon (foreground)
 sudo -u yfparqed /opt/yf_parqed/.venv/bin/yf-parqed \
   --wrk-dir /var/lib/yf_parqed \
   update-data --daemon --interval 1 --pid-file /tmp/yf-parqed-test.pid
 
-# 6. Set up systemd service (see above)
+# 8. Set up systemd service (see above)
 ```
 
 ## Best Practices
@@ -523,12 +538,12 @@ Wants=network-online.target
 Type=simple
 User=xetra
 Group=xetra
-WorkingDirectory=/var/lib/xetra
+WorkingDirectory=/var/lib/yf_parqed
 Environment="PATH=/opt/yf_parqed/.venv/bin:/usr/local/bin:/usr/bin:/bin"
 
 # Run daemon mode with logging
 ExecStart=/opt/yf_parqed/.venv/bin/xetra-parqed \
-    --wrk-dir /var/lib/xetra \
+    --wrk-dir /var/lib/yf_parqed \
     --log-file /var/log/xetra/detr.log \
     fetch-trades DETR \
     --daemon \
@@ -548,7 +563,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/var/lib/xetra /var/log/xetra /run/xetra
+ReadWritePaths=/var/lib/yf_parqed /var/log/xetra /run/xetra
 
 # Create PID directory at startup
 RuntimeDirectory=xetra
@@ -668,23 +683,23 @@ tail -f logs/xetra-detr.log | grep -i error
 ### Check data freshness
 ```bash
 # Find most recent data file
-find /var/lib/xetra/data/de/xetra/trades/venue=DETR -name "*.parquet" -type f -printf '%T@ %p\n' | sort -rn | head -1
+find /var/lib/yf_parqed/data/de/xetra/trades/venue=DETR -name "*.parquet" -type f -printf '%T@ %p\n' | sort -rn | head -1
 ```
 
 ### Check collected data statistics
 ```bash
 # Count total days collected for a venue
-find /var/lib/xetra/data/de/xetra/trades/venue=DETR -name "day=*" -type d | wc -l
+find /var/lib/yf_parqed/data/de/xetra/trades/venue=DETR -name "day=*" -type d | wc -l
 
 # List all collected dates (year/month/day format)
-find /var/lib/xetra/data/de/xetra/trades/venue=DETR -type f -name "*.parquet" | \
+find /var/lib/yf_parqed/data/de/xetra/trades/venue=DETR -type f -name "*.parquet" | \
   sed -E 's|.*year=([0-9]{4})/month=([0-9]{2})/day=([0-9]{2})/.*|\1-\2-\3|' | sort -u
 
 # Count total parquet files
-find /var/lib/xetra/data/de/xetra/trades/venue=DETR -name "*.parquet" -type f | wc -l
+find /var/lib/yf_parqed/data/de/xetra/trades/venue=DETR -name "*.parquet" -type f | wc -l
 
 # Check total data size
-du -sh /var/lib/xetra/data/de/xetra/trades/venue=DETR
+du -sh /var/lib/yf_parqed/data/de/xetra/trades/venue=DETR
 
 # Detailed summary with DuckDB (requires DuckDB installed)
 duckdb << 'EOF'
@@ -695,7 +710,7 @@ SELECT
     MIN(day) as first_date,
     MAX(day) as last_date,
     ROUND(SUM(price * volume) / 1000000, 2) as total_volume_millions_eur
-FROM '/var/lib/xetra/data/de/xetra/trades/venue=DETR/**/*.parquet';
+FROM '/var/lib/yf_parqed/data/de/xetra/trades/venue=DETR/**/*.parquet';
 
 -- Per-day breakdown with minutes captured
 SELECT 
@@ -706,18 +721,18 @@ SELECT
     MAX(trade_time)::TIME as last_trade,
     ROUND(SUM(price * volume) / 1000000, 2) as volume_millions_eur,
     COUNT(DISTINCT isin) as unique_isins
-FROM '/var/lib/xetra/data/de/xetra/trades/venue=DETR/**/*.parquet'
+FROM '/var/lib/yf_parqed/data/de/xetra/trades/venue=DETR/**/*.parquet'
 GROUP BY day
 ORDER BY day DESC;
 EOF
 
 # Quick summary (shell script - no DuckDB required)
 echo "Collected data summary for DETR:"
-echo "  Days: $(find /var/lib/xetra/data/de/xetra/trades/venue=DETR -name 'day=*' -type d | wc -l)"
-echo "  Files: $(find /var/lib/xetra/data/de/xetra/trades/venue=DETR -name '*.parquet' -type f | wc -l)"
-echo "  Size: $(du -sh /var/lib/xetra/data/de/xetra/trades/venue=DETR | cut -f1)"
+echo "  Days: $(find /var/lib/yf_parqed/data/de/xetra/trades/venue=DETR -name 'day=*' -type d | wc -l)"
+echo "  Files: $(find /var/lib/yf_parqed/data/de/xetra/trades/venue=DETR -name '*.parquet' -type f | wc -l)"
+echo "  Size: $(du -sh /var/lib/yf_parqed/data/de/xetra/trades/venue=DETR | cut -f1)"
 echo "  Dates collected:"
-find /var/lib/xetra/data/de/xetra/trades/venue=DETR -type f -name "*.parquet" | \
+find /var/lib/yf_parqed/data/de/xetra/trades/venue=DETR -type f -name "*.parquet" | \
   sed -E 's|.*year=([0-9]{4})/month=([0-9]{2})/day=([0-9]{2})/.*|    \1-\2-\3|' | sort -u
 ```
 
@@ -854,16 +869,17 @@ For daemon mode, install `yf_parqed` system-wide following Linux Filesystem Hier
 
 ### Directory Layout
 ```
-/opt/yf_parqed/          # Application code (managed by git/package manager)
+/opt/yf_parqed/          # Application code (shared with YF daemon)
 ├── .venv/               # Python virtual environment
 ├── src/                 # Source code
 └── pyproject.toml       # Project configuration
 
-/var/lib/xetra/          # Persistent data (survives upgrades)
-├── data/                # Parquet files
-│   └── de/xetra/trades/
-├── tickers.json         # State files (if applicable)
-└── intervals.json
+/var/lib/yf_parqed/      # Persistent data (shared root with YF)
+├── data/                # Partitioned parquet files
+│   ├── us/yahoo/stocks_*/     # YF data (if running both daemons)
+│   └── de/xetra/trades/       # Xetra data (no collision risk)
+├── tickers.json         # YF state (if applicable)
+└── intervals.json       # YF config (if applicable)
 
 /var/log/xetra/          # Application logs
 └── *.log                # Log files with rotation
@@ -875,43 +891,45 @@ For daemon mode, install `yf_parqed` system-wide following Linux Filesystem Hier
 ### Installation Steps
 
 ```bash
-# 1. Create dedicated user (system account, no login)
-sudo useradd -r -s /bin/false -d /var/lib/xetra xetra
+# 1. Create dedicated user for Xetra data (system account, no login)
+sudo useradd -r -s /bin/false -d /var/lib/yf_parqed xetra
 
-# 2. Create directory structure
-sudo mkdir -p /opt/yf_parqed /var/lib/xetra /var/log/xetra /run/xetra
-sudo chown -R xetra:xetra /var/lib/xetra /var/log/xetra /run/xetra
+# 2. Add to shared group for data access
+sudo groupadd yf_parqed_app 2>/dev/null || true
+sudo usermod -aG yf_parqed_app xetra
 
-# 3. Install application code and dependencies
-# Add current user to xetra group for installation
-sudo usermod -aG xetra $USER
+# 3. Create directory structure
+# Note: Using shared /var/lib/yf_parqed for data (partition structure prevents collisions)
+sudo mkdir -p /opt/yf_parqed /var/lib/yf_parqed/data /var/log/xetra /run/xetra
 
-# Reload group membership (choose one):
-# Option A: Log out and log back in
-# Option B: Start a new shell with updated groups
-newgrp xetra
-# Option C: Or just use 'sg xetra -c "command"' for single commands
+# 4. Set ownership for shared data directory
+# If /var/lib/yf_parqed already exists from YF installation, just add xetra to group
+if [ ! -d "/var/lib/yf_parqed" ]; then
+  sudo chown -R xetra:yf_parqed_app /var/lib/yf_parqed
+  sudo chmod -R 775 /var/lib/yf_parqed/data
+fi
+sudo chown -R xetra:xetra /var/log/xetra /run/xetra
 
-# Clone repository to /opt/yf_parqed
-sudo mkdir -p /opt/yf_parqed
-sudo chgrp xetra /opt/yf_parqed
-sudo chmod 775 /opt/yf_parqed
-git clone https://github.com/SiggiSmara/yf_parqed.git /opt/yf_parqed
-cd /opt/yf_parqed
+# 5. Install application code and dependencies
+# If /opt/yf_parqed already exists (e.g., from YF installation), skip to step 6
 
-# Install Python dependencies using current user's uv
-# (Assumes you already have uv installed: curl -LsSf https://astral.sh/uv/install.sh | sh)
-uv sync
+if [ ! -d "/opt/yf_parqed/.git" ]; then
+  sudo mkdir -p /opt/yf_parqed
+  git clone https://github.com/SiggiSmara/yf_parqed.git /opt/yf_parqed
+  cd /opt/yf_parqed
+  uv sync
+  
+  # Set shared ownership for application code
+  sudo chgrp -R yf_parqed_app /opt/yf_parqed
+  sudo chmod -R g+rX /opt/yf_parqed
+fi
 
-# 4. Transfer ownership to xetra user
-sudo chown -R xetra:xetra /opt/yf_parqed
-
-# 5. Verify installation
+# 6. Verify installation
 sudo -u xetra /opt/yf_parqed/.venv/bin/xetra-parqed --help
 
-# 6. Test data collection (stores in current directory by default)
-cd /var/lib/xetra
-sudo -u xetra /opt/yf_parqed/.venv/bin/xetra-parqed --wrk-dir /var/lib/xetra fetch-trades DETR --no-store
+# 7. Test data collection
+cd /var/lib/yf_parqed
+sudo -u xetra /opt/yf_parqed/.venv/bin/xetra-parqed --wrk-dir /var/lib/yf_parqed fetch-trades DETR --no-store
 ```
 
 ### Why This Structure?
@@ -919,15 +937,21 @@ sudo -u xetra /opt/yf_parqed/.venv/bin/xetra-parqed --wrk-dir /var/lib/xetra fet
 - **`/opt/yf_parqed`** - Optional software packages (FHS standard for add-on applications)
   - Can be updated/reinstalled without affecting data
   - Managed by version control (git)
+  - Shared between YF and Xetra daemons
   
-- **`/var/lib/xetra`** - Variable application state/data (FHS standard)
+- **`/var/lib/yf_parqed`** - Variable application state/data (FHS standard)
   - Persists across application upgrades
   - Backed up separately from application code
-  - Used as `--wrk-dir` for data storage
+  - **Shared data directory**: Both YF and Xetra write here
+  - Partition structure prevents collisions:
+    * YF: `data/us/yahoo/stocks_*/`
+    * Xetra: `data/de/xetra/trades/`
+  - Group permissions (yf_parqed_app) allow both daemons write access
   
 - **`/var/log/xetra`** - Application logs (FHS standard)
   - Managed by logrotate
   - Can be monitored by log aggregation tools
+  - Separate logs per daemon for clarity
   
 - **`/var/run`** - Runtime variable data (FHS standard)
   - PID files for process management
@@ -941,10 +965,14 @@ Complete setup for DETR venue:
 # 1. System-wide installation (see above)
 # Follow all steps in "System-Wide Installation" section
 
-# 2. Install application
-cd /opt/yf_parqed
-sudo -u xetra git clone https://github.com/SiggiSmara/yf_parqed.git .
-sudo -u xetra uv sync
+# 2. Install application (if not already installed by YF daemon)
+if [ ! -d "/opt/yf_parqed/.git" ]; then
+  cd /opt/yf_parqed
+  git clone https://github.com/SiggiSmara/yf_parqed.git .
+  uv sync
+  sudo chgrp -R yf_parqed_app /opt/yf_parqed
+  sudo chmod -R g+rX /opt/yf_parqed
+fi
 
 # 3. Create systemd service (see above)
 sudo nano /etc/systemd/system/xetra-detr.service
