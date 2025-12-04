@@ -86,6 +86,7 @@ class YFParqed:
             today_provider=lambda: self.get_today(),
             empty_frame_factory=self._empty_price_frame,
         )
+        self._custom_storage_injected = storage_backend is not None
         base_backend = storage_backend or self._create_storage_backend()
         self._legacy_storage = base_backend
         self.storage = base_backend
@@ -444,6 +445,18 @@ class YFParqed:
                 market=str(market).lower() if isinstance(market, str) else None,
                 source=str(source).lower() if isinstance(source, str) else None,
                 dataset=str(dataset),
+            )
+
+        # Check global partitioned storage config as fallback
+        # (but not if a custom storage backend was injected)
+        if not self._custom_storage_injected and self.config.is_partitioned_enabled():
+            return StorageRequest(
+                root=self.my_path / "data",
+                interval=interval,
+                ticker=ticker,
+                market="us",
+                source="yahoo",
+                dataset=DATASET_NAME,
             )
 
         return StorageRequest(
