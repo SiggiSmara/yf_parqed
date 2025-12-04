@@ -149,8 +149,17 @@ def main(
     logger.add(sys.stderr, level=log_level)
     os.environ["YF_PARQED_LOG_LEVEL"] = log_level
 
-    # wrk_dir = Path(wrk_dir)
-    yf_parqed.set_working_path(wrk_dir)
+    # Initialize yf_parqed if it's None (happens during first run or test collection)
+    if yf_parqed is None:
+        try:
+            yf_parqed = YFParqed(my_path=wrk_dir)
+        except ValueError:
+            # intervals.json doesn't exist yet - initialize with minimal intervals
+            # The initialize command will populate this properly
+            yf_parqed = YFParqed(my_path=wrk_dir, my_intervals=["1d"])
+    else:
+        yf_parqed.set_working_path(wrk_dir)
+    
     if limits is not None and limits != (3, 2):
         yf_parqed.set_limiter(max_requests=limits[0], duration=limits[1])
 
