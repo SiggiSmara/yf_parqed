@@ -49,10 +49,10 @@ def stress_test_9_bursts(
     logger.info("STRESS TEST: 9 bursts of 30 files")
     logger.info("=" * 70)
     logger.info(f"Cooldown: {cooldown_seconds}s between bursts")
-    logger.info(f"Inter-request delay: {int(inter_request_delay*1000)}ms")
+    logger.info(f"Inter-request delay: {int(inter_request_delay * 1000)}ms")
     logger.info("Total files: 270 (9 × 30)")
     logger.info(
-        f"Expected duration: ~{9*15 + 8*cooldown_seconds:.0f}s (~{(9*15 + 8*cooldown_seconds)/60:.1f} min)\n"
+        f"Expected duration: ~{9 * 15 + 8 * cooldown_seconds:.0f}s (~{(9 * 15 + 8 * cooldown_seconds) / 60:.1f} min)\n"
     )
 
     # Create fetcher for file listing (disable rate limiting for list_available_files)
@@ -97,7 +97,7 @@ def stress_test_9_bursts(
                         logger.error(
                             f"\n❌ early catch 429 ERROR in burst {burst_num} after {success_count} files"
                             + f"   Burst elapsed: {elapsed:.1f}s"
-                            + f"   Total elapsed: {total_elapsed:.1f}s ({total_elapsed/60:.1f} min)"
+                            + f"   Total elapsed: {total_elapsed:.1f}s ({total_elapsed / 60:.1f} min)"
                             + f"   Total files downloaded: {total_files}"
                             + f"   File #{i}: {filename}"
                         )
@@ -117,7 +117,7 @@ def stress_test_9_bursts(
                             f"\n❌ ERROR {response.status_code} in burst {burst_num} after {success_count} files"
                             + f"  Response: {response.text}..."
                             + f"   Burst elapsed: {elapsed:.1f}s"
-                            + f"   Total elapsed: {total_elapsed:.1f}s ({total_elapsed/60:.1f} min)"
+                            + f"   Total elapsed: {total_elapsed:.1f}s ({total_elapsed / 60:.1f} min)"
                             + f"   Total files downloaded: {total_files}"
                             + f"   File #{i}: {filename}"
                         )
@@ -132,7 +132,7 @@ def stress_test_9_bursts(
                     if success_count in [10, 20, 30]:
                         elapsed = time.time() - burst_start
                         logger.info(
-                            f"  [{total_files}] {success_count}/30 files, {elapsed:.1f}s elapsed, {success_count/elapsed:.2f}/s"
+                            f"  [{total_files}] {success_count}/30 files, {elapsed:.1f}s elapsed, {success_count / elapsed:.2f}/s"
                         )
 
                     time.sleep(inter_request_delay)
@@ -150,7 +150,7 @@ def stress_test_9_bursts(
                         logger.error(
                             f"\n❌ late catch 429 ERROR in burst {burst_num} after {success_count} files"
                             + f"   Burst elapsed: {elapsed:.1f}s"
-                            + f"   Total elapsed: {total_elapsed:.1f}s ({total_elapsed/60:.1f} min)"
+                            + f"   Total elapsed: {total_elapsed:.1f}s ({total_elapsed / 60:.1f} min)"
                             + f"   Total files downloaded: {total_files}"
                             + f"   File #{i}: {filename}"
                         )
@@ -168,10 +168,10 @@ def stress_test_9_bursts(
             burst_elapsed = time.time() - burst_start
             total_elapsed = time.time() - test_start
             logger.success(
-                f"✅ Burst {burst_num} complete: 30 files in {burst_elapsed:.1f}s ({30/burst_elapsed:.2f}/s)"
+                f"✅ Burst {burst_num} complete: 30 files in {burst_elapsed:.1f}s ({30 / burst_elapsed:.2f}/s)"
             )
             logger.success(
-                f"   Total progress: {total_files}/{num_bursts*30} files, {total_elapsed:.1f}s elapsed ({total_elapsed/60:.1f} min)\n"
+                f"   Total progress: {total_files}/{num_bursts * 30} files, {total_elapsed:.1f}s elapsed ({total_elapsed / 60:.1f} min)\n"
             )
 
             # Cooldown before next burst (not after last)
@@ -182,13 +182,15 @@ def stress_test_9_bursts(
 
         # All bursts succeeded!
         total_elapsed = time.time() - test_start
-        logger.success(f"\n{'='*70}")
+        logger.success(f"\n{'=' * 70}")
         logger.success("🎯 STRESS TEST PASSED!")
-        logger.success(f"{'='*70}")
+        logger.success(f"{'=' * 70}")
         logger.success(f"Total files: {total_files}")
-        logger.success(f"Total time: {total_elapsed:.1f}s ({total_elapsed/60:.1f} min)")
         logger.success(
-            f"Average rate: {total_files/total_elapsed:.2f} files/s ({total_files/(total_elapsed/60):.1f} files/min)"
+            f"Total time: {total_elapsed:.1f}s ({total_elapsed / 60:.1f} min)"
+        )
+        logger.success(
+            f"Average rate: {total_files / total_elapsed:.2f} files/s ({total_files / (total_elapsed / 60):.1f} files/min)"
         )
         logger.success("No 429 errors detected\n")
 
@@ -208,9 +210,11 @@ def extended_stresstest(
     """
     success_cnt = 0
     for i in range(repeats):
-        logger.info(f"\n{'='*70}")
-        logger.info(f"EXTENDED STRESS TEST RUN {i+1}/{repeats} - Cooldown: {cooldown}s")
-        logger.info(f"{'='*70}")
+        logger.info(f"\n{'=' * 70}")
+        logger.info(
+            f"EXTENDED STRESS TEST RUN {i + 1}/{repeats} - Cooldown: {cooldown}s"
+        )
+        logger.info(f"{'=' * 70}")
         success = stress_test_9_bursts(
             cooldown_seconds=cooldown, inter_request_delay=inter_request_delay
         )
@@ -228,7 +232,7 @@ def extended_stresstest(
                 "\n❌ Stress test FAILED - may need longer cooldown for sustained use"
             )
             logger.warning(
-                f"Full cooldown of {2*cooldown}s initiated before next test..."
+                f"Full cooldown of {2 * cooldown}s initiated before next test..."
             )
             if i < repeats - 1:
                 run_cooldown(2 * cooldown, logger, context="after failed stress test")
@@ -261,11 +265,11 @@ def bisect_search_sustainable_cooldown(
     while min_cooldown <= max_cooldown:
         iteration += 1
         mid = (min_cooldown + max_cooldown) // 2
-        logger.info(f"\n{'─'*70}")
+        logger.info(f"\n{'─' * 70}")
         logger.info(
             f"ITERATION {iteration}: Testing {mid}s cooldown (range: {min_cooldown}s - {max_cooldown}s)"
         )
-        logger.info(f"{'─'*70}")
+        logger.info(f"{'─' * 70}")
 
         # Wait 120s before each test to clear API buffer
         if iteration > 1:
@@ -285,9 +289,9 @@ def bisect_search_sustainable_cooldown(
 
     if working_cooldowns:
         optimal = min(working_cooldowns)
-        logger.success(f"\n{'='*70}")
+        logger.success(f"\n{'=' * 70}")
         logger.success(f"🎯 SUSTAINABLE COOLDOWN FOUND: {optimal}s")
-        logger.success(f"{'='*70}")
+        logger.success(f"{'=' * 70}")
         logger.success(f"Tested cooldowns that WORKED: {sorted(working_cooldowns)}")
         logger.success(f"Tested cooldowns that FAILED: {sorted(failed_cooldowns)}")
         logger.success(
@@ -295,9 +299,9 @@ def bisect_search_sustainable_cooldown(
         )
         return optimal
     else:
-        logger.error(f"\n{'='*70}")
+        logger.error(f"\n{'=' * 70}")
         logger.error("❌ NO SUSTAINABLE COOLDOWN FOUND")
-        logger.error(f"{'='*70}")
+        logger.error(f"{'=' * 70}")
         logger.error(f"All tested cooldowns failed: {sorted(failed_cooldowns)}")
         logger.error(f"Try increasing max_cooldown above {max_cooldown}s\n")
         return -1

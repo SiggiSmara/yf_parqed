@@ -74,9 +74,9 @@ def add_new_delays(
     overall_start = time.time()
 
     for i, delay in enumerate(new_delays, 1):
-        logger.info(f"\n{'#'*70}")
+        logger.info(f"\n{'#' * 70}")
         logger.info(f"NEW DELAY {i}/{len(new_delays)}: {delay:.2f}s")
-        logger.info(f"{'#'*70}")
+        logger.info(f"{'#' * 70}")
 
         # Find stable cooldown for this delay
         cooldown, total_time = find_stable_cooldown_for_delay(
@@ -102,14 +102,14 @@ def add_new_delays(
 
         # Progress summary
         overall_elapsed = time.time() - overall_start
-        logger.info(f"\n{'='*70}")
+        logger.info(f"\n{'=' * 70}")
         logger.info(f"PROGRESS: {i}/{len(new_delays)} new delays tested")
         logger.info(
-            f"Overall elapsed: {overall_elapsed:.1f}s ({overall_elapsed/3600:.1f} hours)"
+            f"Overall elapsed: {overall_elapsed:.1f}s ({overall_elapsed / 3600:.1f} hours)"
         )
         if i < len(new_delays):
             logger.info(f"Remaining: {len(new_delays) - i} delays")
-        logger.info(f"{'='*70}\n")
+        logger.info(f"{'=' * 70}\n")
 
         # Cooldown between different delays (2 minutes)
         if i < len(new_delays):
@@ -119,11 +119,11 @@ def add_new_delays(
 
     # Final summary
     overall_elapsed = time.time() - overall_start
-    logger.success(f"\n{'='*70}")
+    logger.success(f"\n{'=' * 70}")
     logger.success("🎉 NEW MEASUREMENTS COMPLETE!")
-    logger.success(f"{'='*70}")
+    logger.success(f"{'=' * 70}")
     logger.success(
-        f"Total time: {overall_elapsed:.1f}s ({overall_elapsed/3600:.1f} hours)"
+        f"Total time: {overall_elapsed:.1f}s ({overall_elapsed / 3600:.1f} hours)"
     )
     logger.success(f"Total data points: {len(results)}")
     logger.success(f"Results saved to: {csv_file}\n")

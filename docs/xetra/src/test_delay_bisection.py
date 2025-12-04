@@ -36,11 +36,11 @@ def test_delay(inter_request_delay: float, cooldown_seconds: int = 35) -> bool:
     Returns True if all 3 bursts succeed, False on first 429.
     """
     delay_ms = int(inter_request_delay * 1000)
-    logger.info(f"\n{'='*70}")
+    logger.info(f"\n{'=' * 70}")
     logger.info(
         f"Testing {delay_ms}ms inter-request delay with {cooldown_seconds}s cooldown"
     )
-    logger.info(f"{'='*70}\n")
+    logger.info(f"{'=' * 70}\n")
 
     # Get file list (disable rate limiting for list_available_files)
     fetcher = XetraFetcher(inter_request_delay=0.001, burst_size=9999, burst_cooldown=0)
@@ -85,7 +85,7 @@ def test_delay(inter_request_delay: float, cooldown_seconds: int = 35) -> bool:
                     if success_count in [10, 20, 30]:
                         elapsed = time.time() - burst_start
                         logger.info(
-                            f"  [{i}] {success_count}/30 files, {elapsed:.1f}s elapsed, {success_count/elapsed:.2f}/s"
+                            f"  [{i}] {success_count}/30 files, {elapsed:.1f}s elapsed, {success_count / elapsed:.2f}/s"
                         )
 
                     # Inter-request delay
@@ -105,7 +105,7 @@ def test_delay(inter_request_delay: float, cooldown_seconds: int = 35) -> bool:
 
             elapsed = time.time() - burst_start
             logger.success(
-                f"✅ Burst {burst_num} complete: 30 files in {elapsed:.1f}s ({30/elapsed:.2f}/s)\n"
+                f"✅ Burst {burst_num} complete: 30 files in {elapsed:.1f}s ({30 / elapsed:.2f}/s)\n"
             )
 
             # Cooldown before next burst (but not after last burst)
@@ -160,11 +160,11 @@ def bisection_search_delay(
         mid_ms = (min_delay_ms + max_delay_ms) // 2
         mid_seconds = mid_ms / 1000.0
 
-        logger.info(f"\n{'─'*70}")
+        logger.info(f"\n{'─' * 70}")
         logger.info(
             f"ITERATION {iteration}: Testing {mid_ms}ms delay (range: {min_delay_ms}ms - {max_delay_ms}ms)"
         )
-        logger.info(f"{'─'*70}")
+        logger.info(f"{'─' * 70}")
 
         # Wait 120s before testing (except first iteration)
         if iteration > 1:
@@ -189,11 +189,11 @@ def bisection_search_delay(
         optimal_ms = min(working_delays)
         optimal_seconds = optimal_ms / 1000.0
 
-        logger.success(f"\n{'='*70}")
+        logger.success(f"\n{'=' * 70}")
         logger.success(
             f"🎯 OPTIMAL INTER-REQUEST DELAY FOUND: {optimal_ms}ms ({optimal_seconds:.3f}s)"
         )
-        logger.success(f"{'='*70}")
+        logger.success(f"{'=' * 70}")
         logger.success(f"Tested delays that WORKED: {sorted(working_delays)} ms")
         logger.success(f"Tested delays that FAILED: {sorted(failed_delays)} ms")
 
@@ -212,9 +212,9 @@ def bisection_search_delay(
 
         return optimal_seconds
     else:
-        logger.error(f"\n{'='*70}")
+        logger.error(f"\n{'=' * 70}")
         logger.error("❌ NO WORKING DELAY FOUND")
-        logger.error(f"{'='*70}")
+        logger.error(f"{'=' * 70}")
         logger.error(f"All tested delays failed: {sorted(failed_delays)} ms")
         logger.error(f"Try increasing max_delay above {max_delay_ms}ms\n")
         return -1.0

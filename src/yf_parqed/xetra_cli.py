@@ -6,96 +6,21 @@ import signal
 import time
 import os
 import atexit
-from datetime import datetime, timedelta, time as dt_time
-from zoneinfo import ZoneInfo
+from datetime import datetime, timedelta
 from typing_extensions import Annotated
 
+from .trading_hours_checker import TradingHoursChecker
+
 app = typer.Typer()
-
-
-def _parse_active_hours(active_hours_str: str) -> tuple[dt_time, dt_time]:
-    """
-    Parse active hours string into time objects.
-    
-    Args:
-        active_hours_str: String like "08:30-18:00"
-        
-    Returns:
-        Tuple of (start_time, end_time)
-        
-    Raises:
-        ValueError: If format is invalid
-    """
-    try:
-        start_str, end_str = active_hours_str.split("-")
-        start_h, start_m = map(int, start_str.split(":"))
-        end_h, end_m = map(int, end_str.split(":"))
-        return dt_time(start_h, start_m), dt_time(end_h, end_m)
-    except (ValueError, AttributeError) as e:
-        raise ValueError(
-            f"Invalid active-hours format: {active_hours_str}. Expected HH:MM-HH:MM"
-        ) from e
-
-
-def _is_within_active_hours(
-    start_time: dt_time, end_time: dt_time, timezone: ZoneInfo = ZoneInfo("Europe/Berlin")
-) -> bool:
-    """
-    Check if current time is within active hours.
-    
-    Args:
-        start_time: Start of active period
-        end_time: End of active period
-        timezone: Timezone for checking (default: Europe/Berlin for CET/CEST)
-        
-    Returns:
-        True if current time is within active hours
-    """
-    now = datetime.now(timezone).time()
-    
-    # Handle midnight crossing (e.g., 22:00-02:00)
-    if start_time <= end_time:
-        return start_time <= now <= end_time
-    else:
-        return now >= start_time or now <= end_time
-
-
-def _seconds_until_active(
-    start_time: dt_time, end_time: dt_time, timezone: ZoneInfo = ZoneInfo("Europe/Berlin")
-) -> float:
-    """
-    Calculate seconds until next active period starts.
-    
-    Args:
-        start_time: Start of active period
-        end_time: End of active period
-        timezone: Timezone for checking
-        
-    Returns:
-        Seconds until active period (0 if currently active)
-    """
-    if _is_within_active_hours(start_time, end_time, timezone):
-        return 0.0
-    
-    now = datetime.now(timezone)
-    today_start = now.replace(hour=start_time.hour, minute=start_time.minute, second=0, microsecond=0)
-    
-    if now.time() < start_time:
-        # Start time is later today
-        return (today_start - now).total_seconds()
-    else:
-        # Start time is tomorrow
-        tomorrow_start = today_start + timedelta(days=1)
-        return (tomorrow_start - now).total_seconds()
 
 
 def _check_and_write_pid_file(pid_file: Path) -> None:
     """
     Check if another instance is running and write PID file.
-    
+
     Args:
         pid_file: Path to PID file
-        
+
     Raises:
         typer.Exit: If another instance is already running
     """
@@ -104,7 +29,7 @@ def _check_and_write_pid_file(pid_file: Path) -> None:
             # Check if process is still running
             with open(pid_file, "r") as f:
                 old_pid = int(f.read().strip())
-            
+
             # Check if process exists
             try:
                 os.kill(old_pid, 0)  # Signal 0 just checks if process exists
@@ -119,22 +44,22 @@ def _check_and_write_pid_file(pid_file: Path) -> None:
                 pid_file.unlink()
         except (ValueError, FileNotFoundError):
             # Invalid PID file, remove it
-            logger.warning(f"Removing invalid PID file")
+            logger.warning("Removing invalid PID file")
             pid_file.unlink(missing_ok=True)
-    
+
     # Write our PID
     pid_file.parent.mkdir(parents=True, exist_ok=True)
     with open(pid_file, "w") as f:
         f.write(str(os.getpid()))
-    
+
     logger.info(f"PID file created: {pid_file} (PID: {os.getpid()})")
-    
+
     # Register cleanup
     def cleanup_pid():
         if pid_file.exists():
             pid_file.unlink()
             logger.info(f"PID file removed: {pid_file}")
-    
+
     atexit.register(cleanup_pid)
 
 
@@ -155,7 +80,7 @@ def main(
     Use --log-file for daemon mode with log rotation.
     """
     logger.remove()
-    
+
     if log_file:
         # File logging with rotation for daemon mode
         logger.add(
@@ -197,7 +122,9 @@ def fetch_trades(
     ] = 1,
     active_hours: Annotated[
         str | None,
-        typer.Option(help="Trading hours HH:MM-HH:MM in CET/CEST (default: venue-specific, e.g. 08:30-18:00)"),
+        typer.Option(
+            help="Trading hours HH:MM-HH:MM in CET/CEST (default: venue-specific, e.g. 08:30-18:00)"
+        ),
     ] = None,
     pid_file: Annotated[
         Path | None,
@@ -227,7 +154,7 @@ def fetch_trades(
     Daemon Mode:
       Use --daemon to run continuously, fetching new data every --interval hours.
       Recommended: use with --log-file and --pid-file for production.
-      
+
       Trading Hours:
       By default, daemon only runs during venue trading hours (08:30-18:00 CET/CEST).
       Use --active-hours to override (e.g., "00:00-23:59" for 24/7 operation).
@@ -236,10 +163,10 @@ def fetch_trades(
         xetra-parqed fetch-trades DETR              # Fetch missing data once
         xetra-parqed fetch-trades DETR --no-store   # Check what's available (dry run)
         xetra-parqed fetch-trades DEUR              # Fetch Eurex derivatives data
-        
+
         # Daemon mode (respects trading hours)
         xetra-parqed --log-file logs/xetra.log fetch-trades DETR --daemon --interval 1 --pid-file /tmp/xetra.pid
-        
+
         # Daemon mode (24/7 operation)
         xetra-parqed --log-file logs/xetra.log fetch-trades DETR --daemon --interval 1 --active-hours "00:00-23:59"
     """
@@ -248,31 +175,32 @@ def fetch_trades(
     # Market and source are fixed for Xetra
     market = "de"
     source = "xetra"
-    
-    # Parse active hours (default to venue trading hours)
-    if active_hours:
-        start_time, end_time = _parse_active_hours(active_hours)
-    else:
-        # Default to Xetra trading hours (08:30-18:00 CET/CEST)
-        start_time, end_time = dt_time(8, 30), dt_time(18, 0)
-    
-    berlin_tz = ZoneInfo("Europe/Berlin")
-    
+
+    # Initialize trading hours checker
+    # Default to Xetra trading hours (08:30-18:00 CET/CEST)
+    default_hours = active_hours or "08:30-18:00"
+    start_time, end_time = TradingHoursChecker.parse_active_hours(default_hours)
+    hours_checker = TradingHoursChecker(
+        start_time=start_time,
+        end_time=end_time,
+        market_timezone="Europe/Berlin",
+    )
+
     # PID file management for daemon mode
     if pid_file and daemon:
         _check_and_write_pid_file(pid_file)
-    
+
     # Signal handler for graceful shutdown
     shutdown_requested = {"flag": False}
-    
+
     def signal_handler(signum, frame):
         logger.info(f"Received signal {signum}, shutting down gracefully...")
         shutdown_requested["flag"] = True
-    
+
     if daemon:
         signal.signal(signal.SIGTERM, signal_handler)
         signal.signal(signal.SIGINT, signal_handler)
-    
+
     def run_fetch_once():
         """Execute one fetch cycle."""
         with XetraService() as service:
@@ -309,86 +237,74 @@ def fetch_trades(
                     logger.info(message)
                     if not daemon:
                         typer.echo(message)
-                
+
                 return summary
-    
+
     try:
         if daemon:
             logger.info(
                 f"Starting daemon mode for {venue}: fetching every {interval} hour(s)"
             )
+            logger.info(f"Active hours: {default_hours} {hours_checker.market_tz}")
             logger.info(
-                f"Active hours: {start_time.strftime('%H:%M')}-{end_time.strftime('%H:%M')} CET/CEST"
+                f"PID: {Path('/proc/self').resolve().name if Path('/proc/self').exists() else 'unknown'}"
             )
-            logger.info(f"PID: {Path('/proc/self').resolve().name if Path('/proc/self').exists() else 'unknown'}")
-            
+
             run_count = 0
             while not shutdown_requested["flag"]:
                 # Check if within active hours
-                if not _is_within_active_hours(start_time, end_time, berlin_tz):
-                    wait_seconds = _seconds_until_active(start_time, end_time, berlin_tz)
-                    next_active = datetime.now(berlin_tz) + timedelta(seconds=wait_seconds)
+                if not hours_checker.is_within_hours():
+                    wait_seconds = hours_checker.seconds_until_active()
+                    next_active = hours_checker.next_active_time()
                     logger.info(
                         f"Outside active hours. Waiting until {next_active.strftime('%Y-%m-%d %H:%M:%S %Z')}"
                     )
-                    
+
                     # Sleep in small intervals to check for shutdown
                     sleep_interval = 60  # Check every minute
                     for _ in range(int(wait_seconds / sleep_interval)):
                         if shutdown_requested["flag"]:
                             break
                         time.sleep(sleep_interval)
-                    
+
                     # Sleep remaining time
                     if not shutdown_requested["flag"]:
                         remaining = wait_seconds % sleep_interval
                         if remaining > 0:
                             time.sleep(remaining)
-                    
+
                     if shutdown_requested["flag"]:
                         break
-                    
+
                     logger.info("Entering active hours, starting fetch cycle")
-                
+
                 run_count += 1
-                logger.info(f"=== Daemon run #{run_count} started at {datetime.now(berlin_tz).isoformat()} ===")
-                
+                logger.info(
+                    f"=== Daemon run #{run_count} started at {datetime.now(hours_checker.market_tz).isoformat()} ==="
+                )
+
                 try:
                     run_fetch_once()
                 except Exception as e:
-                    logger.error(f"Error in daemon run #{run_count}: {e}", exc_info=True)
+                    logger.error(
+                        f"Error in daemon run #{run_count}: {e}", exc_info=True
+                    )
                     # Continue running despite errors
-                
+
                 if shutdown_requested["flag"]:
                     break
-                
+
                 # Calculate next run time
-                next_run = datetime.now(berlin_tz) + timedelta(hours=interval)
-                
-                # Check if next run is within active hours
-                next_run_time = next_run.time()
-                if not _is_within_active_hours(start_time, end_time, berlin_tz):
-                    # We're about to exit active hours
-                    wait_seconds = _seconds_until_active(start_time, end_time, berlin_tz)
-                    next_active = datetime.now(berlin_tz) + timedelta(seconds=wait_seconds)
-                    logger.info(
-                        f"=== Daemon run #{run_count} completed. "
-                        f"Next scheduled: {next_run.strftime('%Y-%m-%d %H:%M:%S %Z')} "
-                        f"(will wait until active hours at {next_active.strftime('%H:%M %Z')}) ==="
-                    )
-                elif start_time <= next_run_time <= end_time:
-                    logger.info(
-                        f"=== Daemon run #{run_count} completed. "
-                        f"Next run at {next_run.strftime('%Y-%m-%d %H:%M:%S %Z')} ==="
-                    )
-                else:
-                    # Next run falls outside active hours
-                    logger.info(
-                        f"=== Daemon run #{run_count} completed. "
-                        f"Next scheduled: {next_run.strftime('%Y-%m-%d %H:%M:%S %Z')} "
-                        f"(outside active hours, will wait) ==="
-                    )
-                
+                next_run_local = datetime.now(hours_checker.system_tz) + timedelta(
+                    hours=interval
+                )
+
+                # Log completion message
+                logger.info(
+                    f"=== Daemon run #{run_count} completed. "
+                    f"Next scheduled: {next_run_local.strftime('%Y-%m-%d %H:%M:%S %Z')} ==="
+                )
+
                 # Sleep in small intervals to check for shutdown signal
                 sleep_seconds = interval * 3600
                 sleep_interval = 10  # Check every 10 seconds
@@ -396,18 +312,18 @@ def fetch_trades(
                     if shutdown_requested["flag"]:
                         break
                     time.sleep(sleep_interval)
-                
+
                 # Sleep remaining time
                 if not shutdown_requested["flag"]:
                     remaining = sleep_seconds % sleep_interval
                     if remaining > 0:
                         time.sleep(remaining)
-            
+
             logger.info("Daemon shutting down gracefully")
         else:
             # One-time run
             summary = run_fetch_once()
-            
+
             # Show summary for one-time runs
             if summary and not no_store:
                 if summary["dates_partial"]:
@@ -728,7 +644,7 @@ def consolidate_month(
             typer.echo(f"   ❌ Failed: {e}", err=True)
             fail_count += 1
 
-    typer.echo(f"\n{'='*60}")
+    typer.echo(f"\n{'=' * 60}")
     typer.echo(
         f"Consolidation complete: {success_count} succeeded, {fail_count} failed"
     )

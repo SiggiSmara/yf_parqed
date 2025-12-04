@@ -252,6 +252,57 @@ xetra-parqed update-data --backfill-hours 24
 
 **Related Documentation**: See `/docs/xetra_isin_mapping_strategy.md` for implementation details, `/docs/xetra_isin_mapping_decision.md` for cost-benefit analysis.
 
+### AD-9: Production Daemon Mode with Trading Hours Awareness
+
+**Decision**: CLI supports `--daemon` flag for continuous data collection during Xetra trading hours with comprehensive production hardening.
+
+**Implementation** (Completed 2025-12-01):
+
+**Daemon Features**:
+- **Continuous operation**: Run `xetra-parqed fetch-trades DETR --daemon --interval 1` for unattended collection
+- **Trading hours awareness**: Active 08:30-18:00 CET/CEST by default (aligned with Xetra market hours)
+- **Smart sleeping**: Outside active hours, daemon sleeps and checks for shutdown every minute (avoids API calls when no data available)
+- **Configurable hours**: `--active-hours "07:00-20:00"` or `--active-hours "00:00-23:59"` for custom schedules
+- **Timezone handling**: Automatic CET/CEST transitions (Europe/Berlin timezone)
+
+**Operational Hardening**:
+- **PID file management**: `--pid-file /run/xetra/detr.pid` prevents duplicate instances, detects stale PIDs from crashes
+- **Signal handling**: Graceful shutdown on SIGTERM/SIGINT (Ctrl+C), completes current operation before exit
+- **File logging with rotation**: `--log-file /var/log/xetra/detr.log`, auto-rotates at 10MB, 30-day retention, gzip compression
+- **Error resilience**: Transient failures logged but don't stop daemon, retries on next interval
+- **systemd integration**: RuntimeDirectory directive creates `/run/xetra/` with proper ownership, service file includes security hardening (ProtectSystem=strict, NoNewPrivileges, PrivateTmp, ProtectHome)
+
+**Production Deployment**:
+- **FHS-compliant layout**: `/opt/yf_parqed` (code), `/var/lib/xetra` (data), `/var/log/xetra` (logs), `/run/xetra` (PID files)
+- **Systemd template**: `xetra@.service` supports multiple venues (DETR, DFRA, DGAT, DEUR)
+- **Automatic restart**: `Restart=on-failure` with 30s delay
+- **Monitoring**: `journalctl -u xetra@DETR -f` for real-time logs, DuckDB queries for data completeness
+
+**Testing Coverage**:
+- **52 daemon-specific tests** (18 integration + 34 trading hours)
+- Test classes: PID file management (6), daemon loop execution (3), file logging (3), trading hours integration (3), PID integration (2), no-store validation (1), trading hours unit tests (34)
+- All tests passing, 100% coverage on daemon mode paths
+
+**Rationale**:
+- **24-hour retention window**: Deutsche Börse data expires after ~24 hours, requires automated collection without manual intervention
+- **Trading hours optimization**: Reduces API calls by 56.5% (no data updates outside 08:30-18:00), prevents unnecessary weekend/holiday runs
+- **Production reliability**: PID management prevents overlapping runs, signal handling enables zero-downtime restarts, file logging enables debugging
+- **Operational monitoring**: DuckDB queries show daily trade counts, minute coverage, volume metrics for validation
+
+**Performance Characteristics**:
+- **Resource usage**: Minimal CPU outside trading hours (sleep with 1-minute wakeup checks), ~50MB memory during fetch operations
+- **Disk I/O**: One write per venue/date (atomic parquet file write), log rotation prevents unbounded disk growth
+- **Network**: Rate-limited downloads (0.6s delay + 35s cooldown), respects Deutsche Börse throttling
+
+**Alternatives Considered**:
+| Alternative | Pros | Cons | Decision |
+|-------------|------|------|----------|
+| **Cron scheduling** | Simple, widely understood, no daemon code | No graceful shutdown, run-lock coordination needed, harder error handling | ❌ Rejected - daemon mode provides better UX |
+| **24/7 operation** | Maximally available, catches data immediately | Wastes resources, 56.5% unnecessary API calls, weekend/holiday runs find no data | ❌ Rejected - trading hours default, 24/7 available via flag |
+| **External orchestration** (Airflow, Prefect) | Enterprise scheduling, complex workflows, monitoring dashboards | Deployment complexity, additional dependencies, overkill for single service | 🔮 Deferred - daemon sufficient for MVP |
+
+**Documentation**: Complete guide in `/docs/DAEMON_MODE.md` with systemd configuration, Docker examples, monitoring queries, troubleshooting steps.
+
 ## Implementation Roadmap
 
 ### Phase 1: Foundation (Weeks 1-2) ✅ **COMPLETE**

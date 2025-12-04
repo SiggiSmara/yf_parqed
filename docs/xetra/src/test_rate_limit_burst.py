@@ -52,9 +52,9 @@ def test_burst_pattern(burst_size: int, cooldown_seconds: float, num_batches: in
         batch_times = []
 
         for batch_num in range(num_batches):
-            logger.info(f"\n{'='*60}")
+            logger.info(f"\n{'=' * 60}")
             logger.info(f"Batch {batch_num + 1}/{num_batches}")
-            logger.info(f"{'='*60}")
+            logger.info(f"{'=' * 60}")
 
             # Select files for this batch
             start_idx = (batch_num * burst_size) % len(files)
@@ -111,7 +111,7 @@ def test_burst_pattern(burst_size: int, cooldown_seconds: float, num_batches: in
             logger.info(f"  429 errors: {batch_429s}")
             logger.info(f"  Time: {batch_elapsed:.2f}s")
             if batch_elapsed > 0:
-                logger.info(f"  Rate: {batch_downloaded/batch_elapsed:.2f} files/sec")
+                logger.info(f"  Rate: {batch_downloaded / batch_elapsed:.2f} files/sec")
 
             # Cooldown before next batch (except after last batch)
             if batch_num < num_batches - 1:
@@ -119,15 +119,17 @@ def test_burst_pattern(burst_size: int, cooldown_seconds: float, num_batches: in
                 time.sleep(cooldown_seconds)
 
         # Final summary
-        logger.info(f"\n{'='*60}")
+        logger.info(f"\n{'=' * 60}")
         logger.info("FINAL SUMMARY")
-        logger.info(f"{'='*60}")
+        logger.info(f"{'=' * 60}")
         logger.info(f"Total downloaded: {total_downloaded}/{burst_size * num_batches}")
         logger.info(f"Total 429 errors: {total_429s}")
         if batch_times:
-            logger.info(f"Average batch time: {sum(batch_times)/len(batch_times):.2f}s")
             logger.info(
-                f"Overall throughput: {total_downloaded/sum(batch_times):.2f} files/sec"
+                f"Average batch time: {sum(batch_times) / len(batch_times):.2f}s"
+            )
+            logger.info(
+                f"Overall throughput: {total_downloaded / sum(batch_times):.2f} files/sec"
             )
 
         # Calculate estimated time for full day
@@ -139,7 +141,7 @@ def test_burst_pattern(burst_size: int, cooldown_seconds: float, num_batches: in
                 (files_per_day / burst_size) * cooldown_seconds
             )
             logger.info(
-                f"\nEstimated time for full day (1142 files): {full_day_time/60:.1f} minutes"
+                f"\nEstimated time for full day (1142 files): {full_day_time / 60:.1f} minutes"
             )
 
     finally:
@@ -183,7 +185,7 @@ def test_no_rate_limit_until_429():
                     # Log every 10th file for less noise
                     if i % 10 == 0 or i <= 50:
                         logger.success(
-                            f"[{i}] Downloaded ({downloaded} total, {elapsed:.2f}s, {downloaded/elapsed:.2f}/sec)"
+                            f"[{i}] Downloaded ({downloaded} total, {elapsed:.2f}s, {downloaded / elapsed:.2f}/sec)"
                         )
 
             except Exception as e:
@@ -195,7 +197,7 @@ def test_no_rate_limit_until_429():
                         f"\n⚠️  429 HIT at file #{i} (after {downloaded} successful downloads)"
                     )
                     logger.info(
-                        f"Time elapsed: {elapsed:.2f}s, Rate: {downloaded/elapsed:.2f}/sec"
+                        f"Time elapsed: {elapsed:.2f}s, Rate: {downloaded / elapsed:.2f}/sec"
                     )
 
                     # Don't break - let the retry mechanism handle it and continue
@@ -206,9 +208,9 @@ def test_no_rate_limit_until_429():
 
         # Summary
         elapsed = time.time() - start_time
-        logger.info(f"\n{'='*60}")
+        logger.info(f"\n{'=' * 60}")
         logger.info(f"SUMMARY: Downloaded {downloaded}/100 files in {elapsed:.2f}s")
-        logger.info(f"Overall rate: {downloaded/elapsed:.2f} files/sec")
+        logger.info(f"Overall rate: {downloaded / elapsed:.2f} files/sec")
 
         if burst_boundaries:
             logger.info("\n429 errors occurred at these points:")
@@ -221,11 +223,13 @@ def test_no_rate_limit_until_429():
                 for i in range(1, len(burst_boundaries)):
                     interval = burst_boundaries[i][0] - burst_boundaries[i - 1][0]
                     time_diff = burst_boundaries[i][1] - burst_boundaries[i - 1][1]
-                    logger.info(f"  Burst #{i+1}: {interval} files in {time_diff:.2f}s")
+                    logger.info(
+                        f"  Burst #{i + 1}: {interval} files in {time_diff:.2f}s"
+                    )
         else:
             logger.info("\nNo 429 errors encountered!")
 
-        logger.info(f"{'='*60}")
+        logger.info(f"{'=' * 60}")
 
     finally:
         fetcher.close()
@@ -239,9 +243,9 @@ def test_optimal_cooldown():
     cooldown_periods = [10, 15, 20, 30]
 
     for cooldown in cooldown_periods:
-        logger.info(f"\n{'='*60}")
+        logger.info(f"\n{'=' * 60}")
         logger.info(f"Testing {cooldown}s cooldown period")
-        logger.info(f"{'='*60}\n")
+        logger.info(f"{'=' * 60}\n")
 
         fetcher = XetraFetcher(max_requests=9999, duration=1)
 

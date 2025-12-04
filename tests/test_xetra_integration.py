@@ -152,9 +152,9 @@ class TestXetraIntegrationMocked:
         assert df_read["volume"].tolist()[0] == 10.0
 
         # Performance check (should be fast with 100 trades)
-        assert (
-            fetch_time < 5.0
-        ), f"Fetch took {fetch_time:.2f}s, should be <5s for 100 trades"
+        assert fetch_time < 5.0, (
+            f"Fetch took {fetch_time:.2f}s, should be <5s for 100 trades"
+        )
 
         print(f"\n✓ Integration test passed in {fetch_time:.3f}s")
         print(f"  - Fetched and parsed {len(df)} trades")

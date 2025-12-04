@@ -130,9 +130,9 @@ def test_schema_completeness_before_storage():
     expected_columns = set(parser.FIELD_MAPPING.values())
     actual_columns = set(df.columns)
 
-    assert (
-        len(expected_columns) == 22
-    ), f"Expected 22 columns in FIELD_MAPPING, got {len(expected_columns)}"
+    assert len(expected_columns) == 22, (
+        f"Expected 22 columns in FIELD_MAPPING, got {len(expected_columns)}"
+    )
     assert actual_columns == expected_columns, (
         f"Column mismatch:\n"
         f"  Missing: {expected_columns - actual_columns}\n"

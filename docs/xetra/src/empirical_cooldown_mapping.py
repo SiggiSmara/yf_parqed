@@ -32,9 +32,9 @@ def find_stable_cooldown_for_delay(
     Returns (optimal_cooldown, estimated_total_time)
     Returns (-1, -1) if no stable cooldown found in range.
     """
-    logger.info(f"\n{'='*70}")
+    logger.info(f"\n{'=' * 70}")
     logger.info(f"FINDING STABLE COOLDOWN FOR DELAY={inter_request_delay:.2f}s")
-    logger.info(f"{'='*70}")
+    logger.info(f"{'=' * 70}")
     logger.info(f"Search range: {min_cooldown}s - {max_cooldown}s")
     logger.info(f"Target: 9 bursts × {repeats} runs, zero 429 errors\n")
 
@@ -45,12 +45,12 @@ def find_stable_cooldown_for_delay(
     while min_cooldown <= max_cooldown:
         iteration += 1
         mid = (min_cooldown + max_cooldown) // 2
-        logger.info(f"\n{'─'*70}")
+        logger.info(f"\n{'─' * 70}")
         logger.info(
             f"ITERATION {iteration}: Testing cooldown={mid}s, delay={inter_request_delay:.2f}s"
         )
         logger.info(f"  (range: {min_cooldown}s - {max_cooldown}s)")
-        logger.info(f"{'─'*70}")
+        logger.info(f"{'─' * 70}")
 
         # Wait 120s before each test to clear API state
         if iteration > 1:
@@ -66,7 +66,7 @@ def find_stable_cooldown_for_delay(
         if success:
             working_cooldowns.append((mid, elapsed))
             logger.info(
-                f"\n✅ cooldown={mid}s WORKS (took {elapsed:.1f}s = {elapsed/60:.1f} min)"
+                f"\n✅ cooldown={mid}s WORKS (took {elapsed:.1f}s = {elapsed / 60:.1f} min)"
             )
             logger.info("   Trying shorter cooldown...")
             max_cooldown = mid - 1
@@ -81,11 +81,11 @@ def find_stable_cooldown_for_delay(
         optimal_cooldown = min(c for c, _ in working_cooldowns)
         optimal_time = next(t for c, t in working_cooldowns if c == optimal_cooldown)
 
-        logger.success(f"\n{'='*70}")
+        logger.success(f"\n{'=' * 70}")
         logger.success(f"🎯 STABLE COOLDOWN FOUND for delay={inter_request_delay:.2f}s")
-        logger.success(f"{'='*70}")
+        logger.success(f"{'=' * 70}")
         logger.success(f"Optimal cooldown: {optimal_cooldown}s")
-        logger.success(f"Total time: {optimal_time:.1f}s ({optimal_time/60:.1f} min)")
+        logger.success(f"Total time: {optimal_time:.1f}s ({optimal_time / 60:.1f} min)")
         logger.success(
             f"Tested cooldowns that WORKED: {sorted([c for c, _ in working_cooldowns])}"
         )
@@ -93,11 +93,11 @@ def find_stable_cooldown_for_delay(
 
         return optimal_cooldown, optimal_time
     else:
-        logger.error(f"\n{'='*70}")
+        logger.error(f"\n{'=' * 70}")
         logger.error(
             f"❌ NO STABLE COOLDOWN FOUND for delay={inter_request_delay:.2f}s"
         )
-        logger.error(f"{'='*70}")
+        logger.error(f"{'=' * 70}")
         logger.error(f"All tested cooldowns failed: {sorted(failed_cooldowns)}")
         logger.error(f"Try increasing max_cooldown above {max_cooldown}s\n")
 
@@ -135,9 +135,9 @@ def empirical_cooldown_mapping(
     overall_start = time.time()
 
     for i, delay in enumerate(delays, 1):
-        logger.info(f"\n{'#'*70}")
+        logger.info(f"\n{'#' * 70}")
         logger.info(f"DELAY {i}/{len(delays)}: {delay:.2f}s")
-        logger.info(f"{'#'*70}")
+        logger.info(f"{'#' * 70}")
 
         # Find stable cooldown for this delay
         cooldown, total_time = find_stable_cooldown_for_delay(
@@ -162,14 +162,14 @@ def empirical_cooldown_mapping(
 
         # Progress summary
         overall_elapsed = time.time() - overall_start
-        logger.info(f"\n{'='*70}")
+        logger.info(f"\n{'=' * 70}")
         logger.info(f"PROGRESS: {i}/{len(delays)} delays tested")
         logger.info(
-            f"Overall elapsed: {overall_elapsed:.1f}s ({overall_elapsed/3600:.1f} hours)"
+            f"Overall elapsed: {overall_elapsed:.1f}s ({overall_elapsed / 3600:.1f} hours)"
         )
         if i < len(delays):
             logger.info(f"Remaining: {len(delays) - i} delays")
-        logger.info(f"{'='*70}\n")
+        logger.info(f"{'=' * 70}\n")
 
         # Cooldown between different delays (2 minutes)
         if i < len(delays):
@@ -177,11 +177,11 @@ def empirical_cooldown_mapping(
 
     # Final summary
     overall_elapsed = time.time() - overall_start
-    logger.success(f"\n{'='*70}")
+    logger.success(f"\n{'=' * 70}")
     logger.success("🎉 EMPIRICAL MAPPING COMPLETE!")
-    logger.success(f"{'='*70}")
+    logger.success(f"{'=' * 70}")
     logger.success(
-        f"Total time: {overall_elapsed:.1f}s ({overall_elapsed/3600:.1f} hours)"
+        f"Total time: {overall_elapsed:.1f}s ({overall_elapsed / 3600:.1f} hours)"
     )
     logger.success(f"Results saved to: {output_file}\n")
 
@@ -214,7 +214,7 @@ def _display_results(results: list[dict]):
     for r in results:
         delay_str = f"{r['delay']:.2f}"
         cooldown_str = f"{r['cooldown']}" if r["feasible"] else "NOT FOUND"
-        time_str = f"{r['total_time']/60:.1f}" if r["feasible"] else "N/A"
+        time_str = f"{r['total_time'] / 60:.1f}" if r["feasible"] else "N/A"
         feasible_str = "✅" if r["feasible"] else "❌"
         logger.info(f"{delay_str:<12} {cooldown_str:<15} {time_str:<20} {feasible_str}")
 
@@ -320,7 +320,7 @@ def analyze_relationship(
         time_per_burst = 30 * r["delay"] + 2
         time_per_run = 9 * time_per_burst + 8 * r["cooldown"]
         total_time = 3 * time_per_run + 2 * r["cooldown"]
-        logger.info(f"{r['delay']:<10.2f} {r['cooldown']:<12} {total_time/60:.1f}")
+        logger.info(f"{r['delay']:<10.2f} {r['cooldown']:<12} {total_time / 60:.1f}")
     logger.info("=" * 70 + "\n")
 
     return slope, intercept, r_squared, p_value, std_err

@@ -316,7 +316,7 @@ class TestXetraService:
 
     def test_get_missing_dates_one_stored(self, tmp_path):
         """Test get_missing_dates when one date is already stored.
-        
+
         Note: get_missing_dates now returns ALL dates from API (including stored ones)
         to enable incremental checking. The actual filtering happens in
         fetch_and_store_missing_trades_incremental.
@@ -357,14 +357,16 @@ class TestXetraService:
         # Create download log showing today's file is complete
         log_path = tmp_path / "de" / "xetra" / ".download_log.parquet"
         log_path.parent.mkdir(parents=True, exist_ok=True)
-        log_data = pd.DataFrame({
-            "venue": ["DETR"],
-            "date": [today.strftime('%Y-%m-%d')],
-            "timestamp": [f"{today.strftime('%Y-%m-%d')}T09_00"],
-            "has_data": [True],
-            "trade_count": [100],
-            "downloaded_at": [pd.Timestamp.now()],
-        })
+        log_data = pd.DataFrame(
+            {
+                "venue": ["DETR"],
+                "date": [today.strftime("%Y-%m-%d")],
+                "timestamp": [f"{today.strftime('%Y-%m-%d')}T09_00"],
+                "has_data": [True],
+                "trade_count": [100],
+                "downloaded_at": [pd.Timestamp.now()],
+            }
+        )
         log_data.to_parquet(log_path, index=False)
 
         service = XetraService(fetcher=mock_fetcher, backend=mock_backend)
@@ -467,7 +469,7 @@ class TestDownloadLogTracking:
         from yf_parqed.xetra_service import XetraService
         from yf_parqed.partition_path_builder import PartitionPathBuilder
         from yf_parqed.partitioned_storage_backend import PartitionedStorageBackend
-        
+
         # Setup service with temp directory
         path_builder = PartitionPathBuilder(tmp_path)
         backend = PartitionedStorageBackend(
@@ -476,17 +478,17 @@ class TestDownloadLogTracking:
             column_provider=lambda: [],
             path_builder=path_builder,
         )
-        
+
         mock_fetcher = Mock()
         mock_parser = Mock()
-        
+
         # Mock list_available_files to return 3 files
         mock_fetcher.list_available_files.return_value = [
             "DETR-posttrade-2025-11-28T08_00.json.gz",
             "DETR-posttrade-2025-11-28T08_01.json.gz",
             "DETR-posttrade-2025-11-28T08_02.json.gz",
         ]
-        
+
         # Mock downloads: first has data, others are empty
         mock_fetcher.download_file.side_effect = [
             b"mock_gzip_data_1",
@@ -498,40 +500,59 @@ class TestDownloadLogTracking:
             '{"trades":[]}',  # Empty
             '{"trades":[]}',  # Empty
         ]
-        
+
         # Mock parser to return data for first, empty for others
         mock_parser.parse.side_effect = [
-            pd.DataFrame({"isin": ["DE001"], "trade_time": [pd.Timestamp("2025-11-28 08:00:00")], "price": [100.0]}),
-            pd.DataFrame(columns=["isin", "trade_time", "price"]),  # Empty but with columns
-            pd.DataFrame(columns=["isin", "trade_time", "price"]),  # Empty but with columns
+            pd.DataFrame(
+                {
+                    "isin": ["DE001"],
+                    "trade_time": [pd.Timestamp("2025-11-28 08:00:00")],
+                    "price": [100.0],
+                }
+            ),
+            pd.DataFrame(
+                columns=["isin", "trade_time", "price"]
+            ),  # Empty but with columns
+            pd.DataFrame(
+                columns=["isin", "trade_time", "price"]
+            ),  # Empty but with columns
         ]
-        
-        service = XetraService(fetcher=mock_fetcher, parser=mock_parser, backend=backend, root_path=tmp_path)
-        
+
+        service = XetraService(
+            fetcher=mock_fetcher,
+            parser=mock_parser,
+            backend=backend,
+            root_path=tmp_path,
+        )
+
         # Run incremental fetch
-        summary = service.fetch_and_store_missing_trades_incremental("DETR", market="de", source="xetra")
-        
+        service.fetch_and_store_missing_trades_incremental(
+            "DETR", market="de", source="xetra"
+        )
+
         # Verify download log was created
         log_path = tmp_path / "de" / "xetra" / ".download_log.parquet"
         assert log_path.exists(), "Download log should be created"
-        
+
         # Read and verify log contents
         log_df = pd.read_parquet(log_path)
         assert len(log_df) == 3, "Should track all 3 downloads"
         assert log_df["venue"].iloc[0] == "DETR"
         assert log_df["date"].iloc[0] == "2025-11-28"
-        
+
         # Verify empty files are tracked
         empty_entries = log_df[~log_df["has_data"]]
         assert len(empty_entries) == 2, "Should track 2 empty files"
-        assert all(empty_entries["trade_count"] == 0), "Empty files should have 0 trades"
+        assert all(empty_entries["trade_count"] == 0), (
+            "Empty files should have 0 trades"
+        )
 
     def test_partial_download_recovery(self, tmp_path):
         """Test that interrupted downloads can resume from where they left off."""
         from yf_parqed.xetra_service import XetraService
         from yf_parqed.partition_path_builder import PartitionPathBuilder
         from yf_parqed.partitioned_storage_backend import PartitionedStorageBackend
-        
+
         # Setup service
         path_builder = PartitionPathBuilder(tmp_path)
         backend = PartitionedStorageBackend(
@@ -540,10 +561,10 @@ class TestDownloadLogTracking:
             column_provider=lambda: [],
             path_builder=path_builder,
         )
-        
+
         mock_fetcher = Mock()
         mock_parser = Mock()
-        
+
         # Simulate 5 files available, but only 2 are in the log (partial download)
         mock_fetcher.list_available_files.return_value = [
             "DETR-posttrade-2025-11-28T08_00.json.gz",
@@ -552,20 +573,22 @@ class TestDownloadLogTracking:
             "DETR-posttrade-2025-11-28T08_03.json.gz",
             "DETR-posttrade-2025-11-28T08_04.json.gz",
         ]
-        
+
         # Create a partial download log (2 files already downloaded)
         log_path = tmp_path / "de" / "xetra" / ".download_log.parquet"
         log_path.parent.mkdir(parents=True, exist_ok=True)
-        partial_log = pd.DataFrame({
-            "venue": ["DETR", "DETR"],
-            "date": ["2025-11-28", "2025-11-28"],
-            "timestamp": ["2025-11-28T08_00", "2025-11-28T08_01"],
-            "has_data": [True, False],
-            "trade_count": [10, 0],
-            "downloaded_at": [pd.Timestamp.now(), pd.Timestamp.now()],
-        })
+        partial_log = pd.DataFrame(
+            {
+                "venue": ["DETR", "DETR"],
+                "date": ["2025-11-28", "2025-11-28"],
+                "timestamp": ["2025-11-28T08_00", "2025-11-28T08_01"],
+                "has_data": [True, False],
+                "trade_count": [10, 0],
+                "downloaded_at": [pd.Timestamp.now(), pd.Timestamp.now()],
+            }
+        )
         partial_log.to_parquet(log_path, index=False)
-        
+
         # Mock downloads for remaining 3 files
         mock_fetcher.download_file.side_effect = [
             b"mock_data_3",
@@ -578,20 +601,39 @@ class TestDownloadLogTracking:
             '{"trades":[]}',
         ]
         mock_parser.parse.side_effect = [
-            pd.DataFrame(columns=["isin", "trade_time", "price"]),  # Empty but with columns
-            pd.DataFrame({"isin": ["DE002"], "trade_time": [pd.Timestamp("2025-11-28 08:03:00")], "price": [200.0]}),
-            pd.DataFrame(columns=["isin", "trade_time", "price"]),  # Empty but with columns
+            pd.DataFrame(
+                columns=["isin", "trade_time", "price"]
+            ),  # Empty but with columns
+            pd.DataFrame(
+                {
+                    "isin": ["DE002"],
+                    "trade_time": [pd.Timestamp("2025-11-28 08:03:00")],
+                    "price": [200.0],
+                }
+            ),
+            pd.DataFrame(
+                columns=["isin", "trade_time", "price"]
+            ),  # Empty but with columns
         ]
-        
-        service = XetraService(fetcher=mock_fetcher, parser=mock_parser, backend=backend, root_path=tmp_path)
-        
+
+        service = XetraService(
+            fetcher=mock_fetcher,
+            parser=mock_parser,
+            backend=backend,
+            root_path=tmp_path,
+        )
+
         # Run incremental fetch - should only download 3 remaining files
-        summary = service.fetch_and_store_missing_trades_incremental("DETR", market="de", source="xetra")
-        
+        summary = service.fetch_and_store_missing_trades_incremental(
+            "DETR", market="de", source="xetra"
+        )
+
         # Verify only 3 files were fetched
-        assert mock_fetcher.download_file.call_count == 3, "Should only download 3 remaining files"
+        assert mock_fetcher.download_file.call_count == 3, (
+            "Should only download 3 remaining files"
+        )
         assert summary["total_files"] == 3, "Should report 3 files processed"
-        
+
         # Verify log now has all 5 entries
         updated_log = pd.read_parquet(log_path)
         assert len(updated_log) == 5, "Log should have all 5 entries after resume"
@@ -601,7 +643,7 @@ class TestDownloadLogTracking:
         from yf_parqed.xetra_service import XetraService
         from yf_parqed.partition_path_builder import PartitionPathBuilder
         from yf_parqed.partitioned_storage_backend import PartitionedStorageBackend
-        
+
         # Setup service
         path_builder = PartitionPathBuilder(tmp_path)
         backend = PartitionedStorageBackend(
@@ -610,36 +652,50 @@ class TestDownloadLogTracking:
             column_provider=lambda: [],
             path_builder=path_builder,
         )
-        
+
         # Create existing parquet data (simulating data downloaded before log was implemented)
-        parquet_path = tmp_path / "de" / "xetra" / "trades" / "venue=DETR" / "year=2025" / "month=11" / "day=28" / "trades.parquet"
+        parquet_path = (
+            tmp_path
+            / "de"
+            / "xetra"
+            / "trades"
+            / "venue=DETR"
+            / "year=2025"
+            / "month=11"
+            / "day=28"
+            / "trades.parquet"
+        )
         parquet_path.parent.mkdir(parents=True, exist_ok=True)
-        existing_data = pd.DataFrame({
-            "isin": ["DE001", "DE002"],
-            "trade_time": [
-                pd.Timestamp("2025-11-28 08:00:00"),
-                pd.Timestamp("2025-11-28 08:01:00"),
-            ],
-            "price": [100.0, 200.0],
-        })
+        existing_data = pd.DataFrame(
+            {
+                "isin": ["DE001", "DE002"],
+                "trade_time": [
+                    pd.Timestamp("2025-11-28 08:00:00"),
+                    pd.Timestamp("2025-11-28 08:01:00"),
+                ],
+                "price": [100.0, 200.0],
+            }
+        )
         existing_data.to_parquet(parquet_path, index=False)
-        
+
         # Create download log with different timestamps (empty files)
         log_path = tmp_path / "de" / "xetra" / ".download_log.parquet"
         log_path.parent.mkdir(parents=True, exist_ok=True)
-        log_data = pd.DataFrame({
-            "venue": ["DETR"],
-            "date": ["2025-11-28"],
-            "timestamp": ["2025-11-28T08_02"],  # Different from parquet
-            "has_data": [False],
-            "trade_count": [0],
-            "downloaded_at": [pd.Timestamp.now()],
-        })
+        log_data = pd.DataFrame(
+            {
+                "venue": ["DETR"],
+                "date": ["2025-11-28"],
+                "timestamp": ["2025-11-28T08_02"],  # Different from parquet
+                "has_data": [False],
+                "trade_count": [0],
+                "downloaded_at": [pd.Timestamp.now()],
+            }
+        )
         log_data.to_parquet(log_path, index=False)
-        
+
         mock_fetcher = Mock()
         mock_parser = Mock()
-        
+
         # Mock 4 files available
         mock_fetcher.list_available_files.return_value = [
             "DETR-posttrade-2025-11-28T08_00.json.gz",  # In parquet
@@ -647,17 +703,28 @@ class TestDownloadLogTracking:
             "DETR-posttrade-2025-11-28T08_02.json.gz",  # In log
             "DETR-posttrade-2025-11-28T08_03.json.gz",  # Missing - should download
         ]
-        
-        service = XetraService(fetcher=mock_fetcher, parser=mock_parser, backend=backend, root_path=tmp_path)
-        
+
+        service = XetraService(
+            fetcher=mock_fetcher,
+            parser=mock_parser,
+            backend=backend,
+            root_path=tmp_path,
+        )
+
         # Mock the download for the missing file
         mock_fetcher.download_file.return_value = b"mock_data"
         mock_fetcher.decompress_gzip.return_value = '{"trades":[]}'
-        mock_parser.parse.return_value = pd.DataFrame(columns=["isin", "trade_time", "price"])  # Empty but with columns
-        
+        mock_parser.parse.return_value = pd.DataFrame(
+            columns=["isin", "trade_time", "price"]
+        )  # Empty but with columns
+
         # Run incremental fetch
-        summary = service.fetch_and_store_missing_trades_incremental("DETR", market="de", source="xetra")
-        
+        summary = service.fetch_and_store_missing_trades_incremental(
+            "DETR", market="de", source="xetra"
+        )
+
         # Should only download 1 file (08:03), not the ones in parquet or log
-        assert mock_fetcher.download_file.call_count == 1, "Should only download 1 missing file"
+        assert mock_fetcher.download_file.call_count == 1, (
+            "Should only download 1 missing file"
+        )
         assert summary["total_files"] == 1

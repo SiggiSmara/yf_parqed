@@ -1,13 +1,420 @@
-# Xetra Daemon Mode Guide
+# Daemon Mode Guide
 
 ## Overview
 
-The `xetra-parqed fetch-trades` command supports daemon mode for continuous data collection. This is useful for:
+Both `yf-parqed` (Yahoo Finance) and `xetra-parqed` (Xetra trades) support daemon mode for continuous data collection. This is useful for:
 
 - Running as a background service
 - Automated daily data collection
 - Production deployments
 - Scheduled data updates
+
+This guide covers both data sources. Jump to:
+- [Yahoo Finance Daemon](#yahoo-finance-daemon-mode)
+- [Xetra Daemon](#xetra-daemon-mode)
+
+---
+
+# Yahoo Finance Daemon Mode
+
+## Quick Start
+
+### One-time update (default)
+```bash
+yf-parqed update-data
+```
+
+### Daemon mode (continuous, during NYSE trading hours)
+```bash
+yf-parqed \
+  --wrk-dir /var/lib/yf_parqed \
+  update-data \
+  --daemon \
+  --interval 1 \
+  --pid-file /tmp/yf-parqed.pid
+
+# For production with proper permissions, use /run/yf-parqed/yf-parqed.pid
+# Note: By default, only runs during 09:30-16:00 US/Eastern (NYSE hours)
+```
+
+## Daemon Mode Features
+
+### 1. Trading Hours Awareness
+- **NYSE Regular Hours**: 09:30-16:00 US/Eastern (default)
+- **Extended Hours**: 04:00-20:00 US/Eastern with `--extended-hours`
+- **Custom Hours**: Override with `--trading-hours "HH:MM-HH:MM"`
+- **Timezone Handling**: Auto-detects system timezone, converts market hours
+- **DST Transitions**: Handles EST ↔ EDT automatically
+
+```bash
+# Regular trading hours (default)
+yf-parqed update-data --daemon --interval 1
+
+# Extended hours (pre-market + regular + after-hours)
+yf-parqed update-data --daemon --interval 1 --extended-hours
+
+# Custom hours in market timezone
+yf-parqed update-data --daemon --interval 1 --trading-hours "08:00-18:00"
+
+# Override market timezone (e.g., for US/Pacific)
+yf-parqed update-data --daemon --interval 1 --market-timezone "US/Pacific" --trading-hours "06:30-13:00"
+```
+
+### 2. Ticker Maintenance
+Periodically updates ticker lists, confirms not-founds, and reparses failed tickers.
+
+- **weekly** (default): Every 7 days
+- **daily**: Every day at first daemon cycle
+- **monthly**: Every 30 days
+- **never**: Manual maintenance only
+
+```bash
+# Weekly maintenance (recommended)
+yf-parqed update-data --daemon --ticker-maintenance weekly
+
+# Daily for rapidly changing ticker lists
+yf-parqed update-data --daemon --ticker-maintenance daily
+
+# Never - manual control
+yf-parqed update-data --daemon --ticker-maintenance never
+```
+
+Maintenance runs:
+- `update-tickers` - Fetch latest NASDAQ/NYSE ticker lists
+- `confirm-not-founds` - Re-check globally not-found tickers
+- `reparse-not-founds` - Reactivate tickers with recent interval data
+
+### 3. PID File Management
+- **Prevents multiple instances**: Won't start if another instance is running
+- **Stale detection**: Removes stale PID files from crashed processes
+- **Automatic cleanup**: PID file removed on graceful shutdown
+
+```bash
+# Development: /tmp
+yf-parqed update-data --daemon --pid-file /tmp/yf-parqed.pid
+
+# Production: /run (created by systemd RuntimeDirectory)
+yf-parqed update-data --daemon --pid-file /run/yf-parqed/yf-parqed.pid
+```
+
+### 4. Graceful Shutdown
+- **Signal handling**: Responds to SIGTERM and SIGINT (Ctrl+C)
+- **Clean exit**: Completes current ticker before shutting down
+- **Resource cleanup**: Releases locks, removes PID file
+
+```bash
+# Graceful shutdown
+kill $(cat /tmp/yf-parqed.pid)
+
+# Or Ctrl+C in foreground mode
+```
+
+### 5. Error Resilience
+- **Per-ticker errors**: Logs errors for individual tickers, continues with others
+- **Network failures**: Retries on next scheduled run
+- **Rate limiting**: Built-in rate limiting (3 requests per 2 seconds default)
+- **Corruption recovery**: Automatically handles corrupt parquet files
+
+## Production Deployment
+
+### Using systemd (Linux)
+
+Create `/etc/systemd/system/yf-parqed.service`:
+
+```ini
+[Unit]
+Description=Yahoo Finance Data Collector
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=yfparqed
+Group=yfparqed
+WorkingDirectory=/var/lib/yf_parqed
+
+# Run daemon mode
+ExecStart=/opt/yf_parqed/.venv/bin/yf-parqed \
+    --wrk-dir /var/lib/yf_parqed \
+    --log-level INFO \
+    update-data \
+    --daemon \
+    --interval 1 \
+    --ticker-maintenance weekly \
+    --pid-file /run/yf-parqed/yf-parqed.pid
+
+# Graceful shutdown
+ExecStop=/bin/kill -TERM $MAINPID
+TimeoutStopSec=60
+
+# Restart on failure
+Restart=on-failure
+RestartSec=30
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/yf_parqed
+
+# Create PID directory at startup
+RuntimeDirectory=yf-parqed
+RuntimeDirectoryMode=0755
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Enable and start:
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable yf-parqed
+sudo systemctl start yf-parqed
+
+# Check status
+sudo systemctl status yf-parqed
+
+# View logs
+sudo journalctl -u yf-parqed -f
+
+# Restart
+sudo systemctl restart yf-parqed
+```
+
+### Using Docker
+
+Create `Dockerfile`:
+```dockerfile
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Install uv
+RUN pip install uv
+
+# Copy project
+COPY . .
+RUN uv sync
+
+# Create data directory
+RUN mkdir -p /app/data
+
+# Run daemon
+CMD ["uv", "run", "yf-parqed", \
+     "--wrk-dir", "/app/data", \
+     "update-data", \
+     "--daemon", \
+     "--interval", "1", \
+     "--ticker-maintenance", "weekly"]
+```
+
+Run container:
+```bash
+docker build -t yf-parqed-daemon .
+docker run -d \
+  --name yf-parqed \
+  -v $(pwd)/data:/app/data \
+  --restart unless-stopped \
+  yf-parqed-daemon
+
+# View logs
+docker logs -f yf-parqed
+
+# Stop gracefully
+docker stop yf-parqed
+```
+
+## Monitoring
+
+### Check daemon status
+```bash
+# Via PID file
+if [ -f /tmp/yf-parqed.pid ]; then
+  pid=$(cat /tmp/yf-parqed.pid)
+  if ps -p $pid > /dev/null; then
+    echo "Daemon running (PID: $pid)"
+  else
+    echo "Daemon not running (stale PID file)"
+  fi
+else
+  echo "Daemon not running"
+fi
+
+# Via systemd
+sudo systemctl status yf-parqed
+```
+
+### Check data freshness
+```bash
+# Find most recently updated ticker (legacy storage)
+find /var/lib/yf_parqed/stocks_1d -name "*.parquet" -type f -printf '%T@ %p\n' | sort -rn | head -1
+
+# Find most recently updated ticker (partitioned storage)
+find /var/lib/yf_parqed/data/us/yahoo/stocks_1d -name "*.parquet" -type f -printf '%T@ %p\n' | sort -rn | head -1
+```
+
+### Check collected data statistics (DuckDB)
+
+```bash
+# Install DuckDB if not already installed
+# Ubuntu/Debian: sudo apt install duckdb-cli
+# Or: wget https://github.com/duckdb/duckdb/releases/latest/download/duckdb_cli-linux-amd64.zip
+
+# Query data statistics (partitioned storage)
+duckdb << 'EOF'
+-- Overall summary
+SELECT 
+    COUNT(DISTINCT ticker) as total_tickers,
+    MIN(date) as first_date,
+    MAX(date) as last_date,
+    COUNT(*) as total_records,
+    ROUND(SUM("close" * volume) / 1000000000, 2) as total_volume_billions_usd
+FROM '/var/lib/yf_parqed/data/us/yahoo/stocks_1d/**/*.parquet';
+
+-- Per-ticker summary (top 10 by volume)
+SELECT 
+    ticker,
+    COUNT(*) as days_collected,
+    MIN(date) as first_date,
+    MAX(date) as last_date,
+    ROUND(SUM("close" * volume) / 1000000, 2) as total_volume_millions_usd
+FROM '/var/lib/yf_parqed/data/us/yahoo/stocks_1d/**/*.parquet'
+GROUP BY ticker
+ORDER BY total_volume_millions_usd DESC
+LIMIT 10;
+
+-- Recent activity (last 7 days)
+SELECT 
+    date,
+    COUNT(DISTINCT ticker) as tickers_updated,
+    COUNT(*) as total_records
+FROM '/var/lib/yf_parqed/data/us/yahoo/stocks_1d/**/*.parquet'
+WHERE date >= CURRENT_DATE - INTERVAL 7 DAYS
+GROUP BY date
+ORDER BY date DESC;
+EOF
+
+# Quick shell summary
+echo "Yahoo Finance data summary:"
+echo "  Tickers (legacy): $(find /var/lib/yf_parqed/stocks_1d -name '*.parquet' -type f | wc -l)"
+echo "  Tickers (partitioned): $(find /var/lib/yf_parqed/data/us/yahoo/stocks_1d/ticker=* -maxdepth 0 -type d 2>/dev/null | wc -l)"
+echo "  Total size: $(du -sh /var/lib/yf_parqed/data 2>/dev/null | cut -f1 || echo 'N/A')"
+```
+
+### Ticker maintenance status
+```bash
+# Check tickers.json for maintenance timestamps
+cat /var/lib/yf_parqed/tickers.json | jq -r '.[] | select(.last_checked) | "\(.ticker): \(.last_checked)"' | head -10
+
+# Count active vs not-found tickers
+echo "Active tickers: $(cat /var/lib/yf_parqed/tickers.json | jq '[.[] | select(.status == "active")] | length')"
+echo "Not found tickers: $(cat /var/lib/yf_parqed/tickers.json | jq '[.[] | select(.status == "not_found")] | length')"
+```
+
+## Troubleshooting
+
+### Daemon won't start
+```bash
+# Check if another instance is running
+cat /tmp/yf-parqed.pid
+ps aux | grep yf-parqed
+
+# Remove stale PID file
+rm /tmp/yf-parqed.pid
+
+# Check for errors
+yf-parqed --log-level DEBUG update-data --daemon
+```
+
+### Missing data for some tickers
+- Check `tickers.json` for ticker status
+- Look for interval-specific not-found status
+- Verify ticker is still traded (not delisted)
+- Check logs for rate limiting errors
+
+### High memory usage
+- Reduce number of tickers (edit `tickers.json`)
+- Increase interval between runs
+- Use partitioned storage backend (better memory efficiency)
+
+### Trading hours not working correctly
+- Verify system timezone: `timedatectl`
+- Check daemon logs for "Outside trading hours" messages
+- Test with `--trading-hours "00:00-23:59"` to run 24/7
+
+## System-Wide Installation
+
+### Directory Layout
+```
+/opt/yf_parqed/          # Application code
+├── .venv/               # Python virtual environment
+├── src/                 # Source code
+└── pyproject.toml       # Project configuration
+
+/var/lib/yf_parqed/      # Persistent data
+├── data/                # Partitioned parquet files
+│   └── us/yahoo/stocks_*/
+├── stocks_*/            # Legacy parquet files (if applicable)
+├── tickers.json         # Ticker state
+├── intervals.json       # Configured intervals
+└── storage_config.json  # Storage backend config
+
+/run/yf-parqed/          # Runtime state
+└── yf-parqed.pid        # PID file
+```
+
+### Installation Steps
+
+```bash
+# 1. Create dedicated user
+sudo useradd -r -s /bin/false -d /var/lib/yf_parqed yfparqed
+
+# 2. Create directories
+sudo mkdir -p /opt/yf_parqed /var/lib/yf_parqed /run/yf-parqed
+sudo chown -R yfparqed:yfparqed /var/lib/yf_parqed /run/yf-parqed
+
+# 3. Install application
+cd /opt/yf_parqed
+git clone https://github.com/SiggiSmara/yf_parqed.git .
+uv sync
+sudo chown -R yfparqed:yfparqed /opt/yf_parqed
+
+# 4. Initialize data
+cd /var/lib/yf_parqed
+sudo -u yfparqed /opt/yf_parqed/.venv/bin/yf-parqed --wrk-dir /var/lib/yf_parqed initialize
+
+# 5. Test daemon (foreground)
+sudo -u yfparqed /opt/yf_parqed/.venv/bin/yf-parqed \
+  --wrk-dir /var/lib/yf_parqed \
+  update-data --daemon --interval 1 --pid-file /tmp/yf-parqed-test.pid
+
+# 6. Set up systemd service (see above)
+```
+
+## Best Practices
+
+1. **Use weekly ticker maintenance** - balances freshness vs API load
+2. **Stick to regular trading hours** - data is most reliable during NYSE hours
+3. **Use partitioned storage** - better performance for large datasets
+4. **Monitor ticker status** - check for high not-found rates
+5. **Set up alerting** - notify on persistent errors
+6. **Use systemd in production** - automatic restart on failure
+7. **Keep interval ≥ 1 hour** - respect Yahoo Finance API rate limits
+8. **Use absolute paths** - avoid working directory issues
+
+## Security Considerations
+
+- Run as dedicated non-root user
+- Use systemd security hardening
+- Restrict file permissions on `tickers.json` and data directories
+- Monitor for unauthorized access
+- Consider firewall rules for API access
+- Regularly review not-found tickers for suspicious patterns
+
+---
+
+# Xetra Daemon Mode
 
 ## Quick Start
 
@@ -262,6 +669,56 @@ tail -f logs/xetra-detr.log | grep -i error
 ```bash
 # Find most recent data file
 find /var/lib/xetra/data/de/xetra/trades/venue=DETR -name "*.parquet" -type f -printf '%T@ %p\n' | sort -rn | head -1
+```
+
+### Check collected data statistics
+```bash
+# Count total days collected for a venue
+find /var/lib/xetra/data/de/xetra/trades/venue=DETR -name "day=*" -type d | wc -l
+
+# List all collected dates (year/month/day format)
+find /var/lib/xetra/data/de/xetra/trades/venue=DETR -type f -name "*.parquet" | \
+  sed -E 's|.*year=([0-9]{4})/month=([0-9]{2})/day=([0-9]{2})/.*|\1-\2-\3|' | sort -u
+
+# Count total parquet files
+find /var/lib/xetra/data/de/xetra/trades/venue=DETR -name "*.parquet" -type f | wc -l
+
+# Check total data size
+du -sh /var/lib/xetra/data/de/xetra/trades/venue=DETR
+
+# Detailed summary with DuckDB (requires DuckDB installed)
+duckdb << 'EOF'
+-- Overall summary
+SELECT 
+    COUNT(*) as total_trades,
+    COUNT(DISTINCT day) as total_days,
+    MIN(day) as first_date,
+    MAX(day) as last_date,
+    ROUND(SUM(price * volume) / 1000000, 2) as total_volume_millions_eur
+FROM '/var/lib/xetra/data/de/xetra/trades/venue=DETR/**/*.parquet';
+
+-- Per-day breakdown with minutes captured
+SELECT 
+    day,
+    COUNT(*) as trades,
+    COUNT(DISTINCT strftime(trade_time, '%H:%M')) as unique_minutes,
+    MIN(trade_time)::TIME as first_trade,
+    MAX(trade_time)::TIME as last_trade,
+    ROUND(SUM(price * volume) / 1000000, 2) as volume_millions_eur,
+    COUNT(DISTINCT isin) as unique_isins
+FROM '/var/lib/xetra/data/de/xetra/trades/venue=DETR/**/*.parquet'
+GROUP BY day
+ORDER BY day DESC;
+EOF
+
+# Quick summary (shell script - no DuckDB required)
+echo "Collected data summary for DETR:"
+echo "  Days: $(find /var/lib/xetra/data/de/xetra/trades/venue=DETR -name 'day=*' -type d | wc -l)"
+echo "  Files: $(find /var/lib/xetra/data/de/xetra/trades/venue=DETR -name '*.parquet' -type f | wc -l)"
+echo "  Size: $(du -sh /var/lib/xetra/data/de/xetra/trades/venue=DETR | cut -f1)"
+echo "  Dates collected:"
+find /var/lib/xetra/data/de/xetra/trades/venue=DETR -type f -name "*.parquet" | \
+  sed -E 's|.*year=([0-9]{4})/month=([0-9]{2})/day=([0-9]{2})/.*|    \1-\2-\3|' | sort -u
 ```
 
 ## Multiple Venues

@@ -1,11 +1,8 @@
 """Integration tests for Xetra daemon mode features."""
 
 import os
-import signal
-import tempfile
 import time
 from datetime import datetime, time as dt_time
-from pathlib import Path
 from unittest.mock import MagicMock, Mock, patch
 from zoneinfo import ZoneInfo
 
@@ -44,7 +41,7 @@ class TestPIDFileManagement:
     def test_detects_running_instance(self, tmp_path):
         """Raises error if another instance is running."""
         import typer
-        
+
         pid_file = tmp_path / "test.pid"
         # Write current PID (simulates running instance)
         pid_file.write_text(str(os.getpid()))
@@ -121,7 +118,7 @@ class TestDaemonLoopExecution:
         mock_sleep.side_effect = sleep_side_effect
 
         # Run daemon with short interval (24/7 to avoid trading hours logic)
-        result = runner.invoke(
+        runner.invoke(
             app,
             [
                 "fetch-trades",
@@ -178,7 +175,7 @@ class TestDaemonLoopExecution:
         mock_sleep.side_effect = sleep_side_effect
 
         # Run daemon
-        result = runner.invoke(
+        runner.invoke(
             app,
             [
                 "fetch-trades",
@@ -224,7 +221,7 @@ class TestDaemonLoopExecution:
         mock_sleep.side_effect = sleep_side_effect
 
         # Run daemon with 2-hour interval
-        result = runner.invoke(
+        runner.invoke(
             app,
             [
                 "fetch-trades",
@@ -272,9 +269,8 @@ class TestFileLogging:
 
         assert result.exit_code == 0
         # Give loguru time to flush (it uses enqueue=True for thread-safety)
-        import time
         time.sleep(0.1)
-        
+
         assert log_file.exists()
         # Log should contain some content
         log_content = log_file.read_text()
@@ -299,14 +295,11 @@ class TestFileLogging:
         }
         mock_service_class.return_value = mock_service
 
-        result = runner.invoke(
-            app, ["--log-file", str(log_file), "fetch-trades", "DETR"]
-        )
+        runner.invoke(app, ["--log-file", str(log_file), "fetch-trades", "DETR"])
 
         # Give loguru time to flush
-        import time
         time.sleep(0.1)
-        
+
         log_content = log_file.read_text()
         # Check for structured format elements
         assert "INFO" in log_content
@@ -335,9 +328,7 @@ class TestFileLogging:
         }
         mock_service_class.return_value = mock_service
 
-        result = runner.invoke(
-            app, ["--log-file", str(log_file), "fetch-trades", "DETR"]
-        )
+        runner.invoke(app, ["--log-file", str(log_file), "fetch-trades", "DETR"])
 
         assert log_file.exists()
         assert log_file.parent.exists()
@@ -347,10 +338,10 @@ class TestDaemonTradingHoursIntegration:
     """Test daemon behavior with trading hours transitions."""
 
     @patch("yf_parqed.xetra_service.XetraService")
-    @patch("yf_parqed.xetra_cli.datetime")
+    @patch("yf_parqed.xetra_cli.TradingHoursChecker")
     @patch("yf_parqed.xetra_cli.time.sleep")
     def test_daemon_waits_outside_active_hours(
-        self, mock_sleep, mock_datetime, mock_service_class
+        self, mock_sleep, mock_checker_class, mock_service_class
     ):
         """Daemon waits when outside active hours."""
         # Setup mock service
@@ -359,11 +350,19 @@ class TestDaemonTradingHoursIntegration:
         mock_service.__exit__ = Mock(return_value=False)
         mock_service_class.return_value = mock_service
 
-        # Mock current time to be outside active hours (07:00 CET)
-        berlin_tz = ZoneInfo("Europe/Berlin")
-        mock_now = datetime(2025, 1, 15, 7, 0, 0, tzinfo=berlin_tz)
-        mock_datetime.now.return_value = mock_now
-        mock_datetime.side_effect = lambda *args, **kwargs: datetime(*args, **kwargs)
+        # Setup mock trading hours checker (outside active hours)
+        mock_checker = MagicMock()
+        mock_checker.market_tz = ZoneInfo("Europe/Berlin")
+        mock_checker.is_within_hours.return_value = False  # Outside trading hours
+        mock_checker.seconds_until_active.return_value = 5400.0  # 1.5 hours wait
+        mock_checker.next_active_time.return_value = datetime(
+            2025, 1, 15, 8, 30, 0, tzinfo=ZoneInfo("Europe/Berlin")
+        )
+        mock_checker_class.return_value = mock_checker
+        mock_checker_class.parse_active_hours.return_value = (
+            dt_time(8, 30),
+            dt_time(18, 0),
+        )
 
         # Terminate after first sleep
         sleep_count = {"count": 0}
@@ -376,9 +375,7 @@ class TestDaemonTradingHoursIntegration:
         mock_sleep.side_effect = sleep_side_effect
 
         # Run daemon with default active hours (08:30-18:00)
-        result = runner.invoke(
-            app, ["fetch-trades", "DETR", "--daemon", "--interval", "1"]
-        )
+        runner.invoke(app, ["fetch-trades", "DETR", "--daemon", "--interval", "1"])
 
         # Should have slept (waiting for active hours)
         assert mock_sleep.called
@@ -386,10 +383,10 @@ class TestDaemonTradingHoursIntegration:
         assert not mock_service.fetch_and_store_missing_trades_incremental.called
 
     @patch("yf_parqed.xetra_service.XetraService")
-    @patch("yf_parqed.xetra_cli._is_within_active_hours")
+    @patch("yf_parqed.xetra_cli.TradingHoursChecker")
     @patch("yf_parqed.xetra_cli.time.sleep")
     def test_daemon_runs_within_active_hours(
-        self, mock_sleep, mock_is_within, mock_service_class
+        self, mock_sleep, mock_checker_class, mock_service_class
     ):
         """Daemon runs fetch when within active hours."""
         # Setup mock service
@@ -406,15 +403,22 @@ class TestDaemonTradingHoursIntegration:
         }
         mock_service_class.return_value = mock_service
 
-        # Mock that we're within active hours initially, then exit
+        # Setup mock trading hours checker
+        mock_checker = MagicMock()
+        mock_checker.market_tz = ZoneInfo("Europe/Berlin")
         call_count = {"count": 0}
 
-        def is_within_side_effect(*args, **kwargs):
+        def is_within_side_effect():
             call_count["count"] += 1
             # First check: within hours, second check: outside hours
             return call_count["count"] == 1
 
-        mock_is_within.side_effect = is_within_side_effect
+        mock_checker.is_within_hours.side_effect = is_within_side_effect
+        mock_checker_class.return_value = mock_checker
+        mock_checker_class.parse_active_hours.return_value = (
+            dt_time(8, 30),
+            dt_time(18, 0),
+        )
 
         # Terminate after first sleep
         def sleep_side_effect(seconds):
@@ -423,7 +427,7 @@ class TestDaemonTradingHoursIntegration:
         mock_sleep.side_effect = sleep_side_effect
 
         # Run daemon
-        result = runner.invoke(
+        runner.invoke(
             app,
             [
                 "fetch-trades",
@@ -440,14 +444,12 @@ class TestDaemonTradingHoursIntegration:
         assert mock_service.fetch_and_store_missing_trades_incremental.called
 
     @patch("yf_parqed.xetra_service.XetraService")
-    @patch("yf_parqed.xetra_cli._is_within_active_hours")
-    @patch("yf_parqed.xetra_cli._seconds_until_active")
+    @patch("yf_parqed.xetra_cli.TradingHoursChecker")
     @patch("yf_parqed.xetra_cli.time.sleep")
     def test_daemon_transitions_from_outside_to_within_hours(
         self,
         mock_sleep,
-        mock_seconds_until,
-        mock_is_within,
+        mock_checker_class,
         mock_service_class,
     ):
         """Daemon transitions from waiting to active state."""
@@ -465,19 +467,32 @@ class TestDaemonTradingHoursIntegration:
         }
         mock_service_class.return_value = mock_service
 
+        # Setup mock trading hours checker
+        mock_checker = MagicMock()
+        mock_checker.market_tz = ZoneInfo("Europe/Berlin")
+
         # Mock transitions: outside → within → outside (exits)
         within_checks = [False, True, False]
         check_index = {"index": 0}
 
-        def is_within_side_effect(*args, **kwargs):
+        def is_within_side_effect():
             result = within_checks[check_index["index"]]
             check_index["index"] = min(check_index["index"] + 1, len(within_checks) - 1)
             return result
 
-        mock_is_within.side_effect = is_within_side_effect
+        mock_checker.is_within_hours.side_effect = is_within_side_effect
 
         # Mock 5 seconds until active (short wait)
-        mock_seconds_until.return_value = 5.0
+        mock_checker.seconds_until_active.return_value = 5.0
+        mock_checker.next_active_time.return_value = datetime.now(
+            ZoneInfo("Europe/Berlin")
+        )
+
+        mock_checker_class.return_value = mock_checker
+        mock_checker_class.parse_active_hours.return_value = (
+            dt_time(8, 30),
+            dt_time(18, 0),
+        )
 
         # Terminate after entering active hours
         sleep_count = {"count": 0}
@@ -490,7 +505,7 @@ class TestDaemonTradingHoursIntegration:
         mock_sleep.side_effect = sleep_side_effect
 
         # Run daemon
-        result = runner.invoke(
+        runner.invoke(
             app,
             [
                 "fetch-trades",
@@ -537,7 +552,7 @@ class TestDaemonPIDIntegration:
         mock_sleep.side_effect = sleep_side_effect
 
         # Run daemon with PID file
-        result = runner.invoke(
+        runner.invoke(
             app,
             [
                 "fetch-trades",

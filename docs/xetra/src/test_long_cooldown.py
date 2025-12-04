@@ -39,11 +39,11 @@ def test_cooldown_period(
 
     Returns True if all 3 bursts succeed, False on first 429.
     """
-    logger.info(f"\n{'='*70}")
+    logger.info(f"\n{'=' * 70}")
     logger.info(
-        f"Testing {cooldown_seconds}s cooldown with {int(inter_request_delay*1000)}ms delay"
+        f"Testing {cooldown_seconds}s cooldown with {int(inter_request_delay * 1000)}ms delay"
     )
-    logger.info(f"{'='*70}\n")
+    logger.info(f"{'=' * 70}\n")
 
     # Get file list (uses XetraFetcher for filtering logic)
     fetcher = XetraFetcher(inter_request_delay=0.001, burst_size=9999, burst_cooldown=0)
@@ -88,7 +88,7 @@ def test_cooldown_period(
                     if success_count in [10, 20, 30]:
                         elapsed = time.time() - burst_start
                         logger.info(
-                            f"  [{i}] {success_count}/30 files, {elapsed:.1f}s elapsed, {success_count/elapsed:.2f}/s"
+                            f"  [{i}] {success_count}/30 files, {elapsed:.1f}s elapsed, {success_count / elapsed:.2f}/s"
                         )
 
                     # Inter-request delay
@@ -108,7 +108,7 @@ def test_cooldown_period(
 
             elapsed = time.time() - burst_start
             logger.success(
-                f"✅ Burst {burst_num} complete: 30 files in {elapsed:.1f}s ({30/elapsed:.2f}/s)\n"
+                f"✅ Burst {burst_num} complete: 30 files in {elapsed:.1f}s ({30 / elapsed:.2f}/s)\n"
             )
 
             # Cooldown before next burst (but not after last burst)
@@ -161,11 +161,11 @@ def bisection_search(
         # Try midpoint
         mid = (min_cooldown + max_cooldown) // 2
 
-        logger.info(f"\n{'─'*70}")
+        logger.info(f"\n{'─' * 70}")
         logger.info(
             f"ITERATION {iteration}: Testing {mid}s cooldown (range: {min_cooldown}s - {max_cooldown}s)"
         )
-        logger.info(f"{'─'*70}")
+        logger.info(f"{'─' * 70}")
 
         # Wait 120s before testing (except first iteration) to ensure clean API state
         if iteration > 1:
@@ -188,9 +188,9 @@ def bisection_search(
 
     if working_cooldowns:
         optimal = min(working_cooldowns)
-        logger.success(f"\n{'='*70}")
+        logger.success(f"\n{'=' * 70}")
         logger.success(f"🎯 OPTIMAL COOLDOWN FOUND: {optimal}s")
-        logger.success(f"{'='*70}")
+        logger.success(f"{'=' * 70}")
         logger.success(f"Tested cooldowns that WORKED: {sorted(working_cooldowns)}")
         logger.success(f"Tested cooldowns that FAILED: {sorted(failed_cooldowns)}")
         logger.success(
@@ -198,9 +198,9 @@ def bisection_search(
         )
         return optimal
     else:
-        logger.error(f"\n{'='*70}")
+        logger.error(f"\n{'=' * 70}")
         logger.error("❌ NO WORKING COOLDOWN FOUND")
-        logger.error(f"{'='*70}")
+        logger.error(f"{'=' * 70}")
         logger.error(f"All tested cooldowns failed: {sorted(failed_cooldowns)}")
         logger.error(f"Try increasing max_cooldown above {max_cooldown}s\n")
         return -1
