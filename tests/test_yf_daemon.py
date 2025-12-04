@@ -12,6 +12,15 @@ from typer.testing import CliRunner
 from yf_parqed import yfinance_cli as main
 
 
+class StubConfig:
+    """Minimal config stub for daemon tests."""
+    def load_storage_config(self):
+        return {"partitioned": True, "markets": {}, "sources": {}}
+    
+    def save_storage_config(self, config):
+        pass
+
+
 class StubYFParqedForDaemon:
     """Stub that tracks daemon-related calls."""
 
@@ -26,6 +35,7 @@ class StubYFParqedForDaemon:
         }
         self.my_path = Path("/tmp/test")
         self.work_path = Path("/tmp/test")
+        self.config = StubConfig()  # Add config stub
 
     def set_working_path(self, path: Path):
         self.calls.append(("set_working_path", Path(path)))
@@ -70,14 +80,19 @@ def stub(monkeypatch):
 class TestDaemonCLIFlags:
     """Test that daemon flags are properly recognized."""
 
+    @freeze_time("2025-12-04 14:00:00-05:00")  # 14:00 EST (within trading hours)
     def test_daemon_flag_accepted(self, runner, stub, tmp_path, monkeypatch):
         """Daemon flag is accepted and triggers daemon mode."""
+        # Create intervals.json to allow CLI initialization
+        intervals_file = tmp_path / "intervals.json"
+        intervals_file.write_text('["1d"]')
+        
         # Mock time.sleep to avoid actual waiting
         sleep_calls = []
 
         def mock_sleep(seconds):
             sleep_calls.append(seconds)
-            # After first sleep, trigger shutdown
+            # Allow the daemon loop to run at least once before stopping
             if len(sleep_calls) >= 2:
                 raise KeyboardInterrupt()
 

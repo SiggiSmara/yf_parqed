@@ -118,6 +118,7 @@ class TickerRegistry:
         interval: str,
         found_data: bool,
         last_date: datetime | None = None,
+        storage_info: dict | None = None,
     ) -> None:
         current_date = self._config.format_date()
 
@@ -140,6 +141,10 @@ class TickerRegistry:
             interval_entry["last_checked"] = current_date
             if last_date is not None:
                 interval_entry["last_data_date"] = self._config.format_date(last_date)
+            
+            # Store storage backend information if provided
+            if storage_info is not None:
+                interval_entry["storage"] = storage_info
 
             ticker_entry["status"] = "active"
             ticker_entry["last_checked"] = current_date

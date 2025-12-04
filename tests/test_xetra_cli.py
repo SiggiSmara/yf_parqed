@@ -119,17 +119,19 @@ def test_fetch_trades_with_skipped_dates(mock_fetch_incremental):
 @patch("yf_parqed.xetra_service.XetraService.list_files")
 def test_check_status_command(mock_list_files):
     """Test check-status command."""
+    from datetime import datetime
+    today = datetime.now()
     mock_list_files.return_value = [
-        "DETR-posttrade-2025-11-04T10_00.json.gz",
-        "DETR-posttrade-2025-11-04T11_00.json.gz",
+        f"DETR-posttrade-{today.strftime('%Y-%m-%d')}T10_00.json.gz",
+        f"DETR-posttrade-{today.strftime('%Y-%m-%d')}T11_00.json.gz",
     ]
 
     result = runner.invoke(app, ["check-status", "DETR"])
 
     assert result.exit_code == 0
     assert "Status for DETR" in result.output
-    # Should show today and yesterday
-    assert "2025-11-" in result.output
+    # Should show today's date in output
+    assert today.strftime("%Y-%m-%d") in result.output
 
 
 @patch("yf_parqed.xetra_service.XetraService.list_files")

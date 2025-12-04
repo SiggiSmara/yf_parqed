@@ -20,10 +20,10 @@ def cli_environment(monkeypatch):
 
     original_instance = main.yf_parqed
     original_intervals = main.all_intervals
-    instance = YFParqed(my_path=tmp_path, my_intervals=["1d"])
+    instance = YFParqed(my_path=tmp_path, my_intervals=["1m"])
     main.yf_parqed = instance
 
-    monkeypatch.setattr(main, "all_intervals", ["1d"])
+    monkeypatch.setattr(main, "all_intervals", ["1m"])
 
     def fake_get_new_list_of_stocks(self, download_tickers=True):
         return {
@@ -40,7 +40,7 @@ def cli_environment(monkeypatch):
         stock: str,
         start_date: datetime,
         end_date: datetime,
-        interval: str = "1d",
+        interval: str = "1m",
         get_all: bool = False,
     ):
         date_index = pd.MultiIndex.from_tuples(
@@ -96,12 +96,16 @@ def test_cli_initialize_and_update_flow(cli_environment):
     )
     assert update_result.exit_code == 0
 
-    parquet_path = tmp_path / "stocks_1d" / "SYN.parquet"
-    assert parquet_path.exists()
-
-    interval_meta = instance.tickers["SYN"]["intervals"]["1d"]
+    # Verify ticker was updated successfully
+    interval_meta = instance.tickers["SYN"]["intervals"]["1m"]
     assert interval_meta["status"] == "active"
     assert interval_meta["last_data_date"] == "2024-01-02"
+    
+    # Verify storage_config.json was created with partitioned mode
+    storage_config_path = tmp_path / "storage_config.json"
+    assert storage_config_path.exists()
+    storage_config = json.loads(storage_config_path.read_text())
+    assert storage_config["partitioned"] is True
 
-    assert instance.my_intervals == ["1d"]
+    assert instance.my_intervals == ["1m"]
     assert instance.new_not_found is False

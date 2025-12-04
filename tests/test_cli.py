@@ -10,6 +10,15 @@ from yf_parqed import yfinance_cli as main
 from yf_parqed.primary_class import all_intervals
 
 
+class StubConfig:
+    """Minimal config stub for CLI tests."""
+    def load_storage_config(self):
+        return {"partitioned": True, "markets": {}, "sources": {}}
+    
+    def save_storage_config(self, config):
+        pass
+
+
 class StubYFParqed:
     """Minimal stub capturing CLI interactions."""
 
@@ -21,6 +30,7 @@ class StubYFParqed:
         self.removed_intervals: list[str] = []
         self.partition_overrides: list[tuple] = []
         self.cleared_overrides: list[tuple] = []
+        self.config = StubConfig()  # Add config stub
 
     def set_working_path(self, path: Path):
         self.calls.append(("set_working_path", Path(path)))
@@ -92,7 +102,8 @@ def test_initialize_command_invokes_expected_workflow(runner, stub):
     assert ("set_working_path", expected_path) in stub.calls
     assert "get_new_list_of_stocks" in call_names
     assert "save_intervals" in call_names
-    assert stub.saved_intervals == list(all_intervals)
+    # initialize now defaults to ["1m"] instead of all intervals
+    assert stub.saved_intervals == ["1m"]
     assert "update_current_list_of_stocks" in call_names
     assert "save_tickers" in call_names
 

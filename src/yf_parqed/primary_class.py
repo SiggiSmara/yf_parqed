@@ -359,6 +359,7 @@ class YFParqed:
         interval: str,
         found_data: bool,
         last_date: datetime | None = None,
+        storage_info: dict | None = None,
     ):
         """
         Update the status of a ticker for a specific interval.
@@ -368,12 +369,14 @@ class YFParqed:
             interval: The trading interval (1d, 1h, etc.)
             found_data: Whether data was found for this ticker/interval
             last_date: Last date with data (if found_data is True)
+            storage_info: Storage backend information (for partitioned storage)
         """
         self.registry.update_ticker_interval_status(
             ticker=ticker,
             interval=interval,
             found_data=found_data,
             last_date=last_date,
+            storage_info=storage_info,
         )
 
     def confirm_not_founds(self):
@@ -521,8 +524,17 @@ class YFParqed:
                 self.save_yf(df1, df2, storage_request)
 
                 # Update ticker status - data found for this interval
+                # Also record storage backend information
+                storage_info = None
+                if backend is self._partition_storage:
+                    storage_info = {
+                        "mode": "partitioned",
+                        "market": storage_request.market,
+                        "source": storage_request.source,
+                        "dataset": storage_request.dataset,
+                    }
                 self.update_ticker_interval_status(
-                    stock, interval, True, last_data_date
+                    stock, interval, True, last_data_date, storage_info
                 )
 
             else:

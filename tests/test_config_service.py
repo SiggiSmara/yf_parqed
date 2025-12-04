@@ -97,7 +97,7 @@ def test_load_storage_config_defaults(tmp_path):
     service = ConfigService(tmp_path)
     config = service.load_storage_config()
     assert config == {
-        "partitioned": False,
+        "partitioned": True,
         "markets": {},
         "sources": {},
     }
@@ -132,7 +132,7 @@ def test_load_storage_config_handles_invalid_json(tmp_path, caplog):
     service = ConfigService(tmp_path)
     with caplog.at_level("WARNING"):
         config = service.load_storage_config()
-    assert config["partitioned"] is False
+    assert config["partitioned"] is True
 
 
 def _sample_plan() -> dict:
