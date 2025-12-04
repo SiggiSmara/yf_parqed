@@ -166,11 +166,11 @@ def main(
 
 @app.command()
 def initialize():
-    """Initialize the yf_parqed project."""
+    """Initialize the yf_parqed project with 1-minute interval only."""
     global yf_parqed
 
     yf_parqed.get_new_list_of_stocks()
-    yf_parqed.save_intervals(all_intervals)
+    yf_parqed.save_intervals(["1m"])
     yf_parqed.update_current_list_of_stocks()
     yf_parqed.save_tickers()
 
