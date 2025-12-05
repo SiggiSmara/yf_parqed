@@ -117,6 +117,31 @@ uv run yf-parqed-migrate --help
 
 **Note**: The CLI initializes logging on startup, producing INFO-level output by default.
 
+## 🚨 CRITICAL: Data Safety for Storage Changes
+
+**yf_parqed stores financial data with LIMITED RECOVERY WINDOWS:**
+- Yahoo Finance 1m data: **7-day expiry** (permanently lost after)
+- Xetra raw trades: **24-hour expiry** (permanently lost after)
+
+**Before making ANY changes to data folder structure or storage paths:**
+
+1. **READ THE COMPREHENSIVE GUIDE**: [`DATA_SAFETY_STRATEGY.md`](DATA_SAFETY_STRATEGY.md)
+2. **Follow the 10 mandatory rules** (non-destructive by default, verification before activation, atomic operations, etc.)
+3. **Use the pre-flight checklist** before proposing storage changes
+4. **When in doubt, STOP and ASK** - data loss is irreversible
+
+**Quick safety rules:**
+- Never destructive by default (coexist old + new layouts)
+- Verify checksums/row counts before activating new layout
+- Support reading from both old and new layouts forever
+- Use staging directories + atomic operations
+- Provide rollback capability
+- Validate disk space (require 2.5x source size)
+
+**Golden Rule: Storage structure changes require explicit migration strategy with rollback capability.**
+
+---
+
 ## Project Architecture
 
 ### Service-Oriented Design
@@ -180,146 +205,47 @@ YFParqed (façade) → ConfigService, TickerRegistry, IntervalScheduler,
 
 Migration flow: Legacy → `data/legacy/` → Migration CLI → Partitioned layout
 
-### Test Organization
+## Development Workflows
 
-**Test Structure** (`tests/`):
-- `test_config_service.py` - Configuration management (11 tests)
-- `test_ticker_registry.py` - Ticker lifecycle (10 tests)
-- `test_ticker_operations.py` - Interval status, not-found maintenance (15 tests)
-- `test_interval_scheduler.py` - Update orchestration (5 tests)
-- `test_data_fetcher.py` - Yahoo API abstraction (12 tests)
-- `test_storage_backend.py` - Legacy storage (15 tests)
-- `test_storage_operations.py` - Parquet merge/dedup (8 tests)
-- `test_partitioned_storage_backend.py` - Partition storage (20 tests)
-- `test_partition_migration_service.py` - Migration logic (12 tests)
-- `test_update_loop.py` - Full update harness (16 tests)
-- `test_cli.py` - CLI command smoke tests (10 tests)
-- `test_cli_integration.py` - End-to-end CLI (5 tests)
-- `test_rate_limits.py` - Rate limiter (6 tests)
-- Additional: locks, partition writes, cleanup, migration CLI
+**For detailed workflows, see [`DEVELOPMENT_GUIDE.md`](DEVELOPMENT_GUIDE.md)**
 
-**Testing Strategy**: Bottom-up (unit) → top-down (integration) → end-to-end
+Quick reference:
+- **Standard workflow**: `uv sync` → make changes → `uv run pytest` → `uv run ruff check . --fix && uv run ruff format .` → commit
+- **Adding services**: Create in `src/yf_parqed/` → inject dependencies → add tests → wire into `primary_class.py` → update `ARCHITECTURE.md`
+- **Ticker logic**: Edit `ticker_registry.py`, test in `test_ticker_registry.py`, orchestration in `interval_scheduler.py`
+- **Storage changes**: Follow [DATA_SAFETY_STRATEGY.md](DATA_SAFETY_STRATEGY.md) mandatory rules
 
-## Common Workflows
+## Testing
 
-### Making Code Changes
+**For comprehensive testing guide, see [`TESTING_GUIDE.md`](TESTING_GUIDE.md)**
 
-1. **Before starting**: `uv sync`
-2. **Make changes** to source files
-3. **Run tests**: `uv run pytest`
-4. **Fix linting**: `uv run ruff check . --fix && uv run ruff format .`
-5. **Verify**: `uv run pytest` again
-6. **Commit** changes
+**Test Coverage**: 183 Yahoo Finance tests + 129 Xetra tests = 312 total, 100% pass rate required
 
-### Adding a New Service
+Quick reference:
+- Run all: `uv run pytest`
+- Specific file: `uv run pytest tests/test_ticker_operations.py`
+- With coverage: `uv run pytest --cov=yf_parqed --cov-report=term-missing`
+- Always use `tmp_path` fixture for file I/O
+- Mock external APIs: `limiter=lambda: None` for rate limiter
+- Test both storage backends when modifying storage code
 
-1. Create service file in `src/yf_parqed/`
-2. Use constructor injection for dependencies
-3. Add unit tests in `tests/test_<service>.py`
-4. Wire into `YFParqed` façade in `primary_class.py`
-5. Update `ARCHITECTURE.md` with service description
-6. Run full test suite to ensure integration works
+## Troubleshooting
 
-### Modifying Ticker Logic
+**For common issues and solutions, see [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md)**
 
-- **State changes**: Edit `ticker_registry.py`
-- **Tests**: Update `test_ticker_registry.py` or `test_ticker_operations.py`
-- **Execution flow**: Check `interval_scheduler.py` for orchestration
-- **Persistence**: Handled automatically by `ConfigService`
+Quick fixes:
+- **Tests fail after pull**: `uv sync` then `rm -rf .pytest_cache && uv run pytest`
+- **Import errors**: `uv sync` then verify with `uv run python -c "import yf_parqed"`
+- **Rate limit (429)**: Increase delay `--limits 2 3` or wait 15-30 minutes
+- **Corrupt parquet**: Auto-recovers (check logs), or manually delete and re-fetch
+- **Daemon won't start**: Check for stale PID `cat /tmp/yf-parqed.pid` and remove if process not running
 
-### Storage Backend Changes
+## Pre-Commit Checklist
 
-- **Legacy**: Modify `storage_backend.py`
-- **Partitioned**: Modify `partitioned_storage_backend.py`
-- **Path logic**: Edit `partition_path_builder.py`
-- **Migration**: Update `partition_migration_service.py`
-- **Tests**: Add cases to `test_storage_backend.py` or `test_partitioned_storage_backend.py`
-
-## Known Gotchas & Workarounds
-
-### 1. Rate Limiting is Always Active
-
-The Yahoo Finance API has strict rate limits. Default: 3 requests per 2 seconds.
-
-- **Do NOT** disable rate limiting in tests or production
-- Mock the limiter in unit tests instead: `limiter=lambda: None`
-- Adjust via CLI: `yf-parqed --limits 3 2 update-data`
-
-### 2. Ticker State is Global
-
-All ticker metadata lives in `tickers.json`. Interval-specific state is nested under `intervals.<interval_name>`.
-
-- **Do NOT** create separate per-interval ticker files
-- **Do** use `TickerRegistry.is_active_for_interval()` for eligibility checks
-- Cooldown period: 30 days after interval-specific failures
-
-### 3. Test Isolation Requires Temp Directories
-
-Most tests use `tmp_path` fixtures to avoid cross-test pollution.
-
-- **Always** use `tmp_path` for file I/O in tests
-- **Never** write to the repo root during tests
-- Cleanup is automatic via pytest fixtures
-
-### 4. Parquet Corruption Recovery
-
-Both storage backends handle corrupt parquet files by deleting them and retrying.
-
-- **Expected behavior**: Warning log + file deletion + retry
-- **Do NOT** disable corruption recovery
-- **Do** test with `StorageBackend._create_corrupt_file()` helper in tests
-
-### 5. Storage Backend Selection
-
-Runtime storage backend is determined by:
-1. Interval-specific `storage` metadata in `tickers.json`
-2. Global/market/source flags in `storage_config.json`
-3. Fallback to legacy backend
-
-- **Check** `_build_storage_request()` in `primary_class.py` for routing logic
-- **Test** both backends when modifying storage code
-
-### 6. Migration CLI Directory Layout
-
-Migration CLI **requires** legacy data under `data/legacy/`:
-
-```bash
-# WRONG - will fail
-stocks_1d/
-
-# CORRECT - required layout
-data/legacy/stocks_1d/
-```
-
-Move legacy folders manually before running `yf-parqed-migrate init`.
-
-### 7. uv Tool Installation
-
-Pre-commit requires a specific installation command:
-
-```bash
-# Correct installation
-uv tool install pre-commit --with pre-commit-uv --force-reinstall
-
-# Then install hooks
-pre-commit install
-```
-
-### 8. Python Version
-
-**Requires Python 3.12+**. Check with:
-
-```bash
-python --version  # Should be 3.12 or higher
-uv python list    # Shows available Python versions
-```
-
-## Validation Checklist
-
-Before submitting changes, verify:
+Before submitting changes:
 
 - [ ] `uv sync` completes successfully
-- [ ] `uv run pytest` - all 183 tests pass
+- [ ] `uv run pytest` - all 312 tests pass (183 Yahoo + 129 Xetra)
 - [ ] `uv run ruff check . --fix` - no lint errors
 - [ ] `uv run ruff format .` - code is formatted
 - [ ] No temp files or test artifacts in repo
@@ -328,16 +254,20 @@ Before submitting changes, verify:
 
 ## Additional Resources
 
-- **Architecture Details**: See `ARCHITECTURE.md` for service responsibilities and data flows
-- **Development History**: See `AGENTS.md` for refactoring timeline and test coverage map
-- **Release Notes**: See `docs/release-notes.md` for version history
-- **ADRs**: See `docs/adr/` for architectural decisions (partition storage, DuckDB, etc.)
+### Core Documentation
+- **Architecture**: `ARCHITECTURE.md` - Service responsibilities, data flows, dependency injection patterns
+- **Development**: `.github/DEVELOPMENT_GUIDE.md` - Workflows, adding services, CLI commands, git process
+- **Testing**: `.github/TESTING_GUIDE.md` - Test structure, patterns, debugging, coverage
+- **Troubleshooting**: `.github/TROUBLESHOOTING.md` - Common issues and solutions
+- **Data Safety**: `.github/DATA_SAFETY_STRATEGY.md` - Mandatory rules for storage changes
 
-## Trust These Instructions
+### Project History & Planning
+- **History**: `AGENTS.md` - Refactoring timeline, test coverage evolution
+- **Release Notes**: `docs/release-notes.md` - Version history and migration guidance
+- **Roadmap**: `docs/roadmap.md` - Completed and upcoming features
+- **ADRs**: `docs/adr/` - Architectural decision records
 
-**These instructions have been validated against the actual codebase.** Commands have been tested and confirmed working. Only search the codebase if:
-- Information here is incomplete or unclear
-- You need implementation details beyond what's documented
-- You encounter errors not described in the gotchas section
-
-When in doubt, start with `uv sync` and `uv run pytest` to verify your environment is correct.
+### Quick Start
+When in doubt: `uv sync && uv run pytest` to verify environment.
+For storage changes: Read DATA_SAFETY_STRATEGY.md first.
+For development tasks: Refer to DEVELOPMENT_GUIDE.md workflows.
