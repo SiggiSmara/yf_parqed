@@ -7,7 +7,7 @@ from urllib.error import HTTPError
 from loguru import logger
 from rich.progress import track
 
-from .config_service import ConfigService
+from ..common.config_service import ConfigService
 
 
 class TickerRegistry:

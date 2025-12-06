@@ -8,10 +8,10 @@ from rich.console import Console
 from rich.table import Table
 from loguru import logger
 
-from ..config_service import ConfigService
-from ..migration_plan import MigrationPlan
+from ..common.config_service import ConfigService
+from ..common.migration_plan import MigrationPlan
 from ..partition_migration_service import PartitionMigrationService
-from ..run_lock import GlobalRunLock
+from ..common.run_lock import GlobalRunLock
 
 app = typer.Typer(help="Partition storage migration utilities")
 console = Console()

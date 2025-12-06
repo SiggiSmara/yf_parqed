@@ -9,8 +9,8 @@ import pandas as pd
 from typer.testing import CliRunner
 
 from yf_parqed.tools import partition_migrate
-from yf_parqed.config_service import ConfigService
-from yf_parqed.migration_plan import MigrationPlan
+from yf_parqed.common.config_service import ConfigService
+from yf_parqed.common.migration_plan import MigrationPlan
 
 
 class DummyInterval:

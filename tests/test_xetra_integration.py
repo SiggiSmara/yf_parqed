@@ -7,7 +7,7 @@ from datetime import datetime
 import pandas as pd
 import pytest
 
-from yf_parqed.xetra_service import XetraService
+from yf_parqed.xetra.xetra_service import XetraService
 
 
 class TestXetraIntegrationMocked:
@@ -73,7 +73,7 @@ class TestXetraIntegrationMocked:
         import time
 
         # Mock the HTTP fetcher methods
-        from yf_parqed.xetra_fetcher import XetraFetcher
+        from yf_parqed.xetra.xetra_fetcher import XetraFetcher
 
         def mock_list_files(self, venue):
             return ["DETR-posttrade-2025-11-01T09_00.json.gz"]
@@ -164,7 +164,7 @@ class TestXetraIntegrationMocked:
 
     def test_multiple_files_workflow(self, tmp_path, sample_jsonl, monkeypatch):
         """Test workflow with multiple files for same venue/date."""
-        from yf_parqed.xetra_fetcher import XetraFetcher
+        from yf_parqed.xetra.xetra_fetcher import XetraFetcher
 
         # Create two different files
         trades1 = [
@@ -256,7 +256,7 @@ class TestXetraIntegrationMocked:
 
     def test_empty_response_workflow(self, tmp_path, monkeypatch):
         """Test workflow when API returns no files."""
-        from yf_parqed.xetra_fetcher import XetraFetcher
+        from yf_parqed.xetra.xetra_fetcher import XetraFetcher
 
         def mock_list_files(self, venue):
             return []
@@ -271,7 +271,7 @@ class TestXetraIntegrationMocked:
 
     def test_partial_file_failure_workflow(self, tmp_path, sample_jsonl, monkeypatch):
         """Test workflow when some files fail to download/parse."""
-        from yf_parqed.xetra_fetcher import XetraFetcher
+        from yf_parqed.xetra.xetra_fetcher import XetraFetcher
 
         files = [
             "DETR-posttrade-2025-11-01T09_00.json.gz",  # Will succeed

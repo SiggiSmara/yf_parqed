@@ -9,7 +9,7 @@ import yf_parqed.partition_migration_service as migration_module
 
 import pandas as pd
 
-from yf_parqed.config_service import ConfigService
+from yf_parqed.common.config_service import ConfigService
 from yf_parqed.partition_migration_service import PartitionMigrationService
 
 

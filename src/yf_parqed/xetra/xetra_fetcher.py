@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 import httpx
 from loguru import logger
 from typing import List
+from ..common.rate_limiter import CallableRateLimiter, RateLimiter
 
 
 class XetraFetcher:
@@ -83,10 +84,10 @@ class XetraFetcher:
         self.burst_cooldown = burst_cooldown
         self.request_count = 0  # Track requests in current burst
         self.last_request_time: datetime | None = None
+        self.rate_limiter: RateLimiter = CallableRateLimiter(self.enforce_limits)
 
         # Trading hours filtering
         self.filter_empty_files = filter_empty_files
-
     def enforce_limits(self):
         """
         Enforce empirically validated rate limiting.

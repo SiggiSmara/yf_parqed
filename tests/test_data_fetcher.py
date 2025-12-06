@@ -7,7 +7,7 @@ import pandas as pd
 import pytest
 from curl_cffi.requests.exceptions import HTTPError
 
-from yf_parqed.data_fetcher import DataFetcher
+from yf_parqed.yahoo.data_fetcher import DataFetcher
 
 
 @pytest.fixture

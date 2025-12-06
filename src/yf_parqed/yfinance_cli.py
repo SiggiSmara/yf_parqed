@@ -10,9 +10,9 @@ import signal
 import atexit
 import time
 
-from yf_parqed.primary_class import YFParqed, all_intervals
-from .run_lock import GlobalRunLock
-from .trading_hours_checker import TradingHoursChecker
+from yf_parqed.yahoo.primary_class import YFParqed, all_intervals
+from .common.run_lock import GlobalRunLock
+from .xetra.trading_hours_checker import TradingHoursChecker
 
 
 # remove the defult stderr log sink in loguru and add a new one with the log

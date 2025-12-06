@@ -5,11 +5,11 @@ from pathlib import Path
 import pandas as pd
 from loguru import logger
 
-from .partitioned_storage_backend import PartitionedStorageBackend
-from .partition_path_builder import PartitionPathBuilder
+from ..common.partitioned_storage_backend import PartitionedStorageBackend
+from ..common.partition_path_builder import PartitionPathBuilder
 from .xetra_fetcher import XetraFetcher
 from .xetra_parser import XetraParser
-from .config_service import ConfigService
+from ..common.config_service import ConfigService
 
 
 class XetraService:

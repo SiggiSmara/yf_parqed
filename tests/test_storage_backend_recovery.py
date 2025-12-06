@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.yf_parqed.storage_backend import StorageBackend, StorageRequest
+from src.yf_parqed.common.storage_backend import StorageBackend, StorageRequest
 
 
 def _empty_factory():

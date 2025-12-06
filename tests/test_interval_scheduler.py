@@ -1,9 +1,9 @@
 from datetime import datetime
 from pathlib import Path
 
-from yf_parqed.config_service import ConfigService
-from yf_parqed.interval_scheduler import IntervalScheduler
-from yf_parqed.ticker_registry import TickerRegistry
+from yf_parqed.common.config_service import ConfigService
+from yf_parqed.yahoo.interval_scheduler import IntervalScheduler
+from yf_parqed.yahoo.ticker_registry import TickerRegistry
 
 
 def make_registry(tmp_path: Path, tickers: dict) -> TickerRegistry:

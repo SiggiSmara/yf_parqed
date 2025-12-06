@@ -1,9 +1,9 @@
 import pandas as pd
 import pytest
 import warnings
-from src.yf_parqed.partitioned_storage_backend import PartitionedStorageBackend
-from src.yf_parqed.partition_path_builder import PartitionPathBuilder
-from src.yf_parqed.xetra_parser import XetraParser
+from src.yf_parqed.common.partitioned_storage_backend import PartitionedStorageBackend
+from src.yf_parqed.common.partition_path_builder import PartitionPathBuilder
+from src.yf_parqed.xetra.xetra_parser import XetraParser
 
 
 def make_trades_df(rows=5):

@@ -4,7 +4,7 @@ import pytest
 from datetime import time as dt_time, datetime
 from freezegun import freeze_time
 
-from yf_parqed.trading_hours_checker import TradingHoursChecker
+from yf_parqed.xetra.trading_hours_checker import TradingHoursChecker
 
 
 class TestTradingHoursCheckerBasic:

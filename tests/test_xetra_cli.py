@@ -21,7 +21,7 @@ def test_fetch_trades_help():
 
 
 @patch(
-    "yf_parqed.xetra_service.XetraService.fetch_and_store_missing_trades_incremental"
+    "yf_parqed.xetra.xetra_service.XetraService.fetch_and_store_missing_trades_incremental"
 )
 def test_fetch_trades_smart_default(mock_fetch_incremental):
     """Test fetch-trades with smart date detection (default behavior)."""
@@ -44,7 +44,7 @@ def test_fetch_trades_smart_default(mock_fetch_incremental):
     mock_fetch_incremental.assert_called_once_with("DETR", "de", "xetra")
 
 
-@patch("yf_parqed.xetra_service.XetraService.get_missing_dates")
+@patch("yf_parqed.xetra.xetra_service.XetraService.get_missing_dates")
 def test_fetch_trades_no_store_dry_run(mock_get_missing):
     """Test fetch-trades with --no-store flag (dry run mode)."""
     # Mock missing dates check
@@ -61,7 +61,7 @@ def test_fetch_trades_no_store_dry_run(mock_get_missing):
 
 
 @patch(
-    "yf_parqed.xetra_service.XetraService.fetch_and_store_missing_trades_incremental"
+    "yf_parqed.xetra.xetra_service.XetraService.fetch_and_store_missing_trades_incremental"
 )
 def test_fetch_trades_already_stored(mock_fetch_incremental):
     """Test fetch-trades when all data is already stored."""
@@ -81,7 +81,7 @@ def test_fetch_trades_already_stored(mock_fetch_incremental):
     assert "All available data already stored" in result.output
 
 
-@patch("yf_parqed.xetra_service.XetraService.get_missing_dates")
+@patch("yf_parqed.xetra.xetra_service.XetraService.get_missing_dates")
 def test_fetch_trades_no_store_already_stored(mock_get_missing):
     """Test --no-store when all data is already stored."""
     # Mock no missing dates
@@ -94,7 +94,7 @@ def test_fetch_trades_no_store_already_stored(mock_get_missing):
 
 
 @patch(
-    "yf_parqed.xetra_service.XetraService.fetch_and_store_missing_trades_incremental"
+    "yf_parqed.xetra.xetra_service.XetraService.fetch_and_store_missing_trades_incremental"
 )
 def test_fetch_trades_with_skipped_dates(mock_fetch_incremental):
     """Test fetch-trades when some dates are partial."""
@@ -116,7 +116,7 @@ def test_fetch_trades_with_skipped_dates(mock_fetch_incremental):
     assert "2025-11-03" in result.output
 
 
-@patch("yf_parqed.xetra_service.XetraService.list_files")
+@patch("yf_parqed.xetra.xetra_service.XetraService.list_files")
 def test_check_status_command(mock_list_files):
     """Test check-status command."""
     from datetime import datetime
@@ -134,7 +134,7 @@ def test_check_status_command(mock_list_files):
     assert today.strftime("%Y-%m-%d") in result.output
 
 
-@patch("yf_parqed.xetra_service.XetraService.list_files")
+@patch("yf_parqed.xetra.xetra_service.XetraService.list_files")
 def test_list_files(mock_list_files):
     """Test list-files command."""
     mock_list_files.return_value = [
@@ -150,7 +150,7 @@ def test_list_files(mock_list_files):
     assert "DETR-posttrade-2025-11-01T11_00.json.gz" in result.output
 
 
-@patch("yf_parqed.xetra_service.XetraService.list_files")
+@patch("yf_parqed.xetra.xetra_service.XetraService.list_files")
 def test_list_files_no_files(mock_list_files):
     """Test list-files when no files available."""
     mock_list_files.return_value = []
@@ -170,7 +170,7 @@ def test_list_files_help():
     assert "xetra" in result.output.lower()  # Should show venue descriptions
 
 
-@patch("yf_parqed.xetra_service.XetraService.list_files")
+@patch("yf_parqed.xetra.xetra_service.XetraService.list_files")
 def test_list_files_default_date(mock_list_files):
     """Test list-files defaults to today's date when not specified."""
     mock_list_files.return_value = ["DETR-posttrade-file.json.gz"]
@@ -186,7 +186,7 @@ def test_list_files_default_date(mock_list_files):
     mock_list_files.assert_called_once_with("DETR", today)
 
 
-@patch("yf_parqed.xetra_service.XetraService.list_files")
+@patch("yf_parqed.xetra.xetra_service.XetraService.list_files")
 def test_check_status_api_error(mock_list_files):
     """Test check-status handles API errors gracefully."""
     mock_list_files.side_effect = Exception("Connection timeout")
@@ -197,7 +197,7 @@ def test_check_status_api_error(mock_list_files):
     assert "✗ Error: Connection timeout" in result.output
 
 
-@patch("yf_parqed.xetra_service.XetraService.check_partial_downloads")
+@patch("yf_parqed.xetra.xetra_service.XetraService.check_partial_downloads")
 def test_check_partial_complete_dates(mock_check_partial):
     """Test check-partial shows complete dates."""
     mock_check_partial.return_value = {
@@ -214,7 +214,7 @@ def test_check_partial_complete_dates(mock_check_partial):
     assert "2025-11-01" in result.output
 
 
-@patch("yf_parqed.xetra_service.XetraService.check_partial_downloads")
+@patch("yf_parqed.xetra.xetra_service.XetraService.check_partial_downloads")
 def test_check_partial_with_partial_dates(mock_check_partial):
     """Test check-partial shows partial downloads."""
     mock_check_partial.return_value = {
@@ -235,7 +235,7 @@ def test_check_partial_with_partial_dates(mock_check_partial):
     assert "Re-run 'fetch-trades'" in result.output
 
 
-@patch("yf_parqed.xetra_service.XetraService.check_partial_downloads")
+@patch("yf_parqed.xetra.xetra_service.XetraService.check_partial_downloads")
 def test_check_partial_months_ready(mock_check_partial):
     """Test check-partial shows months ready for consolidation."""
     mock_check_partial.return_value = {
@@ -253,7 +253,7 @@ def test_check_partial_months_ready(mock_check_partial):
     assert "consolidate-month" in result.output
 
 
-@patch("yf_parqed.xetra_service.XetraService.check_partial_downloads")
+@patch("yf_parqed.xetra.xetra_service.XetraService.check_partial_downloads")
 def test_check_partial_no_data(mock_check_partial):
     """Test check-partial when no data found."""
     mock_check_partial.return_value = {
@@ -270,7 +270,7 @@ def test_check_partial_no_data(mock_check_partial):
     assert "✓ No months ready for consolidation" in result.output
 
 
-@patch("yf_parqed.xetra_service.XetraService.check_partial_downloads")
+@patch("yf_parqed.xetra.xetra_service.XetraService.check_partial_downloads")
 def test_check_partial_many_complete_dates(mock_check_partial):
     """Test check-partial truncates long list of complete dates."""
     # Generate 15 complete dates
@@ -289,7 +289,7 @@ def test_check_partial_many_complete_dates(mock_check_partial):
     assert "... and 5 more" in result.output
 
 
-@patch("yf_parqed.xetra_service.XetraService.check_partial_downloads")
+@patch("yf_parqed.xetra.xetra_service.XetraService.check_partial_downloads")
 def test_consolidate_month_no_data(mock_check_partial):
     """Test consolidate-month when no months ready."""
     mock_check_partial.return_value = {
@@ -305,8 +305,8 @@ def test_consolidate_month_no_data(mock_check_partial):
     assert "Run 'fetch-trades' first" in result.output
 
 
-@patch("yf_parqed.xetra_service.XetraService._consolidate_to_monthly")
-@patch("yf_parqed.xetra_service.XetraService.check_partial_downloads")
+@patch("yf_parqed.xetra.xetra_service.XetraService._consolidate_to_monthly")
+@patch("yf_parqed.xetra.xetra_service.XetraService.check_partial_downloads")
 def test_consolidate_month_with_all_flag(mock_check_partial, mock_consolidate):
     """Test consolidate-month --all consolidates without prompting."""
     mock_check_partial.return_value = {
@@ -327,8 +327,8 @@ def test_consolidate_month_with_all_flag(mock_check_partial, mock_consolidate):
     assert mock_consolidate.call_count == 2
 
 
-@patch("yf_parqed.xetra_service.XetraService._consolidate_to_monthly")
-@patch("yf_parqed.xetra_service.XetraService.check_partial_downloads")
+@patch("yf_parqed.xetra.xetra_service.XetraService._consolidate_to_monthly")
+@patch("yf_parqed.xetra.xetra_service.XetraService.check_partial_downloads")
 def test_consolidate_month_interactive_confirm(mock_check_partial, mock_consolidate):
     """Test consolidate-month interactive mode with confirmation."""
     mock_check_partial.return_value = {
@@ -346,7 +346,7 @@ def test_consolidate_month_interactive_confirm(mock_check_partial, mock_consolid
     mock_consolidate.assert_called_once()
 
 
-@patch("yf_parqed.xetra_service.XetraService.check_partial_downloads")
+@patch("yf_parqed.xetra.xetra_service.XetraService.check_partial_downloads")
 def test_consolidate_month_interactive_cancel(mock_check_partial):
     """Test consolidate-month interactive mode with cancellation."""
     mock_check_partial.return_value = {
@@ -362,8 +362,8 @@ def test_consolidate_month_interactive_cancel(mock_check_partial):
     assert "Cancelled" in result.output
 
 
-@patch("yf_parqed.xetra_service.XetraService._consolidate_to_monthly")
-@patch("yf_parqed.xetra_service.XetraService.check_partial_downloads")
+@patch("yf_parqed.xetra.xetra_service.XetraService._consolidate_to_monthly")
+@patch("yf_parqed.xetra.xetra_service.XetraService.check_partial_downloads")
 def test_consolidate_month_with_errors(mock_check_partial, mock_consolidate):
     """Test consolidate-month handles errors gracefully."""
     mock_check_partial.return_value = {

@@ -4,7 +4,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from yf_parqed.primary_class import YFParqed
+from yf_parqed.yahoo.primary_class import YFParqed
 
 
 @pytest.fixture
@@ -73,7 +73,7 @@ def test_update_stock_data_end_to_end(monkeypatch, seeded_workspace: Path):
     def fake_ticker(symbol: str, *_args, **_kwargs):
         return FakeTicker(symbol, history_map)
 
-    monkeypatch.setattr("yf_parqed.primary_class.yf.Ticker", fake_ticker)
+    monkeypatch.setattr("yf_parqed.yahoo.primary_class.yf.Ticker", fake_ticker)
 
     instance = YFParqed(my_path=seeded_workspace)
 

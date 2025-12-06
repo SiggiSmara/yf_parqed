@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from yf_parqed.primary_class import YFParqed
+from yf_parqed.yahoo.primary_class import YFParqed
 
 
 class TestStorageOperations:

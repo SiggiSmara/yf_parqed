@@ -13,9 +13,9 @@ import pytest
 from datetime import datetime
 from unittest.mock import Mock, patch
 
-from src.yf_parqed.xetra_service import XetraService
-from src.yf_parqed.partitioned_storage_backend import PartitionedStorageBackend
-from src.yf_parqed.partition_path_builder import PartitionPathBuilder
+from src.yf_parqed.xetra.xetra_service import XetraService
+from src.yf_parqed.common.partitioned_storage_backend import PartitionedStorageBackend
+from src.yf_parqed.common.partition_path_builder import PartitionPathBuilder
 
 
 @pytest.fixture
@@ -348,8 +348,8 @@ class TestCheckPartialDownloads:
 class TestIncrementalFetchWithConsolidation:
     """Test the full incremental fetch + consolidation workflow."""
 
-    @patch("src.yf_parqed.xetra_service.XetraService.list_files")
-    @patch("src.yf_parqed.xetra_service.XetraService.fetch_and_parse_trades")
+    @patch("src.yf_parqed.xetra.xetra_service.XetraService.list_files")
+    @patch("src.yf_parqed.xetra.xetra_service.XetraService.fetch_and_parse_trades")
     def test_incremental_fetch_stores_per_file(
         self, mock_fetch, mock_list, service, temp_root, sample_trades_df
     ):
@@ -390,8 +390,8 @@ class TestIncrementalFetchWithConsolidation:
         )
         assert daily_path.exists()
 
-    @patch("src.yf_parqed.xetra_service.XetraService.list_files")
-    @patch("src.yf_parqed.xetra_service.XetraService.fetch_and_parse_trades")
+    @patch("src.yf_parqed.xetra.xetra_service.XetraService.list_files")
+    @patch("src.yf_parqed.xetra.xetra_service.XetraService.fetch_and_parse_trades")
     def test_consolidation_runs_after_complete_date(
         self, mock_fetch, mock_list, service, temp_root, sample_trades_df
     ):
@@ -422,8 +422,8 @@ class TestIncrementalFetchWithConsolidation:
         )
         assert monthly_path.exists()
 
-    @patch("src.yf_parqed.xetra_service.XetraService.list_files")
-    @patch("src.yf_parqed.xetra_service.XetraService.fetch_and_parse_trades")
+    @patch("src.yf_parqed.xetra.xetra_service.XetraService.list_files")
+    @patch("src.yf_parqed.xetra.xetra_service.XetraService.fetch_and_parse_trades")
     def test_partial_download_tracked_correctly(
         self, mock_fetch, mock_list, service, temp_root, sample_trades_df
     ):

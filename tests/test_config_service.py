@@ -5,8 +5,8 @@ from datetime import datetime
 from pathlib import Path
 
 
-from yf_parqed.config_service import ConfigService
-from yf_parqed.migration_plan import MigrationPlan
+from yf_parqed.common.config_service import ConfigService
+from yf_parqed.common.migration_plan import MigrationPlan
 
 
 def test_default_base_path_uses_cwd(monkeypatch, tmp_path):

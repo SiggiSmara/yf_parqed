@@ -9,8 +9,8 @@ import atexit
 from datetime import datetime, timedelta
 from typing_extensions import Annotated
 
-from .trading_hours_checker import TradingHoursChecker
-from .xetra_service import XetraService
+from .xetra.trading_hours_checker import TradingHoursChecker
+from .xetra.xetra_service import XetraService
 
 app = typer.Typer()
 
@@ -251,14 +251,12 @@ def fetch_trades(
 
             # Check if this is initial startup with no data
             # If so, fetch all available data (within trading hours)
-            initial_fetch_done = False
             with XetraService() as service:
                 if not service.has_any_data(venue, market, source):
                     logger.info(f"No existing data found for {venue} - performing initial fetch of all available data")
                     try:
                         logger.info("Fetching all available data (API is available 24/7)...")
                         run_fetch_once()
-                        initial_fetch_done = True
                         logger.info("Initial data fetch completed successfully")
                     except Exception as e:
                         logger.error(f"Error during initial data fetch: {e}", exc_info=True)

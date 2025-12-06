@@ -9,17 +9,15 @@ import httpx
 import time
 
 
-from .config_service import ConfigService
+from ..common.config_service import ConfigService
+from ..common.partitioned_storage_backend import PartitionedStorageBackend
+from ..common.storage_backend import StorageBackend
+from ..common.storage import StorageInterface, StorageRequest
+from ..common.storage_router import StorageRouter
+from ..common.rate_limiter import wrap_callable
 from .data_fetcher import DataFetcher
-from .ticker_registry import TickerRegistry
 from .interval_scheduler import IntervalScheduler
-from .partition_path_builder import PartitionPathBuilder
-from .partitioned_storage_backend import PartitionedStorageBackend
-from .storage_backend import (
-    StorageBackend,
-    StorageInterface,
-    StorageRequest,
-)
+from .ticker_registry import TickerRegistry
 
 
 all_intervals = [
@@ -72,17 +70,19 @@ class YFParqed:
 
         self.new_not_found = False
         self.set_limiter()
+        # Wrap a lambda so monkeypatching enforce_limits in tests still affects the limiter
+        self.rate_limiter = wrap_callable(lambda: self.enforce_limits())
 
         # Re-initialize registry with callbacks for not-found maintenance
         self.registry = TickerRegistry(
             config=self.config,
             initial_tickers=self.registry.tickers,  # Preserve loaded tickers
-            limiter=lambda: self.enforce_limits(),
+            limiter=self.rate_limiter.enforce_limits,
             fetch_callback=self._fetch_for_not_found_check,
         )
 
         self.data_fetcher = DataFetcher(
-            limiter=lambda: self.enforce_limits(),
+            limiter=self.rate_limiter.enforce_limits,
             today_provider=lambda: self.get_today(),
             empty_frame_factory=self._empty_price_frame,
         )
@@ -95,7 +95,7 @@ class YFParqed:
             registry=self.registry,
             intervals=lambda: list(self.my_intervals),
             loader=lambda: self.load_tickers(),
-            limiter=lambda: self.enforce_limits(),
+            limiter=self.rate_limiter.enforce_limits,
             processor=lambda stock,
             start_date,
             end_date,
@@ -195,11 +195,12 @@ class YFParqed:
 
     def _create_partition_backend(self) -> PartitionedStorageBackend:
         data_root = self.my_path / "data"
+        self._storage_router = StorageRouter(root=data_root)
         return PartitionedStorageBackend(
             empty_frame_factory=self._empty_price_frame,
             normalizer=self._normalize_price_frame,
             column_provider=self._price_frame_columns,
-            path_builder=PartitionPathBuilder(root=data_root),
+            path_builder=self._storage_router.path_builder,
         )
 
     def set_limiter(self, max_requests: int = 3, duration: int = 2):

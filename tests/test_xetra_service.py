@@ -8,7 +8,7 @@ from unittest.mock import Mock, patch
 import pandas as pd
 import pytest
 
-from yf_parqed.xetra_service import XetraService
+from yf_parqed.xetra.xetra_service import XetraService
 
 
 class TestXetraService:
@@ -82,7 +82,7 @@ class TestXetraService:
         assert service.parser is mock_parser
         assert service.backend is mock_backend
 
-    @patch("yf_parqed.xetra_fetcher.XetraFetcher.list_available_files")
+    @patch("yf_parqed.xetra.xetra_fetcher.XetraFetcher.list_available_files")
     def test_list_files_delegates_to_fetcher(self, mock_list):
         """Test list_files calls fetcher and filters by date."""
         # Mock returns files with dates in filenames
@@ -100,9 +100,9 @@ class TestXetraService:
         assert all("2025-10-31" in f for f in files)
         mock_list.assert_called_once_with("DETR")
 
-    @patch("yf_parqed.xetra_fetcher.XetraFetcher.download_file")
-    @patch("yf_parqed.xetra_fetcher.XetraFetcher.decompress_gzip")
-    @patch("yf_parqed.xetra_parser.XetraParser.parse")
+    @patch("yf_parqed.xetra.xetra_fetcher.XetraFetcher.download_file")
+    @patch("yf_parqed.xetra.xetra_fetcher.XetraFetcher.decompress_gzip")
+    @patch("yf_parqed.xetra.xetra_parser.XetraParser.parse")
     def test_fetch_and_parse_trades_full_workflow(
         self, mock_parse, mock_decompress, mock_download, sample_jsonl
     ):
@@ -138,8 +138,8 @@ class TestXetraService:
         assert len(df) == 3
         assert df["isin"].tolist() == ["DE0007100000", "DE000A3H2200", "DE000SHA0100"]
 
-    @patch("yf_parqed.xetra_fetcher.XetraFetcher.list_available_files")
-    @patch("yf_parqed.xetra_service.XetraService.fetch_and_parse_trades")
+    @patch("yf_parqed.xetra.xetra_fetcher.XetraFetcher.list_available_files")
+    @patch("yf_parqed.xetra.xetra_service.XetraService.fetch_and_parse_trades")
     def test_fetch_all_trades_for_date_combines_files(
         self, mock_fetch_parse, mock_list
     ):
@@ -164,7 +164,7 @@ class TestXetraService:
         assert combined["isin"].tolist() == ["DE001", "DE002"]
         assert combined["price"].tolist() == [100.0, 200.0]
 
-    @patch("yf_parqed.xetra_fetcher.XetraFetcher.list_available_files")
+    @patch("yf_parqed.xetra.xetra_fetcher.XetraFetcher.list_available_files")
     def test_fetch_all_trades_for_date_no_files(self, mock_list):
         """Test handling when no files found."""
         mock_list.return_value = []
@@ -175,8 +175,8 @@ class TestXetraService:
         assert df.empty
         assert isinstance(df, pd.DataFrame)
 
-    @patch("yf_parqed.xetra_fetcher.XetraFetcher.list_available_files")
-    @patch("yf_parqed.xetra_service.XetraService.fetch_and_parse_trades")
+    @patch("yf_parqed.xetra.xetra_fetcher.XetraFetcher.list_available_files")
+    @patch("yf_parqed.xetra.xetra_service.XetraService.fetch_and_parse_trades")
     def test_fetch_all_trades_continues_on_error(self, mock_fetch_parse, mock_list):
         """Test that errors in one file don't stop processing others."""
         mock_list.return_value = [
@@ -254,8 +254,8 @@ class TestXetraService:
 
         mock_fetcher.close.assert_called_once()
 
-    @patch("yf_parqed.xetra_fetcher.XetraFetcher.list_available_files")
-    @patch("yf_parqed.xetra_service.XetraService.fetch_and_parse_trades")
+    @patch("yf_parqed.xetra.xetra_fetcher.XetraFetcher.list_available_files")
+    @patch("yf_parqed.xetra.xetra_service.XetraService.fetch_and_parse_trades")
     def test_fetch_all_trades_all_files_fail(self, mock_fetch_parse, mock_list):
         """Test handling when all files fail to parse."""
         mock_list.return_value = ["file1.json.gz", "file2.json.gz"]
@@ -418,9 +418,9 @@ class TestXetraService:
         # Nothing should be missing
         assert len(missing) == 0
 
-    @patch("yf_parqed.xetra_service.XetraService.fetch_all_trades_for_date")
-    @patch("yf_parqed.xetra_service.XetraService.store_trades")
-    @patch("yf_parqed.xetra_service.XetraService.get_missing_dates")
+    @patch("yf_parqed.xetra.xetra_service.XetraService.fetch_all_trades_for_date")
+    @patch("yf_parqed.xetra.xetra_service.XetraService.store_trades")
+    @patch("yf_parqed.xetra.xetra_service.XetraService.get_missing_dates")
     def test_fetch_and_store_missing_trades_success(
         self, mock_get_missing, mock_store, mock_fetch_all
     ):
@@ -447,7 +447,7 @@ class TestXetraService:
         assert summary["total_trades"] == 6  # 3 trades × 2 dates
         assert summary["total_isins"] == 3
 
-    @patch("yf_parqed.xetra_service.XetraService.get_missing_dates")
+    @patch("yf_parqed.xetra.xetra_service.XetraService.get_missing_dates")
     def test_fetch_and_store_missing_trades_nothing_missing(self, mock_get_missing):
         """Test fetch_and_store_missing_trades when nothing is missing."""
         # Mock no missing dates
@@ -466,9 +466,9 @@ class TestDownloadLogTracking:
 
     def test_download_log_tracks_empty_files(self, tmp_path):
         """Test that download log tracks files even when they're empty."""
-        from yf_parqed.xetra_service import XetraService
-        from yf_parqed.partition_path_builder import PartitionPathBuilder
-        from yf_parqed.partitioned_storage_backend import PartitionedStorageBackend
+        from yf_parqed.xetra.xetra_service import XetraService
+        from yf_parqed.common.partition_path_builder import PartitionPathBuilder
+        from yf_parqed.common.partitioned_storage_backend import PartitionedStorageBackend
 
         # Setup service with temp directory
         path_builder = PartitionPathBuilder(tmp_path)
@@ -549,9 +549,9 @@ class TestDownloadLogTracking:
 
     def test_partial_download_recovery(self, tmp_path):
         """Test that interrupted downloads can resume from where they left off."""
-        from yf_parqed.xetra_service import XetraService
-        from yf_parqed.partition_path_builder import PartitionPathBuilder
-        from yf_parqed.partitioned_storage_backend import PartitionedStorageBackend
+        from yf_parqed.xetra.xetra_service import XetraService
+        from yf_parqed.common.partition_path_builder import PartitionPathBuilder
+        from yf_parqed.common.partitioned_storage_backend import PartitionedStorageBackend
 
         # Setup service
         path_builder = PartitionPathBuilder(tmp_path)
@@ -640,9 +640,9 @@ class TestDownloadLogTracking:
 
     def test_download_log_merges_with_parquet_data(self, tmp_path):
         """Test that download log merges with existing parquet data timestamps."""
-        from yf_parqed.xetra_service import XetraService
-        from yf_parqed.partition_path_builder import PartitionPathBuilder
-        from yf_parqed.partitioned_storage_backend import PartitionedStorageBackend
+        from yf_parqed.xetra.xetra_service import XetraService
+        from yf_parqed.common.partition_path_builder import PartitionPathBuilder
+        from yf_parqed.common.partitioned_storage_backend import PartitionedStorageBackend
 
         # Setup service
         path_builder = PartitionPathBuilder(tmp_path)

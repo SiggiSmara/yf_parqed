@@ -5,7 +5,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from yf_parqed.storage_backend import StorageBackend, StorageRequest
+from yf_parqed.common.storage_backend import StorageBackend, StorageRequest
 
 
 @pytest.fixture

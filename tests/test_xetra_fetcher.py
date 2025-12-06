@@ -5,7 +5,7 @@ import json
 import pytest
 import httpx
 from unittest.mock import Mock, patch
-from yf_parqed.xetra_fetcher import XetraFetcher
+from yf_parqed.xetra.xetra_fetcher import XetraFetcher
 
 
 class TestXetraFetcher:
@@ -598,7 +598,7 @@ class TestXetraFetcher:
         fetcher = XetraFetcher(filter_empty_files=True)
 
         # Unknown venue should trigger warning log and return True
-        with patch("yf_parqed.xetra_fetcher.logger") as mock_logger:
+        with patch("yf_parqed.xetra.xetra_fetcher.logger") as mock_logger:
             result = fetcher.is_within_trading_hours(
                 "XXXX-posttrade-2025-11-03T10_00.json.gz", "XXXX"
             )

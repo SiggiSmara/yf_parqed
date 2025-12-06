@@ -3,7 +3,7 @@ import os
 
 import pandas as pd
 
-from yf_parqed.run_lock import GlobalRunLock
+from yf_parqed.common.run_lock import GlobalRunLock
 
 
 def _create_tmp_parquet(tmp_dir: Path):
@@ -68,9 +68,9 @@ def test_partial_write_failure_and_recovery(tmp_path: Path, monkeypatch):
     monkeypatch.setattr("pandas.DataFrame.to_parquet", fake_to_parquet)
 
     # Call the backend write logic via PartitionedStorageBackend.save
-    from yf_parqed.partitioned_storage_backend import PartitionedStorageBackend
-    from yf_parqed.partition_path_builder import PartitionPathBuilder
-    from yf_parqed.storage_backend import StorageRequest
+    from yf_parqed.common.partitioned_storage_backend import PartitionedStorageBackend
+    from yf_parqed.common.partition_path_builder import PartitionPathBuilder
+    from yf_parqed.common.storage_backend import StorageRequest
 
     def empty_frame():
         import pandas as pd

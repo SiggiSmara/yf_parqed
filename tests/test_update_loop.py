@@ -7,9 +7,9 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from yf_parqed.partitioned_storage_backend import PartitionedStorageBackend
-from yf_parqed.primary_class import YFParqed
-from yf_parqed.storage_backend import StorageBackend, StorageRequest
+from yf_parqed.common.partitioned_storage_backend import PartitionedStorageBackend
+from yf_parqed.yahoo.primary_class import YFParqed
+from yf_parqed.common.storage_backend import StorageBackend, StorageRequest
 
 
 class TestUpdateLoopHarness:

@@ -8,7 +8,7 @@ import pytest
 from unittest.mock import patch
 
 # Import the class we're testing
-from yf_parqed.primary_class import YFParqed
+from yf_parqed.yahoo.primary_class import YFParqed
 
 
 class TestTickerOperations:
@@ -173,9 +173,9 @@ class TestTickerOperations:
         # Test interval-specific not found (recent)
         freeze_date = datetime(2024, 1, 20)
         with (
-            patch("yf_parqed.ticker_registry.datetime") as mock_datetime,
+            patch("yf_parqed.yahoo.ticker_registry.datetime") as mock_datetime,
             patch(
-                "yf_parqed.config_service.ConfigService.get_now",
+                "yf_parqed.common.config_service.ConfigService.get_now",
                 return_value=freeze_date,
             ),
         ):
@@ -205,9 +205,9 @@ class TestTickerOperations:
         }
 
         with (
-            patch("yf_parqed.ticker_registry.datetime") as mock_datetime,
+            patch("yf_parqed.yahoo.ticker_registry.datetime") as mock_datetime,
             patch(
-                "yf_parqed.config_service.ConfigService.get_now",
+                "yf_parqed.common.config_service.ConfigService.get_now",
                 return_value=current_date,
             ),
         ):
@@ -237,9 +237,9 @@ class TestTickerOperations:
         }
 
         with (
-            patch("yf_parqed.ticker_registry.datetime") as mock_datetime,
+            patch("yf_parqed.yahoo.ticker_registry.datetime") as mock_datetime,
             patch(
-                "yf_parqed.config_service.ConfigService.get_now",
+                "yf_parqed.common.config_service.ConfigService.get_now",
                 return_value=current_date,
             ),
         ):
@@ -253,9 +253,9 @@ class TestTickerOperations:
         test_date = datetime(2024, 1, 15)
 
         with (
-            patch("yf_parqed.ticker_registry.datetime") as mock_datetime,
+            patch("yf_parqed.yahoo.ticker_registry.datetime") as mock_datetime,
             patch(
-                "yf_parqed.config_service.ConfigService.get_now",
+                "yf_parqed.common.config_service.ConfigService.get_now",
                 return_value=test_date,
             ),
         ):
@@ -278,9 +278,9 @@ class TestTickerOperations:
         test_date = datetime(2024, 1, 15)
 
         with (
-            patch("yf_parqed.ticker_registry.datetime") as mock_datetime,
+            patch("yf_parqed.yahoo.ticker_registry.datetime") as mock_datetime,
             patch(
-                "yf_parqed.config_service.ConfigService.get_now",
+                "yf_parqed.common.config_service.ConfigService.get_now",
                 return_value=test_date,
             ),
         ):
@@ -304,9 +304,9 @@ class TestTickerOperations:
         test_date = datetime(2024, 1, 15)
 
         with (
-            patch("yf_parqed.ticker_registry.datetime") as mock_datetime,
+            patch("yf_parqed.yahoo.ticker_registry.datetime") as mock_datetime,
             patch(
-                "yf_parqed.config_service.ConfigService.get_now",
+                "yf_parqed.common.config_service.ConfigService.get_now",
                 return_value=test_date,
             ),
         ):
@@ -425,9 +425,9 @@ class TestTickerOperations:
         test_date = datetime(2024, 1, 31)
 
         with (
-            patch("yf_parqed.ticker_registry.datetime") as mock_datetime,
+            patch("yf_parqed.yahoo.ticker_registry.datetime") as mock_datetime,
             patch(
-                "yf_parqed.config_service.ConfigService.get_now",
+                "yf_parqed.common.config_service.ConfigService.get_now",
                 return_value=test_date,
             ),
         ):
@@ -474,10 +474,10 @@ class TestTickerOperations:
         freeze_date = datetime(2024, 1, 31)
         with (
             patch(
-                "yf_parqed.config_service.ConfigService.get_now",
+                "yf_parqed.common.config_service.ConfigService.get_now",
                 return_value=freeze_date,
             ),
-            patch("yf_parqed.ticker_registry.datetime") as mock_datetime,
+            patch("yf_parqed.yahoo.ticker_registry.datetime") as mock_datetime,
             patch.object(yf_parqed.data_fetcher, "fetch", return_value=pd.DataFrame()),
         ):
             mock_datetime.now.return_value = freeze_date
@@ -540,7 +540,7 @@ class TestTickerOperations:
 
         with (
             patch(
-                "yf_parqed.config_service.ConfigService.get_now",
+                "yf_parqed.common.config_service.ConfigService.get_now",
                 return_value=datetime(2024, 2, 20),
             ),
             patch.object(yf_parqed.data_fetcher, "fetch", return_value=success_df),
@@ -585,11 +585,11 @@ class TestTickerOperations:
 
         with (
             patch(
-                "yf_parqed.ticker_registry.track", side_effect=lambda it, *_, **__: it
+                "yf_parqed.yahoo.ticker_registry.track", side_effect=lambda it, *_, **__: it
             ),
-            patch("yf_parqed.ticker_registry.datetime") as mock_datetime,
+            patch("yf_parqed.yahoo.ticker_registry.datetime") as mock_datetime,
             patch(
-                "yf_parqed.config_service.ConfigService.get_now",
+                "yf_parqed.common.config_service.ConfigService.get_now",
                 return_value=current_now,
             ),
         ):
@@ -630,14 +630,14 @@ class TestTickerOperations:
 
         with (
             patch(
-                "yf_parqed.ticker_registry.track", side_effect=lambda it, *_, **__: it
+                "yf_parqed.yahoo.ticker_registry.track", side_effect=lambda it, *_, **__: it
             ),
             patch(
-                "yf_parqed.primary_class.YFParqed._fetch_for_not_found_check"
+                "yf_parqed.yahoo.primary_class.YFParqed._fetch_for_not_found_check"
             ) as mock_fetch,
-            patch("yf_parqed.ticker_registry.datetime") as mock_datetime,
+            patch("yf_parqed.yahoo.ticker_registry.datetime") as mock_datetime,
             patch(
-                "yf_parqed.config_service.ConfigService.get_now",
+                "yf_parqed.common.config_service.ConfigService.get_now",
                 return_value=current_now,
             ),
         ):
@@ -681,15 +681,15 @@ class TestTickerOperations:
         def run_confirm(current_now: datetime):
             with (
                 patch(
-                    "yf_parqed.ticker_registry.track",
+                    "yf_parqed.yahoo.ticker_registry.track",
                     side_effect=lambda it, *_, **__: it,
                 ),
                 patch(
-                    "yf_parqed.primary_class.YFParqed._fetch_for_not_found_check"
+                    "yf_parqed.yahoo.primary_class.YFParqed._fetch_for_not_found_check"
                 ) as mock_fetch,
-                patch("yf_parqed.ticker_registry.datetime") as mock_datetime,
+                patch("yf_parqed.yahoo.ticker_registry.datetime") as mock_datetime,
                 patch(
-                    "yf_parqed.config_service.ConfigService.get_now",
+                    "yf_parqed.common.config_service.ConfigService.get_now",
                     return_value=current_now,
                 ),
             ):
@@ -740,11 +740,11 @@ class TestTickerOperations:
 
         with (
             patch(
-                "yf_parqed.ticker_registry.track", side_effect=lambda it, *_, **__: it
+                "yf_parqed.yahoo.ticker_registry.track", side_effect=lambda it, *_, **__: it
             ),
-            patch("yf_parqed.ticker_registry.datetime") as mock_datetime,
+            patch("yf_parqed.yahoo.ticker_registry.datetime") as mock_datetime,
             patch(
-                "yf_parqed.config_service.ConfigService.get_now",
+                "yf_parqed.common.config_service.ConfigService.get_now",
                 return_value=recent_date,
             ),
         ):
@@ -782,11 +782,11 @@ class TestTickerOperations:
 
         with (
             patch(
-                "yf_parqed.ticker_registry.track", side_effect=lambda it, *_, **__: it
+                "yf_parqed.yahoo.ticker_registry.track", side_effect=lambda it, *_, **__: it
             ),
-            patch("yf_parqed.ticker_registry.datetime") as mock_datetime,
+            patch("yf_parqed.yahoo.ticker_registry.datetime") as mock_datetime,
             patch(
-                "yf_parqed.config_service.ConfigService.get_now",
+                "yf_parqed.common.config_service.ConfigService.get_now",
                 return_value=current_date,
             ),
         ):

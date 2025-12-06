@@ -1,10 +1,9 @@
 """Test that partitioned storage is the default for new installations."""
 
 import json
-from pathlib import Path
 import pytest
-from yf_parqed.config_service import ConfigService
-from yf_parqed.primary_class import YFParqed
+from yf_parqed.common.config_service import ConfigService
+from yf_parqed.yahoo.primary_class import YFParqed
 
 
 def test_default_storage_config_is_partitioned(tmp_path):
@@ -45,7 +44,7 @@ def test_ticker_gets_storage_info_on_first_save(tmp_path):
     # 2. Data is saved with partitioned backend
     # 3. Storage info is recorded in ticker metadata
     
-    from yf_parqed.ticker_registry import TickerRegistry
+    from yf_parqed.yahoo.ticker_registry import TickerRegistry
     from datetime import datetime
     
     config = ConfigService(tmp_path)
@@ -78,7 +77,7 @@ def test_ticker_gets_storage_info_on_first_save(tmp_path):
 
 def test_ticker_without_storage_info_uses_default(tmp_path):
     """Test that tickers without storage info default to partitioned when config says so."""
-    from yf_parqed.ticker_registry import TickerRegistry
+    from yf_parqed.yahoo.ticker_registry import TickerRegistry
     
     # Create a ticker without storage info (simulating old data)
     tickers_file = tmp_path / "tickers.json"
@@ -168,7 +167,7 @@ def test_storage_backend_selection_with_config(tmp_path):
 
 def test_initialize_creates_correct_config_files(tmp_path):
     """Integration test: verify initialize creates all required config files correctly."""
-    from unittest.mock import Mock, patch
+    from unittest.mock import patch
     
     # Mock the API calls - return dict format expected by update_current_list
     mock_tickers = {
@@ -177,7 +176,7 @@ def test_initialize_creates_correct_config_files(tmp_path):
         "MSFT": {"ticker": "MSFT"}
     }
     
-    with patch('yf_parqed.primary_class.YFParqed.get_new_list_of_stocks') as mock_get_stocks:
+    with patch('yf_parqed.yahoo.primary_class.YFParqed.get_new_list_of_stocks') as mock_get_stocks:
         mock_get_stocks.return_value = mock_tickers
         
         # Initialize (with minimal intervals to avoid full ticker download)
@@ -206,7 +205,7 @@ def test_initialize_creates_correct_config_files(tmp_path):
 
 def test_legacy_storage_not_used_for_new_tickers(tmp_path):
     """Test that new tickers don't use legacy storage paths when partitioned is default."""
-    from yf_parqed.ticker_registry import TickerRegistry
+    from yf_parqed.yahoo.ticker_registry import TickerRegistry
     from datetime import datetime
     
     config = ConfigService(tmp_path)

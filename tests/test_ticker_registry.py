@@ -6,8 +6,8 @@ from unittest.mock import patch
 
 import pytest
 
-from yf_parqed.config_service import ConfigService
-from yf_parqed.ticker_registry import TickerRegistry
+from yf_parqed.common.config_service import ConfigService
+from yf_parqed.yahoo.ticker_registry import TickerRegistry
 
 
 @pytest.fixture()

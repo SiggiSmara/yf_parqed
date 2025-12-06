@@ -13,7 +13,7 @@ import pyarrow.parquet as pq
 
 from .partition_path_builder import PartitionPathBuilder
 from .parquet_recovery import ParquetRecoveryError, safe_read_parquet
-from .storage_backend import StorageInterface, StorageRequest
+from .storage import StorageInterface, StorageRequest
 
 
 class PartitionedStorageBackend(StorageInterface):

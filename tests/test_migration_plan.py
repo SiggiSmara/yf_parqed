@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from yf_parqed.migration_plan import MigrationPlan
+from yf_parqed.common.migration_plan import MigrationPlan
 
 
 def _write_plan(tmp_path: Path, data: dict) -> Path:

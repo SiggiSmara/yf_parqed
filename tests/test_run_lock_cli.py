@@ -3,7 +3,7 @@ from typer.testing import CliRunner
 
 from yf_parqed.yfinance_cli import app as cli_app
 
-from yf_parqed.run_lock import GlobalRunLock
+from yf_parqed.common.run_lock import GlobalRunLock
 
 runner = CliRunner()
 

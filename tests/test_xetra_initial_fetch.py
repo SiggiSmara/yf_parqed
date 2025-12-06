@@ -2,8 +2,7 @@
 
 import time
 from pathlib import Path
-from unittest.mock import MagicMock, patch
-from datetime import datetime
+from unittest.mock import patch
 
 import pytest
 from freezegun import freeze_time
@@ -62,7 +61,7 @@ def test_daemon_performs_initial_fetch_when_no_data_within_hours():
                 original_sleep(0.01)  # Small delay for testing
             
             with patch("time.sleep", mock_sleep):
-                result = runner.invoke(
+                runner.invoke(
                     main.app,
                     ["fetch-trades", "DETR", "--daemon"],
                     catch_exceptions=False,
@@ -94,7 +93,7 @@ def test_daemon_skips_initial_fetch_when_data_exists():
                 original_sleep(0.01)
             
             with patch("time.sleep", mock_sleep):
-                result = runner.invoke(
+                runner.invoke(
                     main.app,
                     ["fetch-trades", "DETR", "--daemon"],
                     catch_exceptions=False,
@@ -124,7 +123,7 @@ def test_daemon_defers_initial_fetch_when_outside_hours():
                 raise KeyboardInterrupt()
 
             with patch("time.sleep", mock_sleep):
-                result = runner.invoke(
+                runner.invoke(
                     main.app,
                     ["fetch-trades", "DETR", "--daemon"],
                     catch_exceptions=False,
@@ -137,7 +136,7 @@ def test_daemon_defers_initial_fetch_when_outside_hours():
     assert stub.fetch_calls == 1
 def test_has_any_data_returns_false_when_no_directory():
     """has_any_data returns False when venue directory doesn't exist."""
-    from yf_parqed.xetra_service import XetraService
+    from yf_parqed.xetra.xetra_service import XetraService
     import tempfile
     
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -147,7 +146,7 @@ def test_has_any_data_returns_false_when_no_directory():
 
 def test_has_any_data_returns_false_when_directory_empty():
     """has_any_data returns False when venue directory exists but has no parquet files."""
-    from yf_parqed.xetra_service import XetraService
+    from yf_parqed.xetra.xetra_service import XetraService
     import tempfile
     
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -163,7 +162,7 @@ def test_has_any_data_returns_false_when_directory_empty():
 
 def test_has_any_data_returns_true_when_parquet_exists():
     """has_any_data returns True when parquet files exist for the venue."""
-    from yf_parqed.xetra_service import XetraService
+    from yf_parqed.xetra.xetra_service import XetraService
     import tempfile
     
     with tempfile.TemporaryDirectory() as tmp_dir:

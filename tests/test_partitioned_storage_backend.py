@@ -4,9 +4,9 @@ import pandas as pd
 import pyarrow.parquet as pq
 import pytest
 
-from yf_parqed.partition_path_builder import PartitionPathBuilder
-from yf_parqed.partitioned_storage_backend import PartitionedStorageBackend
-from yf_parqed.storage_backend import StorageRequest
+from yf_parqed.common.partition_path_builder import PartitionPathBuilder
+from yf_parqed.common.partitioned_storage_backend import PartitionedStorageBackend
+from yf_parqed.common.storage_backend import StorageRequest
 
 
 @pytest.fixture()

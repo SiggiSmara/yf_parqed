@@ -3,7 +3,7 @@
 import json
 import pytest
 import pandas as pd
-from yf_parqed.xetra_parser import XetraParser
+from yf_parqed.xetra.xetra_parser import XetraParser
 
 
 class TestXetraParser:

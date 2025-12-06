@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from yf_parqed.partition_path_builder import PartitionPathBuilder
+from yf_parqed.common.partition_path_builder import PartitionPathBuilder
 
 
 @pytest.fixture(scope="module")

@@ -21,9 +21,9 @@ from datetime import datetime, timedelta
 import pandas as pd
 import pytest
 
-from yf_parqed.xetra_fetcher import XetraFetcher
-from yf_parqed.xetra_parser import XetraParser
-from yf_parqed.xetra_service import XetraService
+from yf_parqed.xetra.xetra_fetcher import XetraFetcher
+from yf_parqed.xetra.xetra_parser import XetraParser
+from yf_parqed.xetra.xetra_service import XetraService
 
 # Skip all tests in this module by default unless explicitly run with -m live
 pytestmark = pytest.mark.live

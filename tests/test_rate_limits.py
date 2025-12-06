@@ -1,8 +1,8 @@
 import pytest
 from datetime import datetime, timedelta
 
-import yf_parqed.primary_class as primary_module
-from yf_parqed.primary_class import YFParqed
+import yf_parqed.yahoo.primary_class as primary_module
+from yf_parqed.yahoo.primary_class import YFParqed
 
 
 def install_fake_datetime(monkeypatch, values):
