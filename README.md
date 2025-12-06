@@ -5,6 +5,17 @@ Persistent storage of yfinance ticker data in parquet based on [ranaroussi's](ht
 It uses rate limiting on the calls to the Yahoo APIs (can be controlled) so as not to trigger any
 usage limits.
 
+## Documentation (canonical locations)
+
+The authoritative architecture, operational runbooks, and migration safety guidance live under the `.github/` folder. Use those files as the canonical source when operating or changing storage layouts:
+
+- `.github/ARCHITECTURE.md` — canonical architecture and component overview (includes diagrams)
+- `.github/AGENTS_SUMMARY.md` — agent notes and compact coverage map
+- `.github/DATA_SAFETY_STRATEGY.md` — critical storage migration & data safety rules
+- `.github/TESTING_GUIDE.md` — test matrix and CI guidance
+
+A small pointer remains at repository root (`ARCHITECTURE.md`, `AGENTS.md`) for discoverability, but prefer the `.github/` files for authoritative, up-to-date guidance.
+
 It can download the actual lists of Nasdaq and Nyse tickers from [datahub.io](https://datahub.io/) ( specifically  [nasdaq-listed.csv](https://datahub.io/core/nasdaq-listings/_r/-/data/nasdaq-listed.csv) and [nye-listed.csv](https://datahub.io/core/nyse-other-listings/_r/-/data/nyse-listed.csv) ) and download historical ticker prices for each ticker found in there via yfinance.
 
 Along with which tickers to sync locally you can also control the time interval(s) you are interested in.
