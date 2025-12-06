@@ -24,6 +24,7 @@ The façade `YFParqed` wires these services and exposes the CLI and programmatic
 Below are two lightweight Mermaid diagrams to visualise the repository separation of concerns and the primary data flow through the system.
 
 **Service / Component Structure**
+A compact diagram showing the runtime separation of concerns: the CLI and façade wire configuration, registry, scheduler, fetchers and storage backends so each service keeps a single responsibility at runtime.
 
 ```mermaid
 graph LR
@@ -41,6 +42,10 @@ graph LR
 	classDef infra fill:#f8f9fa,stroke:#333,stroke-width:1px;
 	class Config,Registry,Scheduler,Fetcher,StorageLegacy,StoragePart,Migrator infra;
 ```
+
+**Primary Data Flow (Yahoo ingestion — interval-aware)**
+
+The sequence diagram below shows the per-interval, per-ticker update loop used by the Yahoo (yfinance) pipeline: the scheduler loads tickers, iterates intervals, and invokes the fetcher to fetch minimal windows which are then merged and persisted.
 
 ```mermaid
 sequenceDiagram
@@ -63,6 +68,7 @@ sequenceDiagram
 	Reg-->>F: persist metadata
 	F-->>U: done
 ```
+
 
 **Primary Data Flow (Xetra ingestion — minute files)**
 
