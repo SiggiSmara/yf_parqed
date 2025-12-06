@@ -1,6 +1,4 @@
-````markdown
 # yf_parqed Architecture (Canonical)
-
 This is the canonical architecture document for the `yf_parqed` project. It captures the post-0.4.x service-oriented design, runtime responsibilities, data flow, deployment notes, and pointers to operational runbooks in the repository.
 
 **Canonical location:** `.github/ARCHITECTURE.md` — use this as the authoritative source for architecture and operational guidance. A short pointer remains at repository root in `ARCHITECTURE.md` for discoverability.
@@ -43,8 +41,6 @@ graph LR
 	classDef infra fill:#f8f9fa,stroke:#333,stroke-width:1px;
 	class Config,Registry,Scheduler,Fetcher,StorageLegacy,StoragePart,Migrator infra;
 ```
-
-**Primary Data Flow (Update loop)**
 
 ```mermaid
 sequenceDiagram
