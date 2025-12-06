@@ -10,18 +10,11 @@ This document records user-facing changes by release. Each section should captur
 
 ## Unreleased
 
-- Planned: Optional DuckDB analytics layer ([ADR 2025-10-12](adr/2025-10-12-duckdb-query-layer.md))
-- Planned: Xetra Phase 2 OHLCV aggregation (1m/1h/1d intervals)
 
----
 
 ## 2025-12-05 — Version 0.4.0 (Daemon Mode)
 
-- **Yahoo Finance Daemon Mode**: Production-ready continuous data collection with NYSE/NASDAQ trading hours awareness (09:30-16:00 US/Eastern, optional extended hours 04:00-20:00). Features include automatic timezone conversion, configurable ticker maintenance (daily/weekly/monthly), PID file management, graceful shutdown (SIGTERM/SIGINT), and systemd integration. Full documentation in `docs/DAEMON_MODE.md`.
 
-- **Xetra Daemon Mode Complete**: Enhanced Xetra CLI with daemon mode supporting 08:30-18:00 CET/CEST trading hours, PID management, file logging with rotation, signal handling, and systemd integration. Added 52 daemon-specific tests (18 integration + 34 trading hours). Complete production deployment guide available.
-
-- **CLI Simplifications**: Xetra `fetch-trades` command now features intelligent date detection (auto-determines missing data), storage-by-default behavior, and simplified parameter set. Reduced from 5 required parameters to 1 (`--venue`). Added `check-status` diagnostic command.
 
 - **Testing**: Expanded test coverage with daemon lifecycle tests, trading hours validation across timezones, and PID file management edge cases. Total: 183 Yahoo Finance tests + 129 Xetra tests.
 

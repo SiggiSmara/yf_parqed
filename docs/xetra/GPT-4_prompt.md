@@ -139,7 +139,7 @@ def list_files(
 ```toml
 [project.scripts]
 yf-parqed = "yf_parqed.yfinance_cli:app"
-xetra-parqed = "yf_parqed.xetra_cli:app"  # NEW
+xetra-parqed = "yf_parqed.xetra.xetra_cli:app"  # NEW
 yf-parqed-migrate = "yf_parqed.tools.partition_migrate:app"
 ```
 
@@ -163,7 +163,7 @@ yf-parqed-migrate = "yf_parqed.tools.partition_migrate:app"
 import pytest
 from typer.testing import CliRunner
 from unittest.mock import Mock, patch
-from yf_parqed.xetra_cli import app
+from yf_parqed.xetra.xetra_cli import app
 
 runner = CliRunner()
 
@@ -174,8 +174,8 @@ def test_fetch_trades_help():
     assert "venue" in result.output.lower()
     assert "date" in result.output.lower()
 
-@patch("yf_parqed.xetra_cli.XetraFetcher")
-@patch("yf_parqed.xetra_cli.XetraParser")
+@patch("yf_parqed.xetra.xetra_cli.XetraFetcher")
+@patch("yf_parqed.xetra.xetra_cli.XetraParser")
 def test_fetch_trades_no_store(mock_parser, mock_fetcher):
     """Test fetch-trades without --store flag."""
     # Mock the fetcher
@@ -192,7 +192,7 @@ def test_fetch_trades_no_store(mock_parser, mock_fetcher):
     assert result.exit_code == 0
     mock_fetcher_instance.list_available_files.assert_called_once_with("DETR", "2025-11-01")
 
-@patch("yf_parqed.xetra_cli.XetraFetcher")
+@patch("yf_parqed.xetra.xetra_cli.XetraFetcher")
 def test_list_files(mock_fetcher):
     """Test list-files command."""
     mock_fetcher_instance = Mock()

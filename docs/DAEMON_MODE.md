@@ -469,7 +469,7 @@ xetra-parqed --log-file logs/xetra.log fetch-trades DETR --daemon
 
 Log format includes timestamp, level, location, and message:
 ```
-2025-12-01 20:39:08.993 | INFO     | yf_parqed.xetra_cli:run_fetch_once:184 - Checking missing dates for DETR
+2025-12-01 20:39:08.993 | INFO     | yf_parqed.xetra.xetra_cli:run_fetch_once:184 - Checking missing dates for DETR
 ```
 
 ### 2. Scheduling with Trading Hours Awareness
