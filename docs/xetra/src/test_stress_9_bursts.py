@@ -11,7 +11,7 @@ import sys
 import time
 import httpx
 from loguru import logger
-from src.yf_parqed.xetra_fetcher import XetraFetcher
+from src.yf_parqed.xetra.xetra_fetcher import XetraFetcher
 
 # Configure logging: file gets everything, console gets INFO+ only (no DEBUG)
 logger.remove()

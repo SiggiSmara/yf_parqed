@@ -52,6 +52,12 @@ sudo chown -R yfparqed:yfparqed /var/lib/yf_parqed
 sudo chown -R yfparqed:yfparqed /var/log/yf_parqed
 sudo chown -R yfparqed:yfparqed /run/yf_parqed
 
+# Add your user to yfparqed group for data access
+sudo usermod -aG yfparqed $USER
+
+# Note: You must logout and login again for group membership to take effect
+echo "Remember to logout/login for group membership to take effect"
+
 # Verify permissions
 ls -la /opt/yf_parqed
 ls -la /var/lib/yf_parqed

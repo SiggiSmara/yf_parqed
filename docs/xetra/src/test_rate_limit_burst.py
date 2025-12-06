@@ -8,7 +8,7 @@ Goal: Find optimal burst size and cooldown period for maximum throughput.
 
 import time
 from loguru import logger
-from src.yf_parqed.xetra_fetcher import XetraFetcher
+from src.yf_parqed.xetra.xetra_fetcher import XetraFetcher
 
 # Configure logger
 logger.remove()

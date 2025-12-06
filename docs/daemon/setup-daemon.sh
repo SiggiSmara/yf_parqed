@@ -69,6 +69,13 @@ create_user() {
         useradd -r -m -d "$DATA_DIR" -s /bin/bash -c "YF Parqed Daemon User" "$DAEMON_USER"
         log_info "Created user $DAEMON_USER"
     fi
+    
+    # Add current user to yfparqed group for data access
+    if [ -n "$SUDO_USER" ] && [ "$SUDO_USER" != "root" ]; then
+        log_info "Adding $SUDO_USER to $DAEMON_USER group..."
+        usermod -aG "$DAEMON_USER" "$SUDO_USER"
+        log_info "User $SUDO_USER added to $DAEMON_USER group (logout/login required)"
+    fi
 }
 
 create_directories() {
@@ -306,6 +313,12 @@ do_install() {
     
     log_info "Installation complete!"
     echo
+    if [ -n "$SUDO_USER" ] && [ "$SUDO_USER" != "root" ]; then
+        log_warn "IMPORTANT: User $SUDO_USER was added to yfparqed group."
+        log_warn "You must logout and login again for group membership to take effect."
+        log_warn "After logging back in, you can access data files in /var/lib/yf_parqed/data"
+        echo
+    fi
     log_info "Next steps:"
     echo "  1. Enable and start Yahoo Finance daemon:"
     echo "     sudo systemctl enable --now yf-parqed"

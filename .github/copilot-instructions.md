@@ -26,6 +26,23 @@ uv sync
 - Creates/updates `.venv/` with all production and dev dependencies
 - Must be run after fresh clone or after pulling dependency changes
 
+**CRITICAL: All Python commands must be run with `uv run` prefix.**
+
+```bash
+# ✓ CORRECT - Always use uv run
+uv run python script.py
+uv run pytest
+uv run yf-parqed --help
+uv run xetra-parqed --help
+
+# ✗ WRONG - Will fail without uv run
+python script.py      # Won't find dependencies
+pytest               # Won't find package
+yf-parqed --help     # Command not found
+```
+
+Without `uv run`, Python cannot find the package or dependencies in the virtual environment.
+
 ### Dependency Management
 
 **NEVER edit `pyproject.toml` or `uv.lock` manually.** Use `uv` commands:
@@ -197,11 +214,15 @@ YFParqed (façade) → ConfigService, TickerRegistry, IntervalScheduler,
 
 **storage_config.json** - Backend selection (legacy vs partitioned)
 
-### Storage Backends
+### Storage Structure
 
-**Legacy**: `stocks_<interval>/<TICKER>.parquet` (flat structure)
+**For complete storage reference, see [`STORAGE_STRUCTURE.md`](STORAGE_STRUCTURE.md)**
 
-**Partitioned**: `data/<market>/<source>/stocks_<interval>/ticker=<TICKER>/year=YYYY/month=MM/<file>.parquet` (Hive-style)
+Quick reference:
+- **Yahoo Finance**: `data/us/yahoo/stocks_<interval>/ticker=<TICKER>/year=YYYY/month=MM/data.parquet`
+- **Xetra raw trades**: `data/de/xetra/trades/venue=<VENUE>/year=YYYY/month=MM/day=DD/trades.parquet`
+- **Xetra OHLCV** (Phase 2): `data/de/xetra/stocks_<interval>/ticker=<ISIN>/year=YYYY/month=MM/data.parquet`
+- **Legacy** (deprecated): `data/legacy/stocks_<interval>/<TICKER>.parquet`
 
 Migration flow: Legacy → `data/legacy/` → Migration CLI → Partitioned layout
 
@@ -256,6 +277,7 @@ Before submitting changes:
 
 ### Core Documentation
 - **Architecture**: `ARCHITECTURE.md` - Service responsibilities, data flows, dependency injection patterns
+- **Storage Structure**: `.github/STORAGE_STRUCTURE.md` - Complete partition layouts, schemas, query examples
 - **Development**: `.github/DEVELOPMENT_GUIDE.md` - Workflows, adding services, CLI commands, git process
 - **Testing**: `.github/TESTING_GUIDE.md` - Test structure, patterns, debugging, coverage
 - **Troubleshooting**: `.github/TROUBLESHOOTING.md` - Common issues and solutions

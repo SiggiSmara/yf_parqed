@@ -97,20 +97,20 @@ yf-parqed-status
 # xetra@DETR.service active
 #
 # Data freshness (last 5 updates):
-# 2025-12-04 14:23:45 /var/lib/yf_parqed/data/us/yahoo/stocks_1d/ticker=AAPL/...
+# 2025-12-04 14:23:45 /var/lib/yf_parqed/data/us/yahoo/stocks_1d/ticker=AAPL/year=2025/month=12/data.parquet
 # ...
 ```
 
 ### Check Data Freshness
 
 ```bash
-# Yahoo Finance - most recent ticker updates
+# Yahoo Finance - most recent ticker updates (partitioned storage)
 find /var/lib/yf_parqed/data/us/yahoo/stocks_1d -name "*.parquet" -type f -printf '%T@ %p\n' | sort -rn | head -5
 
-# Xetra - most recent trade data
+# Xetra - most recent trade data (partitioned by day)
 find /var/lib/yf_parqed/data/de/xetra/trades/venue=DETR -name "*.parquet" -type f -printf '%T@ %p\n' | sort -rn | head -5
 
-# Count tickers collected today
+# Count tickers updated today (partitioned storage)
 find /var/lib/yf_parqed/data/us/yahoo/stocks_1d -name "*.parquet" -type f -mtime 0 | wc -l
 ```
 
@@ -120,12 +120,16 @@ find /var/lib/yf_parqed/data/us/yahoo/stocks_1d -name "*.parquet" -type f -mtime
 # Total data size
 du -sh /var/lib/yf_parqed/data
 
-# Per data source
-du -sh /var/lib/yf_parqed/data/us/yahoo/*
+# Per data source (partitioned storage)
+du -sh /var/lib/yf_parqed/data/us/yahoo/stocks_*
+du -sh /var/lib/yf_parqed/data/de/xetra/trades
+du -sh /var/lib/yf_parqed/data/de/xetra/trades_monthly
+
+# Per venue breakdown
 du -sh /var/lib/yf_parqed/data/de/xetra/trades/venue=*
 
 # Detailed breakdown
-du -h --max-depth=3 /var/lib/yf_parqed/data | sort -h
+du -h --max-depth=4 /var/lib/yf_parqed/data | sort -h
 ```
 
 ### Monitor Logs
@@ -590,35 +594,110 @@ sudo nano /etc/security/limits.conf
 # Install DuckDB if not already installed
 sudo apt install duckdb  # or download from duckdb.org
 
-# Query Yahoo Finance data
+# Overview: Yahoo Finance data capture statistics (1d interval)
+duckdb << 'EOF'
+WITH trading_days AS (
+    SELECT 
+        "date"::DATE as trading_date,
+        COUNT(DISTINCT ticker) as tickers_captured
+    FROM read_parquet('/var/lib/yf_parqed/data/us/yahoo/stocks_1d/ticker=*/year=*/month=*/*.parquet', hive_partitioning=1)
+    GROUP BY trading_date
+),
+totals AS (
+    SELECT COUNT(DISTINCT ticker) as total_tickers
+    FROM read_parquet('/var/lib/yf_parqed/data/us/yahoo/stocks_1d/ticker=*/year=*/month=*/*.parquet', hive_partitioning=1)
+)
+SELECT 
+    trading_date,
+    tickers_captured,
+    (SELECT total_tickers FROM totals) as total_tickers,
+    ROUND(100.0 * tickers_captured / (SELECT total_tickers FROM totals), 2) as capture_rate_pct,
+    CASE 
+        WHEN tickers_captured = (SELECT total_tickers FROM totals) THEN '✓ Complete'
+        WHEN tickers_captured >= (SELECT total_tickers FROM totals) * 0.95 THEN '⚠ Partial'
+        ELSE '✗ Incomplete'
+    END as status
+FROM trading_days
+ORDER BY trading_date DESC
+LIMIT 10;
+EOF
+
+# Query Yahoo Finance data (partitioned storage)
 duckdb << 'EOF'
 -- Ticker count and date range
 SELECT 
     COUNT(DISTINCT ticker) as total_tickers,
-    MIN(date) as first_date,
-    MAX(date) as last_date,
+    MIN("date") as first_date,
+    MAX("date") as last_date,
     COUNT(*) as total_records
-FROM '/var/lib/yf_parqed/data/us/yahoo/stocks_1d/**/*.parquet';
+FROM read_parquet('/var/lib/yf_parqed/data/us/yahoo/stocks_1d/ticker=*/year=*/month=*/*.parquet', hive_partitioning=1);
 
 -- Top 10 tickers by volume
 SELECT 
     ticker,
     ROUND(SUM("close" * volume) / 1000000, 2) as total_volume_millions
-FROM '/var/lib/yf_parqed/data/us/yahoo/stocks_1d/**/*.parquet'
+FROM read_parquet('/var/lib/yf_parqed/data/us/yahoo/stocks_1d/ticker=*/year=*/month=*/*.parquet', hive_partitioning=1)
 GROUP BY ticker
 ORDER BY total_volume_millions DESC
 LIMIT 10;
 EOF
 
-# Query Xetra data
+# Overview: Xetra data capture statistics
+# Shows minutes of data captured per day vs theoretical max (trading hours: 08:00-18:00 CET = 600 minutes)
 duckdb << 'EOF'
+WITH daily_stats AS (
+    SELECT 
+        CAST(trade_time AS DATE) as trade_date,
+        COUNT(*) as trades_captured,
+        COUNT(DISTINCT isin) as unique_isins,
+        -- Calculate unique minutes with trade data
+        COUNT(DISTINCT strftime('%Y-%m-%d %H:%M', trade_time)) as minutes_captured,
+        ROUND(SUM(price * volume) / 1000000, 2) as volume_millions_eur,
+        MIN(trade_time) as first_trade,
+        MAX(trade_time) as last_trade
+    FROM read_parquet('/var/lib/yf_parqed/data/de/xetra/trades/venue=DETR/year=*/month=*/day=*/*.parquet', hive_partitioning=1)
+    GROUP BY trade_date
+)
+SELECT 
+    trade_date,
+    trades_captured,
+    unique_isins,
+    minutes_captured,
+    600 as theoretical_max_minutes,  -- 10 hours (08:00-18:00) = 600 minutes
+    ROUND(100.0 * minutes_captured / 600, 2) as capture_rate_pct,
+    volume_millions_eur,
+    strftime('%H:%M', first_trade) as first_trade_time,
+    strftime('%H:%M', last_trade) as last_trade_time,
+    CASE 
+        WHEN minutes_captured >= 540 THEN '✓ Complete'  -- 90%+ of trading hours
+        WHEN minutes_captured >= 450 THEN '⚠ Partial'   -- 75%+ of trading hours
+        ELSE '✗ Incomplete'
+    END as status
+FROM daily_stats
+ORDER BY trade_date DESC
+LIMIT 10;
+EOF
+
+# Query Xetra data (raw trades)
+duckdb << 'EOF'
+-- Query by partition day
 SELECT 
     day,
     COUNT(*) as trades,
     ROUND(SUM(price * volume) / 1000000, 2) as volume_millions_eur
-FROM '/var/lib/yf_parqed/data/de/xetra/trades/venue=DETR/**/*.parquet'
+FROM read_parquet('/var/lib/yf_parqed/data/de/xetra/trades/venue=DETR/year=*/month=*/day=*/*.parquet', hive_partitioning=1)
 GROUP BY day
 ORDER BY day DESC
+LIMIT 10;
+
+-- Query by trade_time date
+SELECT 
+    CAST(trade_time AS DATE) as trade_date,
+    COUNT(*) as trades,
+    ROUND(SUM(price * volume) / 1000000, 2) as volume_millions_eur
+FROM read_parquet('/var/lib/yf_parqed/data/de/xetra/trades/venue=DETR/year=*/month=*/day=*/*.parquet', hive_partitioning=1)
+GROUP BY trade_date
+ORDER BY trade_date DESC
 LIMIT 10;
 EOF
 ```

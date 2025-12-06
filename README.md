@@ -22,14 +22,14 @@ Note: Partition-Aware storage is implemented and shipped (2025-10-19). See `docs
 2. Create a migration plan with the Typer helper:
 
    ```bash
-   yf-parqed-migrate init --venue us:yahoo --interval 1m --interval 1h --interval 1d
+   uv run yf-parqed-migrate init --venue us:yahoo --interval 1m --interval 1h --interval 1d
    ```
 
    Adjust the venue/interval list to match the data you want to migrate.
 3. Run the migration:
 
    ```bash
-   yf-parqed-migrate migrate --all
+   uv run yf-parqed-migrate migrate --all
    ```
 
    The command estimates disk requirements, copies each ticker into the partitioned layout, and verifies row counts + checksums.
@@ -39,7 +39,7 @@ Legacy-only workflows continue to function. You can migrate venues one at a time
 
 ## Migration CLI (fast mode and flags)
 
-The repository includes a Typer-based CLI helper `yf-parqed-migrate` to create a migration plan and move legacy per-ticker parquet files into the partitioned, Hive-style layout. During development we added several operational levers to tune performance vs durability. This section summarizes the most-used options and the safe defaults.
+The repository includes a Typer-based CLI helper `uv run yf-parqed-migrate` to create a migration plan and move legacy per-ticker parquet files into the partitioned, Hive-style layout. During development we added several operational levers to tune performance vs durability. This section summarizes the most-used options and the safe defaults.
 
 Key flags
 
@@ -70,52 +70,57 @@ Examples
 - Create a plan and run a safe (default) migration:
 
 ```bash
-yf-parqed-migrate init --venue us:yahoo --interval 1m --interval 1h
-yf-parqed-migrate migrate --base-dir /path/to/workspace
+uv run yf-parqed-migrate init --venue us:yahoo --interval 1m --interval 1h
+uv run yf-parqed-migrate migrate --base-dir /path/to/workspace
 ```
 
 - Fast migration (destructive overwrite, faster writes):
 
 ```bash
-yf-parqed-migrate migrate --base-dir /path/to/workspace --fast --max-tickers 500
+uv run yf-parqed-migrate migrate --base-dir /path/to/workspace --fast --max-tickers 500
 # then verify
-yf-parqed-migrate verify us:yahoo 1m --base-dir /path/to/workspace --max-tickers 500
+uv run yf-parqed-migrate verify us:yahoo 1m --base-dir /path/to/workspace --max-tickers 500
 ```
 
 This README entry documents the operational knobs added to the migration flow. If you prefer the `--compression` option removed from the CLI entirely, I can remove it and update the tests accordingly; currently both the preset and explicit `--compression` stay supported for backward compatibility.
 
 ## How to install
 
-At some point I might publish this to PyPI but until then simply clone the repo and use pip or your favorite package management tool to install the package: `pip install .`
+At some point I might publish this to PyPI but until then simply clone the repo and use `uv` to install:
+
+```bash
+cd yf_parqed
+uv sync
+```
+
+**CRITICAL**: All Python commands must be run with `uv run` prefix. Without it, the package and dependencies won't be found.
 
 ## How to use
 
-Still in flux, but generally:
-
-1. Initialize the list of tickers to sync via `yf-parqed initialize`
-2. Adjust the content of the `intervals,json`, `current_tickers.json` and `not_found_tickers.json`:
-   1. intervals.json contains a list of the yfinance intervals you want to download
-   2. current_ticker.json contains the list of tickers you want to download
-   3. not_found_tickers.json contains a list of tickers that should be excluded
-3. Trigger the initial snapshot via `uv-parqed update` with the `--start-date`and `--end-date` parameters set.
-4. Any time after that you can run `uv-parqed update` without parameters to add new data to your local snapshot.
+1. Initialize the list of tickers to sync via `uv run yf-parqed initialize`
+2. Adjust the content of `intervals.json` and `tickers.json`:
+   - `intervals.json`: List of yfinance intervals to download (e.g., `["1d", "1h", "1m"]`)
+   - `tickers.json`: Unified ticker state with per-interval status tracking (managed automatically)
+3. Trigger the initial snapshot via `uv run yf-parqed update-data` with `--start-date` and `--end-date` parameters.
+4. Any time after that you can run `uv run yf-parqed update-data` without parameters to add new data to your local snapshot.
 
 ### Partition mode toggles
 
-Use `yf-parqed partition-toggle` to control the storage backend once the migration metadata exists. Examples:
+Use `uv run yf-parqed partition-toggle` to control the storage backend once the migration metadata exists. Examples:
 
-- `yf-parqed partition-toggle` → enable partition mode globally.
-- `yf-parqed partition-toggle --market US --disable` → keep US venues on the legacy backend.
-- `yf-parqed partition-toggle --market US --source yahoo --clear` → remove an explicit override so the venue follows the default rules.
+- `uv run yf-parqed partition-toggle` → enable partition mode globally.
+- `uv run yf-parqed partition-toggle --market US --disable` → keep US venues on the legacy backend.
+- `uv run yf-parqed partition-toggle --market US --source yahoo --clear` → remove an explicit override so the venue follows the default rules.
 
 The command updates `storage_config.json`; manual edits are rarely necessary now.
 
-### Notes on `update`
+### Notes on `update-data`
 
- `uv-parqed update`  will detect if any tickers are not returning data and asks you via a prompt if you want to save them to the exclude list. You have two CLI options that allow you to control that behavior in the case when you are running this command via scripts:
+`uv run yf-parqed update-data` will detect if any tickers are not returning data and marks them as `not_found` in `tickers.json` with per-interval tracking. The CLI automatically manages ticker lifecycle:
 
-- `--save-not-founds` will circumvent the prompt and save them to the exclude list
-- `--non-interactive` will circumvent the prompt in the case when the `--save-not-found` is not present (resulting in the exclude list not being updated)
+- Tickers that fail for a specific interval enter a 30-day cooldown for that interval
+- Tickers that fail for all intervals are marked globally as `not_found`
+- Use `uv run yf-parqed reparse-not-founds` to reactivate tickers if new data becomes available
 
 The current list of tickers from Nasdaq and Nyse  (> 9000 tickers in total) with the default limiter settings will take a considerable time given that the default limiter settings is no more than 2 API calls in a 5 second period.  You can of course play around with those settings, but they are coming from the [documentation of yfinance](https://ranaroussi.github.io/yfinance/advanced/caching.html) and they are very stable in my experience. Feel free to experiment with other values.
 

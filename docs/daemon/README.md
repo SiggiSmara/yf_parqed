@@ -43,7 +43,7 @@ Complete guide for running yf_parqed as a system daemon for continuous data coll
 
 ```bash
 # Download and run setup script
-curl -O https://raw.githubusercontent.com/SiggiSmara/yf_parqed/main/setup-daemon.sh
+curl -O https://raw.githubusercontent.com/SiggiSmara/yf_parqed/main/docs/daemon/setup-daemon.sh
 chmod +x setup-daemon.sh
 sudo ./setup-daemon.sh install
 
@@ -328,5 +328,5 @@ sudo systemctl start yf-parqed@1m yf-parqed@1h yf-parqed@1d
 
 - [Installation Details](./INSTALLATION.md) - Step-by-step manual installation
 - [Usage Guide](./USAGE.md) - Daemon features and CLI options
-- [Systemd Services](./systemd/) - Service file templates
+- [Systemd Service Templates](../../examples/) - Example systemd service files
 - [Main Documentation](../DAEMON_MODE.md) - Complete daemon mode reference

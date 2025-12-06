@@ -27,6 +27,13 @@ The codebase follows a service-oriented architecture with clear separation of co
     │ Config   │ │ Ticker   │ │ Interval │ │ Data     │ │ Storage  │
     │ Service  │ │ Registry │ │Scheduler │ │ Fetcher  │ │ Layers   │
     └──────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘
+
+## Package Layout (Separation of Concerns)
+
+- `src/yf_parqed/common/` — shared infrastructure (config service, run lock, migration plan, path builder, parquet recovery, storage backends).
+- `src/yf_parqed/yahoo/` — Yahoo Finance pipeline (facade, ticker registry, interval scheduler, data fetcher).
+- `src/yf_parqed/xetra/` — Xetra pipeline (service, fetcher, parser, trading hours checker).
+- Compatibility shims remain in `src/yf_parqed/*.py` to preserve legacy import paths (`yf_parqed.primary_class`, `yf_parqed.storage_backend`, etc.). New code should import from the scoped packages above; the shims are temporary and can be removed after external callers migrate.
 ```
 
 ## Service Responsibilities
