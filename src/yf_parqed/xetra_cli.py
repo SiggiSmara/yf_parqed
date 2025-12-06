@@ -127,6 +127,20 @@ def fetch_trades(
             help="Trading hours HH:MM-HH:MM in CET/CEST (default: venue-specific, e.g. 08:30-18:00)"
         ),
     ] = None,
+    market_timezone: Annotated[
+        str,
+        typer.Option(
+            "--market-timezone",
+            help="Timezone for venue trading hours (default: Europe/Berlin)",
+        ),
+    ] = "Europe/Berlin",
+    system_timezone: Annotated[
+        str | None,
+        typer.Option(
+            "--system-timezone",
+            help="Override system timezone used for logging (default: auto-detect)",
+        ),
+    ] = None,
     pid_file: Annotated[
         Path | None,
         typer.Option(help="PID file to prevent multiple daemon instances"),
@@ -182,7 +196,8 @@ def fetch_trades(
     hours_checker = TradingHoursChecker(
         start_time=start_time,
         end_time=end_time,
-        market_timezone="Europe/Berlin",
+        market_timezone=market_timezone,
+        system_timezone=system_timezone,
     )
 
     # PID file management for daemon mode
@@ -306,9 +321,14 @@ def fetch_trades(
                 if shutdown_requested["flag"]:
                     break
 
-                # Calculate next run time
+                # Calculate next run time, but avoid sleeping past market close
+                base_sleep_seconds = interval * 3600
+                close_remaining = hours_checker.seconds_until_close()
+                if close_remaining > 0:
+                    base_sleep_seconds = min(base_sleep_seconds, close_remaining)
+
                 next_run_local = datetime.now(hours_checker.system_tz) + timedelta(
-                    hours=interval
+                    seconds=base_sleep_seconds
                 )
 
                 # Log completion message
@@ -318,7 +338,7 @@ def fetch_trades(
                 )
 
                 # Sleep in small intervals to check for shutdown signal
-                sleep_seconds = interval * 3600
+                sleep_seconds = base_sleep_seconds
                 sleep_interval = 10  # Check every 10 seconds
                 for _ in range(int(sleep_seconds / sleep_interval)):
                     if shutdown_requested["flag"]:

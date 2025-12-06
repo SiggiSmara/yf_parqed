@@ -11,6 +11,12 @@ This document records user-facing changes by release. Each section should captur
 ## Unreleased
 
 
+## 2025-12-06 — Version 0.4.2 (UTC Trading Hours Hardening)
+
+- **UTC-first trading hours:** TradingHoursChecker now evaluates open/close windows in UTC, logging both market-local and UTC windows to avoid timezone drift and DST confusion.
+- **Daemon scheduling safeguards:** Yahoo and Xetra daemons cap sleeps at market close to avoid skipping late-session cycles; overnight windows are handled correctly.
+- **Timezone overrides for Xetra:** `xetra-parqed fetch-trades` now accepts `--market-timezone` and `--system-timezone`, aligning with the Yahoo CLI flexibility.
+
 
 ## 2025-12-06 — Version 0.4.1 (Shim Removal & Package Split)
 

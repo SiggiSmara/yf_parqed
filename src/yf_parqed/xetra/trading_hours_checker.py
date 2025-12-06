@@ -58,21 +58,21 @@ class TradingHoursChecker:
         self.start_time = start_time
         self.end_time = end_time
         self.market_tz = ZoneInfo(market_timezone)
+        self.system_tz = (
+            datetime.now().astimezone().tzinfo
+            if system_timezone is None
+            else ZoneInfo(system_timezone)
+        )
 
-        # Auto-detect system timezone if not provided
-        if system_timezone is None:
-            # Get local timezone from system
-            self.system_tz = datetime.now().astimezone().tzinfo
-            logger.debug(f"Auto-detected system timezone: {self.system_tz}")
-        else:
-            self.system_tz = ZoneInfo(system_timezone)
-            logger.debug(f"Using explicit system timezone: {self.system_tz}")
+        # Precompute today's window in UTC for fast comparisons
+        self._refresh_window()
 
-        # Log converted hours
+        # Log converted hours (both market and UTC) to reduce confusion
         local_hours = self._calculate_local_hours()
         logger.info(
             f"Market hours: {start_time.strftime('%H:%M')}-{end_time.strftime('%H:%M')} "
-            f"{market_timezone} ({local_hours})"
+            f"{market_timezone} ({local_hours}); UTC window: "
+            f"{self._open_utc.strftime('%H:%M')}-{self._close_utc.strftime('%H:%M')} UTC"
         )
 
     def is_within_hours(self) -> bool:
@@ -87,14 +87,9 @@ class TradingHoursChecker:
             >>> if checker.is_within_hours():
             ...     print("Market is open")
         """
-        # Get current time in market timezone
-        now_market = datetime.now(self.market_tz).time()
-
-        # Handle midnight crossing (e.g., 22:00-02:00)
-        if self.start_time <= self.end_time:
-            return self.start_time <= now_market <= self.end_time
-        else:
-            return now_market >= self.start_time or now_market <= self.end_time
+        now_utc = datetime.now(ZoneInfo("UTC"))
+        self._refresh_window(now_utc)
+        return self._open_utc <= now_utc <= self._close_utc
 
     def seconds_until_active(self) -> float:
         """
@@ -109,25 +104,18 @@ class TradingHoursChecker:
             >>> if seconds > 0:
             ...     print(f"Market opens in {seconds/3600:.1f} hours")
         """
-        if self.is_within_hours():
+        now_utc = datetime.now(ZoneInfo("UTC"))
+        self._refresh_window(now_utc)
+
+        if self._open_utc <= now_utc <= self._close_utc:
             return 0.0
 
-        # Get current time in market timezone
-        now_market = datetime.now(self.market_tz)
-        today_start = now_market.replace(
-            hour=self.start_time.hour,
-            minute=self.start_time.minute,
-            second=0,
-            microsecond=0,
-        )
+        if now_utc < self._open_utc:
+            return (self._open_utc - now_utc).total_seconds()
 
-        if now_market.time() < self.start_time:
-            # Start time is later today
-            return (today_start - now_market).total_seconds()
-        else:
-            # Start time is tomorrow
-            tomorrow_start = today_start + timedelta(days=1)
-            return (tomorrow_start - now_market).total_seconds()
+        # Past today's close: compute tomorrow's open in UTC
+        tomorrow_open_utc = self._next_open_utc(now_utc)
+        return (tomorrow_open_utc - now_utc).total_seconds()
 
     def next_active_time(self) -> datetime:
         """
@@ -145,6 +133,17 @@ class TradingHoursChecker:
         now_system = datetime.now(self.system_tz)
         return now_system + timedelta(seconds=seconds)
 
+    def seconds_until_close(self) -> float:
+        """Calculate seconds until the current active window closes (0.0 if closed)."""
+
+        now_utc = datetime.now(ZoneInfo("UTC"))
+        self._refresh_window(now_utc)
+
+        if now_utc > self._close_utc:
+            return 0.0
+
+        return (self._close_utc - now_utc).total_seconds()
+
     def _calculate_local_hours(self) -> str:
         """
         Calculate trading hours in system timezone.
@@ -157,27 +156,11 @@ class TradingHoursChecker:
             Returns: "15:30-22:00 CET" or "16:30-23:00 CEST" (depending on DST)
         """
         # Create datetime objects for today in market timezone
-        now_market = datetime.now(self.market_tz)
-        market_open = now_market.replace(
-            hour=self.start_time.hour,
-            minute=self.start_time.minute,
-            second=0,
-            microsecond=0,
-        )
-        market_close = now_market.replace(
-            hour=self.end_time.hour,
-            minute=self.end_time.minute,
-            second=0,
-            microsecond=0,
-        )
+        now_utc = datetime.now(ZoneInfo("UTC"))
+        self._refresh_window(now_utc)
 
-        # Handle midnight crossing for close time
-        if self.end_time < self.start_time:
-            market_close += timedelta(days=1)
-
-        # Convert to system timezone
-        local_open = market_open.astimezone(self.system_tz)
-        local_close = market_close.astimezone(self.system_tz)
+        local_open = self._open_utc.astimezone(self.system_tz)
+        local_close = self._close_utc.astimezone(self.system_tz)
 
         # Format with timezone abbreviation
         open_str = local_open.strftime("%H:%M")
@@ -222,3 +205,64 @@ class TradingHoursChecker:
                 f"Invalid active hours format: '{hours_str}'. "
                 "Expected format: 'HH:MM-HH:MM' (e.g., '09:30-16:00')"
             ) from e
+
+    def _refresh_window(self, now_utc: datetime | None = None) -> None:
+        """Recompute UTC open/close for the window that contains now or the next one."""
+
+        now_utc = now_utc or datetime.now(ZoneInfo("UTC"))
+        now_market = now_utc.astimezone(self.market_tz)
+
+        # Reuse cached window if still valid and contains now
+        if (
+            getattr(self, "_open_utc", None) is not None
+            and getattr(self, "_close_utc", None) is not None
+            and self._open_utc <= now_utc <= self._close_utc
+        ):
+            return
+
+        # Candidate windows: today and yesterday (handles overnight spans)
+        candidates = [now_market.date(), now_market.date() - timedelta(days=1)]
+
+        chosen = None
+        for day in candidates:
+            market_open = datetime.combine(
+                day,
+                self.start_time,
+                tzinfo=self.market_tz,
+            )
+            market_close = datetime.combine(
+                day,
+                self.end_time,
+                tzinfo=self.market_tz,
+            )
+
+            if self.end_time < self.start_time:
+                market_close += timedelta(days=1)
+
+            open_utc = market_open.astimezone(ZoneInfo("UTC"))
+            close_utc = market_close.astimezone(ZoneInfo("UTC"))
+
+            if open_utc <= now_utc <= close_utc:
+                chosen = (open_utc, close_utc, day)
+                break
+
+            if chosen is None:
+                # Fallback to today's window if none contain now
+                chosen = (open_utc, close_utc, day)
+
+        if chosen is None:
+            # Should not happen, but guard anyway
+            return
+
+        self._open_utc, self._close_utc, self._window_date = chosen
+
+    def _next_open_utc(self, now_utc: datetime) -> datetime:
+        """Compute the next market open in UTC relative to now."""
+
+        tomorrow = (now_utc.astimezone(self.market_tz) + timedelta(days=1)).date()
+        market_open = datetime.combine(
+            tomorrow,
+            self.start_time,
+            tzinfo=self.market_tz,
+        )
+        return market_open.astimezone(ZoneInfo("UTC"))

@@ -10,7 +10,7 @@ import signal
 import atexit
 import time
 
-from yf_parqed.yahoo.primary_class import YFParqed, all_intervals
+from yf_parqed.yahoo.primary_class import YFParqed
 from .common.run_lock import GlobalRunLock
 from .xetra.trading_hours_checker import TradingHoursChecker
 
@@ -540,15 +540,20 @@ def update_data(
                 if shutdown_requested["flag"]:
                     break
 
-                # Calculate next run time
-                next_run = datetime.now() + timedelta(hours=interval)
+                # Calculate next run time, capped so we do not oversleep past close
+                base_sleep_seconds = interval * 3600
+                close_remaining = hours_checker.seconds_until_close()
+                if close_remaining > 0:
+                    base_sleep_seconds = min(base_sleep_seconds, close_remaining)
+
+                next_run = datetime.now() + timedelta(seconds=base_sleep_seconds)
                 logger.info(
                     f"=== Daemon run #{run_count} completed. "
                     f"Next run at {next_run.strftime('%Y-%m-%d %H:%M:%S')} ==="
                 )
 
                 # Sleep in small intervals to check for shutdown signal
-                sleep_seconds = interval * 3600
+                sleep_seconds = base_sleep_seconds
                 sleep_interval = 10  # Check every 10 seconds
                 for _ in range(int(sleep_seconds / sleep_interval)):
                     if shutdown_requested["flag"]:

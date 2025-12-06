@@ -257,6 +257,34 @@ class TestNextActiveTime:
         assert next_active.date() == datetime(2025, 12, 5).date()
 
 
+class TestSecondsUntilClose:
+    """Test seconds_until_close uses UTC windows."""
+
+    @freeze_time("2025-12-04 16:15:00")  # 16:15 UTC = 17:15 CET
+    def test_returns_remaining_seconds(self):
+        checker = TradingHoursChecker(
+            start_time=dt_time(8, 30),
+            end_time=dt_time(18, 0),
+            market_timezone="Europe/Berlin",
+            system_timezone="UTC",
+        )
+
+        remaining = checker.seconds_until_close()
+        # Close at 17:00 UTC => ~45 minutes remaining
+        assert 2600 < remaining < 2800
+
+    @freeze_time("2025-12-04 18:30:00")  # 18:30 UTC = 19:30 CET (after close)
+    def test_zero_after_close(self):
+        checker = TradingHoursChecker(
+            start_time=dt_time(8, 30),
+            end_time=dt_time(18, 0),
+            market_timezone="Europe/Berlin",
+            system_timezone="UTC",
+        )
+
+        assert checker.seconds_until_close() == 0.0
+
+
 class TestParseActiveHours:
     """Test active hours string parsing."""
 
