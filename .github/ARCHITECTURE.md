@@ -10,7 +10,7 @@ This is the canonical architecture document for the `yf_parqed` project. It capt
 High-level components:
 
 - `ConfigService` — environment, paths, and persistence helpers
-- `TickerRegistry` — per-ticker and per-interval lifecycle and metadata
+- `TickerRegistry` — per-ticker and per-interval lifecycle and metadata (used by the Yahoo/YF pipeline; see note below)
 - `IntervalScheduler` — orchestrates periodic update loops by interval
 - `DataFetcher` — abstracts data-provider APIs (Yahoo, Xetra) and enforces limits
 - `StorageBackend` — legacy flat-parquet storage and corruption recovery
@@ -64,6 +64,30 @@ sequenceDiagram
 	F-->>U: done
 ```
 
+**Primary Data Flow (Xetra ingestion — minute files)**
+
+Xetra raw trade data is produced as one file per minute per venue. The ingestion pipeline downloads these minute files, parses and normalizes them, and appends them into per-venue daily (or monthly) partitions.
+
+```mermaid
+sequenceDiagram
+	participant U as User/CLI
+	participant F as YFParqed
+	participant XSched as XetraScheduler/Orchestrator
+	participant Fetch as XetraFetcher
+	participant Parser as XetraParser
+	participant Store as PartitionedStorage
+
+	U->>F: start fetch-trades DETR (date / daemon)
+	F->>XSched: run(fetch-date or daemon)
+	loop every minute (one file per minute)
+		XSched->>Fetch: download minute file (YYYY-MM-DDTHH:MM)
+		Fetch->>Parser: parse & normalize
+		Parser->>Store: append to venue/day partition
+		Store-->>F: ack
+	end
+	F-->>U: done
+```
+
 ## Package Layout
 
 - `src/yf_parqed/common/` — shared utilities, run-lock, path builders
@@ -80,9 +104,14 @@ CLI entrypoints (defined in `pyproject.toml`):
 ## Data Flow (short)
 
 1. CLI invokes `YFParqed` façade
-2. Façade constructs services (`ConfigService`, `TickerRegistry`, `DataFetcher`, `StorageBackend`/`PartitionedStorageBackend`)
-3. `IntervalScheduler.run()` iterates intervals and invokes per-ticker processors
-4. Processor: read existing parquet → fetch missing data → merge/deduplicate → write partitioned/legacy parquet → update `tickers.json` metadata
+2. Façade constructs services. Note: the exact services used depend on the command:
+
+	- Yahoo/YF pipeline (`yf-parqed`): constructs `TickerRegistry` and uses `tickers.json` for per-ticker/interval state.
+	- Xetra pipeline (`xetra-parqed`): constructs Xetra-specific services (fetcher/parser, trading hours checker) and uses venue/day partitions (raw trades) rather than `tickers.json`.
+
+3. `IntervalScheduler.run()` iterates intervals and invokes per-ticker processors (Yahoo) or per-venue/date processors (Xetra)
+4. Processor (Yahoo): read existing parquet → fetch missing data → merge/deduplicate → write partitioned/legacy parquet → update `tickers.json` metadata
+	Processor (Xetra): fetch daily trade files → parse/normalize → write per-venue daily/monthly partitions → update any Xetra-specific indices/metadata
 
 ## Storage & Migration Principles
 
