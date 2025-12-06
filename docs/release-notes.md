@@ -12,6 +12,14 @@ This document records user-facing changes by release. Each section should captur
 
 
 
+## 2025-12-06 — Version 0.4.1 (Shim Removal & Package Split)
+
+- **Package separation completed:** Removed legacy shim modules now that all imports target `yf_parqed.common`, `yf_parqed.yahoo`, and `yf_parqed.xetra` directly. Tests updated to canonical paths; 402/402 passing.
+- **CLI entrypoints updated:** `yf-parqed` now resolves to `yf_parqed.yahoo.yfinance_cli:app` and `xetra-parqed` to `yf_parqed.xetra.xetra_cli:app`, aligning exposed endpoints with the new package layout.
+- **Metadata:** Bumped version to 0.4.1 to reflect the structural change. No behavioral changes expected beyond import/entrypoint paths.
+
+
+
 ## 2025-12-05 — Version 0.4.0 (Daemon Mode)
 
 
