@@ -67,6 +67,7 @@ def _check_and_write_pid_file(pid_file: Path) -> None:
 
 @app.callback()
 def main(
+    ctx: typer.Context,
     wrk_dir: Annotated[
         Path, typer.Option(help="Working directory, default is current directory")
     ] = Path.cwd(),
@@ -81,6 +82,8 @@ def main(
     Use --wrk-dir to set working directory, --log-level to set logging verbosity.
     Use --log-file for daemon mode with log rotation.
     """
+    ctx.obj = ctx.obj or {}
+    ctx.obj["wrk_dir"] = wrk_dir
     logger.remove()
 
     if log_file:
@@ -101,6 +104,7 @@ def main(
 
 @app.command()
 def fetch_trades(
+    ctx: typer.Context,
     venue: Annotated[
         str,
         typer.Argument(
@@ -218,6 +222,7 @@ def fetch_trades(
 
     def run_fetch_once():
         """Execute one fetch cycle."""
+        wrk_dir: Path = ctx.obj.get("wrk_dir", Path.cwd())
         config = ConfigService(base_path=wrk_dir)
         root_path = wrk_dir / "data"
 
@@ -266,6 +271,7 @@ def fetch_trades(
             logger.info(
                 f"Starting daemon mode for {venue}: fetching every {interval} hour(s)"
             )
+            wrk_dir: Path = ctx.obj.get("wrk_dir", Path.cwd())
             logger.info(f"Active hours: {default_hours} {hours_checker.market_tz}")
             logger.info(
                 f"PID: {Path('/proc/self').resolve().name if Path('/proc/self').exists() else 'unknown'}"
