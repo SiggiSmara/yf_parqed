@@ -30,7 +30,7 @@ Accepted (2025-10-12)
 ## Proposed Approach
 
 1. **Path Strategy**
-   - Introduce a `PartitionPathBuilder` that maps `(market, source, interval, ticker, timestamp)` to a venue-first layout such as `<market>/<source>/stocks_<interval>/ticker=<TICKER>/year=<YYYY>/month=<MM>/day=<DD>/data.parquet` (for example, `us/yahoo/stocks_1d/AAPL/...`, `de/xetra/stocks_1m/DBK/...`).
+    - Introduce a `PartitionPathBuilder` that maps `(market, source, interval, ticker, timestamp)` to a venue-first layout such as `<market>/<source>/stocks_<interval>/ticker=<TICKER>/year=<YYYY>/month=<MM>/data.parquet` (for example, `us/yahoo/stocks_1d/ticker=AAPL/year=2025/month=12/data.parquet`, `de/xetra/stocks_1m/ticker=DBK/year=2025/month=12/data.parquet`).
    - Zero-pad month/day to keep lexical ordering and compatibility with common query engines.
    - Allow the builder to collapse to legacy two-segment paths (`stocks_<interval>/...`) when `market` or `source` metadata is unavailable to support older datasets during the transition.
 

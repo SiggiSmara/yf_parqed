@@ -97,7 +97,7 @@ yf-parqed-status
 # xetra@DETR.service active
 #
 # Data freshness (last 5 updates):
-# 2025-12-04 14:23:45 /var/lib/yf_parqed/data/us/yahoo/stocks_1d/ticker=AAPL/year=2025/month=12/data.parquet
+# 2025-12-04 14:23:45 /var/lib/yf_parqed/data/us/yahoo/stocks_1m/ticker=AAPL/year=2025/month=12/data.parquet
 # ...
 ```
 
@@ -105,13 +105,13 @@ yf-parqed-status
 
 ```bash
 # Yahoo Finance - most recent ticker updates (partitioned storage)
-find /var/lib/yf_parqed/data/us/yahoo/stocks_1d -name "*.parquet" -type f -printf '%T@ %p\n' | sort -rn | head -5
+find /var/lib/yf_parqed/data/us/yahoo/stocks_1m -name "*.parquet" -type f -printf '%T@ %p\n' | sort -rn | head -5
 
 # Xetra - most recent trade data (partitioned by day)
 find /var/lib/yf_parqed/data/de/xetra/trades/venue=DETR -name "*.parquet" -type f -printf '%T@ %p\n' | sort -rn | head -5
 
 # Count tickers updated today (partitioned storage)
-find /var/lib/yf_parqed/data/us/yahoo/stocks_1d -name "*.parquet" -type f -mtime 0 | wc -l
+find /var/lib/yf_parqed/data/us/yahoo/stocks_1m -name "*.parquet" -type f -mtime 0 | wc -l
 ```
 
 ### Check Storage Usage
@@ -594,18 +594,18 @@ sudo nano /etc/security/limits.conf
 # Install DuckDB if not already installed
 sudo apt install duckdb  # or download from duckdb.org
 
-# Overview: Yahoo Finance data capture statistics (1d interval)
+# Overview: Yahoo Finance data capture statistics (1m interval)
 duckdb << 'EOF'
 WITH trading_days AS (
     SELECT 
         "date"::DATE as trading_date,
         COUNT(DISTINCT ticker) as tickers_captured
-    FROM read_parquet('/var/lib/yf_parqed/data/us/yahoo/stocks_1d/ticker=*/year=*/month=*/*.parquet', hive_partitioning=1)
+    FROM read_parquet('/var/lib/yf_parqed/data/us/yahoo/stocks_1m/ticker=*/year=*/month=*/*.parquet', hive_partitioning=1)
     GROUP BY trading_date
 ),
 totals AS (
     SELECT COUNT(DISTINCT ticker) as total_tickers
-    FROM read_parquet('/var/lib/yf_parqed/data/us/yahoo/stocks_1d/ticker=*/year=*/month=*/*.parquet', hive_partitioning=1)
+    FROM read_parquet('/var/lib/yf_parqed/data/us/yahoo/stocks_1m/ticker=*/year=*/month=*/*.parquet', hive_partitioning=1)
 )
 SELECT 
     trading_date,
@@ -630,13 +630,13 @@ SELECT
     MIN("date") as first_date,
     MAX("date") as last_date,
     COUNT(*) as total_records
-FROM read_parquet('/var/lib/yf_parqed/data/us/yahoo/stocks_1d/ticker=*/year=*/month=*/*.parquet', hive_partitioning=1);
+FROM read_parquet('/var/lib/yf_parqed/data/us/yahoo/stocks_1m/ticker=*/year=*/month=*/*.parquet', hive_partitioning=1);
 
 -- Top 10 tickers by volume
 SELECT 
     ticker,
     ROUND(SUM("close" * volume) / 1000000, 2) as total_volume_millions
-FROM read_parquet('/var/lib/yf_parqed/data/us/yahoo/stocks_1d/ticker=*/year=*/month=*/*.parquet', hive_partitioning=1)
+FROM read_parquet('/var/lib/yf_parqed/data/us/yahoo/stocks_1m/ticker=*/year=*/month=*/*.parquet', hive_partitioning=1)
 GROUP BY ticker
 ORDER BY total_volume_millions DESC
 LIMIT 10;
@@ -674,6 +674,33 @@ SELECT
         ELSE '✗ Incomplete'
     END as status
 FROM daily_stats
+ORDER BY trade_date DESC
+LIMIT 10;
+EOF
+
+# Overview: Yahoo Finance minute coverage (1m interval)
+# Data is stored as one parquet per ticker per month (monthly partitions). This reports, per trading date, how many unique minutes have at least one trade across any ticker and compares to the theoretical US regular session (09:30-16:00 ET = 390 minutes).
+# If you see "No files found" adjust DATA_ROOT to your working directory (e.g., /opt/yf_parqed/data) and confirm files exist:
+#   find "$DATA_ROOT/us/yahoo/stocks_1m" -name "*.parquet" | head
+duckdb << 'EOF'
+WITH minute_counts AS (
+  SELECT 
+    CAST("date" AS DATE) AS trade_date,
+    COUNT(DISTINCT strftime('%Y-%m-%d %H:%M', "date")) AS minutes_with_trades
+  FROM read_parquet('/var/lib/yf_parqed/data/us/yahoo/stocks_1m/ticker=*/year=*/month=*/*.parquet', hive_partitioning=1)
+  GROUP BY trade_date
+)
+SELECT 
+  trade_date,
+  minutes_with_trades,
+  390 AS theoretical_minutes_regular,  -- 09:30-16:00 ET
+  ROUND(100.0 * minutes_with_trades / 390, 2) AS capture_rate_pct,
+  CASE 
+    WHEN minutes_with_trades >= 370 THEN '✓ Complete'  -- ~95%+
+    WHEN minutes_with_trades >= 300 THEN '⚠ Partial'
+    ELSE '✗ Incomplete'
+  END AS status
+FROM minute_counts
 ORDER BY trade_date DESC
 LIMIT 10;
 EOF
