@@ -16,13 +16,13 @@ dependencies = [
 ]
 
 [project.scripts]
-yf-parqed = "yf_parqed.yahoo.yfinance_cli:app"
-xetra-parqed = "yf_parqed.xetra.xetra_cli:app"
+yf-parqed = "yf_parqed.yfinance_cli:app"
+xetra-parqed = "yf_parqed.xetra_cli:app"
 yf-parqed-migrate = "yf_parqed.tools.partition_migrate:app"
 
 [project.entry-points."pipx.run"]
-yf-parqed = "yf_parqed.yahoo.yfinance_cli:app"
-xetra-parqed = "yf_parqed.xetra.xetra_cli:app"
+yf-parqed = "yf_parqed.yfinance_cli:app"
+xetra-parqed = "yf_parqed.xetra_cli:app"
 yf-parqed-migrate = "yf_parqed.tools.partition_migrate:app"
 
 [build-system]
