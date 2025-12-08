@@ -9,6 +9,7 @@ import atexit
 from datetime import datetime, timedelta
 from typing_extensions import Annotated
 
+from .common.config_service import ConfigService
 from .xetra.trading_hours_checker import TradingHoursChecker
 from .xetra.xetra_service import XetraService
 
@@ -217,7 +218,13 @@ def fetch_trades(
 
     def run_fetch_once():
         """Execute one fetch cycle."""
-        with XetraService() as service:
+        config = ConfigService(base_path=wrk_dir)
+        root_path = wrk_dir / "data"
+
+        def make_service() -> XetraService:
+            return XetraService(config=config, root_path=root_path)
+
+        with make_service() as service:
             if no_store:
                 # Dry run mode - just show what would be fetched
                 logger.info(f"Checking missing dates for {venue} (dry run mode)")
@@ -266,7 +273,13 @@ def fetch_trades(
 
             # Check if this is initial startup with no data
             # If so, fetch all available data (within trading hours)
-            with XetraService() as service:
+            config = ConfigService(base_path=wrk_dir)
+            root_path = wrk_dir / "data"
+
+            def make_service() -> XetraService:
+                return XetraService(config=config, root_path=root_path)
+
+            with make_service() as service:
                 if not service.has_any_data(venue, market, source):
                     logger.info(f"No existing data found for {venue} - performing initial fetch of all available data")
                     try:
