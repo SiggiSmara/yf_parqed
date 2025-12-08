@@ -1,6 +1,6 @@
 #!/bin/bash
-# YF Parqed Daemon Setup Script
-# Automates installation and updates for yf_parqed daemons
+# YF Parqed Daemon Management Script
+# Automates installation, updates, and removal for yf_parqed daemons
 
 set -e  # Exit on error
 

@@ -187,7 +187,7 @@ sudo journalctl -u yf-parqed -n 20 | grep -i "trading hours"
 
 ```bash
 # Update to latest version
-sudo /opt/yf_parqed/setup-daemon.sh update
+sudo /opt/yf_parqed/daemon-manage.sh update
 
 # The script will:
 # 1. Stop all daemons

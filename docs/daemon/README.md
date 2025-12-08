@@ -18,7 +18,7 @@ Complete guide for running yf_parqed as a system daemon for continuous data coll
 /opt/yf_parqed/          # Application code (owned by yfparqed)
 ├── .venv/               # Python virtual environment
 ├── src/                 # Source code
-└── setup-daemon.sh      # Setup/update script
+└── daemon-manage.sh     # Install/update/remove script
 
 /var/lib/yf_parqed/      # Persistent data (owned by yfparqed)
 ├── data/                # Partitioned parquet files
@@ -43,9 +43,9 @@ Complete guide for running yf_parqed as a system daemon for continuous data coll
 
 ```bash
 # Download and run setup script
-curl -O https://raw.githubusercontent.com/SiggiSmara/yf_parqed/main/docs/daemon/setup-daemon.sh
-chmod +x setup-daemon.sh
-sudo ./setup-daemon.sh install
+curl -O https://raw.githubusercontent.com/SiggiSmara/yf_parqed/main/daemon-manage.sh
+chmod +x daemon-manage.sh
+sudo ./daemon-manage.sh install
 
 # Start Yahoo Finance daemon
 sudo systemctl enable --now yf-parqed
@@ -66,7 +66,7 @@ For custom installations or to understand the process, see **[INSTALLATION.md](I
 - **Logs**: `/var/log/yf_parqed/*.log` (with rotation)
 - **Services**: `yf-parqed.service`, `xetra@.service` (systemd)
 - **Monitoring**: `yf-parqed-status` command
-- **Setup script**: `/opt/yf_parqed/setup-daemon.sh` (for updates)
+- **Setup script**: `/opt/yf_parqed/daemon-manage.sh` (for updates)
 
 ## Common Tasks
 
@@ -101,7 +101,7 @@ sudo journalctl -u yf-parqed -f
 ### Update to Latest Version
 
 ```bash
-sudo /opt/yf_parqed/setup-daemon.sh update
+sudo /opt/yf_parqed/daemon-manage.sh update
 sudo systemctl restart yf-parqed 'xetra@*'
 ```
 
