@@ -10,6 +10,8 @@ import signal
 import atexit
 import time
 
+from yf_parqed.yahoo.primary_class import all_intervals as default_all_intervals
+
 from yf_parqed.yahoo.primary_class import YFParqed
 from .common.run_lock import GlobalRunLock
 from .xetra.trading_hours_checker import TradingHoursChecker
@@ -29,6 +31,9 @@ except ValueError:
     # During test collection, intervals.json may not exist
     # Tests will replace this with a stub anyway
     yf_parqed = None
+
+# Expose all intervals for tests and callers
+all_intervals = list(default_all_intervals)
 
 # run-lock operator subcommands
 run_lock_app = typer.Typer()

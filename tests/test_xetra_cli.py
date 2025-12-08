@@ -1,6 +1,7 @@
 """Tests for Xetra CLI commands."""
 
 from datetime import datetime
+from pathlib import Path
 from unittest.mock import patch
 
 from typer.testing import CliRunner
@@ -8,6 +9,52 @@ from typer.testing import CliRunner
 from yf_parqed.xetra_cli import app
 
 runner = CliRunner()
+
+
+def test_fetch_trades_uses_wrk_dir(tmp_path):
+    """Ensure wrk-dir flows into ConfigService and XetraService paths."""
+    config_inits: list[Path] = []
+    service_inits: list[tuple[Path, Path]] = []
+
+    class ConfigStub:
+        def __init__(self, base_path: Path):
+            self.base_path = base_path
+            config_inits.append(base_path)
+
+        def get_xetra_limits(self):
+            return (0.0, 1, 0.0)
+
+    class ServiceStub:
+        def __init__(self, *, config: ConfigStub, root_path: Path):
+            service_inits.append((config.base_path, root_path))
+            self.config = config
+            self.root_path = root_path
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def fetch_and_store_missing_trades_incremental(self, *_args):
+            return {
+                "dates_checked": ["2025-11-04"],
+                "dates_fetched": ["2025-11-04"],
+                "dates_partial": [],
+                "total_trades": 123,
+                "total_files": 3,
+                "consolidated": False,
+            }
+
+    with patch("yf_parqed.xetra_cli.ConfigService", ConfigStub), patch(
+        "yf_parqed.xetra_cli.XetraService", ServiceStub
+    ):
+        result = runner.invoke(app, ["--wrk-dir", str(tmp_path), "fetch-trades", "DETR"])
+
+    assert result.exit_code == 0
+    assert config_inits == [tmp_path]
+    assert service_inits == [(tmp_path, tmp_path / "data")]
+    assert "Total trades: 123" in result.output
 
 
 def test_fetch_trades_help():
