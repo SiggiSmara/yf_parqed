@@ -1,8 +1,8 @@
 # ADR: OHLCV Aggregation Service
 
-**Date**: 2025-12-05  
-**Status**: Accepted  
-**Context**: Xetra Phase 2 Implementation
+## Status: To-Do (agreed; work not started)
+
+**Context**: Xetra Phase 2 and 3 Implementation
 
 ## Problem Statement
 
@@ -32,9 +32,9 @@ Implement a **single source of truth** architecture where:
 **Decision**: Use `stocks_<interval>` naming to match Yahoo Finance convention.
 
 ```
-data/de/xetra/stocks_1m/ticker=DE0005190003/year=2025/month=12/data.parquet
-data/de/xetra/stocks_1h/ticker=DE0005190003/year=2025/month=12/data.parquet
-data/de/xetra/stocks_1d/ticker=DE0005190003/year=2025/month=12/data.parquet
+data/de/xetra/stocks_1m/venue=DETR/ticker=DE0005190003/year=2025/month=12/data.parquet
+data/de/xetra/stocks_1h/venue=DETR/ticker=DE0005190003/year=2025/month=12/data.parquet
+data/de/xetra/stocks_1d/venue=DETR/ticker=DE0005190003/year=2025/month=12/data.parquet
 ```
 
 **Rationale**:
@@ -155,21 +155,32 @@ class OHLCVAggregator:
         normalized.index = self.tz_converter.to_market_tz(normalized.index, market_tz)
         
         # 3. Resample using pandas built-in OHLCV aggregation
-        ohlcv = normalized.resample(target_interval).agg({
-            'price': ['first', 'max', 'min', 'last'],  # Open, High, Low, Close
+        # Aggregate price and volume and also capture trade counts and VWAP
+        grouped = normalized.resample(target_interval).agg({
+            'price': ['first', 'max', 'min', 'last', 'count'],  # Open, High, Low, Close, trade_count
             'volume': 'sum'
         })
-        
-        # 4. Flatten multi-index columns
-        ohlcv.columns = ['open', 'high', 'low', 'close', 'volume']
-        
-        # 5. Remove bars with no trades (volume=0)
-        ohlcv = ohlcv[ohlcv['volume'] > 0]
-        
-        # 6. Add metadata columns
+
+        # Flatten multi-index columns and name them explicitly
+        grouped.columns = ['open', 'high', 'low', 'close', 'trade_count', 'volume']
+
+        # Compute VWAP: sum(price * volume) / sum(volume) per group
+        # (pandas resample with custom aggregator shown conceptually)
+        pv = normalized.assign(price_x_volume=(normalized['price'] * normalized['volume']))
+        vwap = pv.resample(target_interval)['price_x_volume'].sum() / pv.resample(target_interval)['volume'].sum()
+        grouped['vwap'] = vwap
+
+        # Remove bars with no trades (volume=0)
+        ohlcv = grouped[grouped['volume'] > 0].copy()
+
+        # Add provenance and metadata columns
         ohlcv['source_interval'] = source_interval
         ohlcv['aggregated_at'] = datetime.now()
-        
+        ohlcv['aggregated_by'] = 'OHLCVAggregator'
+        ohlcv['aggregation_version'] = '1.0'
+        # Optionally store source file references or checksums for audit
+        ohlcv['source_files'] = None
+
         return ohlcv
 ```
 
@@ -285,6 +296,36 @@ def aggregate_ohlcv(
 ┌─────────────────────────────────────────────────────────────────┐
 │ Phase 1 (Current): Raw Data Collection                         │
 └─────────────────────────────────────────────────────────────────┘
+
+## Correctness & Validation
+
+To ensure aggregation correctness and detect regressions, the aggregator must implement the following validation and fallback behaviors:
+
+- **Deduplication / ordering**: Before aggregation, normalize and deduplicate input trades.
+    - Primary dedupe key: transaction id (if present). Fallback: `(timestamp, price, volume, isin)` tuple.
+    - Sort by timestamp (then by transaction id) to determine open and close prices deterministically for colliding timestamps.
+
+- **Volume conservation checks**: After aggregation, assert that the sum of `volume` across output bars equals the sum of input trade volumes for the same range. If mismatch > threshold (configurable, e.g., 0.01%), treat as failure.
+
+- **Minute-coverage and completeness**: Report minutes covered vs expected trading minutes per session and fail or warn when coverage drops below configured thresholds. Emit metrics: `aggregation.minutes_covered`, `aggregation.capture_rate_pct`.
+
+- **Provenance & checksums**: Record `source_files` or their checksums used to produce each partition and store them alongside the aggregated partition for audit and potential rollback.
+
+- **Validation failure behavior**:
+    - On non-critical validation warnings (e.g., minor coverage shortfall), write the aggregated partition to a staging location and mark `status=partial` in the manifest; alert operators.
+    - On critical validation failures (volume mismatch, schema issues), do not promote staging file to active partition; keep staging file for investigation and emit an alert with details. Optionally store a failure artifact for diagnostics.
+
+- **Idempotence & resumability**: Aggregations write to a staging path and produce a per-partition manifest file with progress checkpoints. Re-running aggregation in resume mode should continue from the last successful checkpoint without reprocessing already-verified partitions.
+
+- **Atomic activation**: After successful validation, perform an atomic replace of staging → active partition (same-directory temp + fsync + replace). Update manifest to record `verified_at` and `checksum`.
+
+- **Testing & edge-cases**: Add unit/integration tests that cover:
+    - Duplicated trades and out-of-order arrivals
+    - Late-arriving trades (ensure resume and merge semantics)
+    - DST changes and half-day sessions
+    - Empty intervals, single-trade minutes, and multiple trades per millisecond
+
+These validations are expected to be executed by the aggregator service and its test harness prior to activating any aggregated partition.
     │
     │ xetra-parqed fetch-trades DETR
     ↓

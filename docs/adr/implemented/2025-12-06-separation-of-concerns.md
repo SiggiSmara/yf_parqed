@@ -1,7 +1,6 @@
 # ADR: Package Separation of Concerns
 
-**Date:** 2025-12-06  
-**Status:** Accepted (imports migrated; shims removed in repo)
+## Status: Implemented (2025-12-06)
 
 ## Context
 

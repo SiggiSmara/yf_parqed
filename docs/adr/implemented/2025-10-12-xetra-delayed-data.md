@@ -1,12 +1,10 @@
 # ADR 2025-10-12: Xetra Delayed Data Ingestion
 
-## Status
-
-**In Progress** (Phase 1 Complete, Phase 2 Partial) - Last updated 2025-11-17
+## Status: Impemented (2025-11-17)
 
 - ✅ **Phase 1 Complete**: Foundation infrastructure operational with production-quality test coverage
-- 🚧 **Phase 2 In Progress**: Raw trade storage working, OHLCV aggregation pending
-- 🔲 **Phase 3-5**: Not started (split tracking, production hardening, advanced features)
+- 🚧 **Phase 2-3 To Do**: Deferred to own ADR 
+- 🔲 **Phase 4-5**: On-hold
 
 ## Context
 
@@ -171,6 +169,20 @@ data/de/deutsche-boerse/
 - Tool to backfill adjustment factors for existing Yahoo data
 - Re-aggregation capability using unadjusted prices
 - Automated split detection via price discontinuities (>20% overnight gaps)
+
+### Relation to OHLCV Aggregation ADR
+
+Phase 2 and Phase 3 responsibilities for OHLCV aggregation are covered by the canonical ADR: `docs/adr/2025-12-05-ohlcv-aggregation-service.md`. Implementers should follow that ADR for aggregation algorithms, schema, testing patterns, and staging/atomic-write semantics.
+
+Importantly, Phase 1 of the Xetra implementation already captures raw per-trade files and consolidates them into durable monthly partitions under the `trades/` tree. Because we persist raw trade files (daily landing → monthly consolidation), the short-lived 24-hour window on the Deutsche Börse servers does not imply permanent data loss for our deployment — raw source data is preserved by the pipeline. In other words, aggregation urgency is reduced from a raw-data-retention standpoint; however, implementers should still consider the following Xetra-specific operational requirements when implementing the OHLCV ADR:
+
+- **ISIN→Ticker mapping & `__UNMAPPED__` handling**: Aggregation must support both `venue=.../ticker=...` and `venue=.../isin=...` partitioning. Unmapped ISINs should be written to an `__UNMAPPED__` partition and flagged for manual review.
+- **Venue-first partitioning**: Follow the venue-first layout (`venue=VENUE/.../year=.../month=...`) for aggregated outputs so queries and pruning remain efficient.
+- **Network / downloader considerations**: Rate-limiting and cooldown parameters are primarily relevant to the Xetra **ingestion** (the `XetraFetcher`) where bulk downloads are performed. Aggregation does not itself require the fetcher's download rate limits; however, any aggregation-time external network calls (for example, fetching or refreshing the ISIN→ticker CSV, or enrichment lookups) should reuse the shared downloader configuration and respect throttling/backoff so behavior is consistent across components.
+- **Acceptance & monitoring**: Define capture/completeness thresholds and metrics (minutes captured, rows written, aggregation.duration) and wire alerts if thresholds are not met within expected windows.
+- **Checkpointing & resumability**: Aggregation jobs should be idempotent and resumable (staging manifests, per-partition checkpoints) to support retries without reprocessing large datasets.
+
+Reference: see `docs/adr/2025-12-05-ohlcv-aggregation-service.md` for the canonical aggregation design and tests; this Xetra ADR provides the source-specific constraints that should be applied on top of the OHLCV ADR.
 
 **Rationale**: Immediate value (split awareness and logging) without blocking MVP delivery. Incremental complexity added based on user demand for unadjusted price analysis.
 

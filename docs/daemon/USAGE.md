@@ -1,6 +1,10 @@
 # Daemon Usage Guide
 
-Day-to-day operations, monitoring, and troubleshooting for yf_parqed daemons.
+This document has been split:
+- Yahoo Finance daemon: `USAGE_YFINANCE.md`
+- Xetra daemons (DETR example): `USAGE_XETRA.md`
+
+See those files in this folder for full instructions.
 
 ## Prerequisites
 
@@ -677,7 +681,6 @@ FROM daily_stats
 ORDER BY trade_date DESC
 LIMIT 10;
 EOF
-
 # Overview: Yahoo Finance minute coverage (1m interval)
 # Data is stored as one parquet per ticker per month (monthly partitions). This reports, per trading date, how many unique minutes have at least one trade across any ticker and compares to the theoretical US regular session (09:30-16:00 ET = 390 minutes).
 # If you see "No files found" adjust DATA_ROOT to your working directory (e.g., /opt/yf_parqed/data) and confirm files exist:

@@ -1,8 +1,6 @@
 # ADR 2025-10-12: Partition-Aware Storage
 
-## Status
-
-Accepted (2025-10-12)
+## Status: Implemented (2025-10-19)
 
 ## Current status (2025-10-19)
 

@@ -1,8 +1,6 @@
 # ADR 2025-10-10: Yahoo Finance Data Pipeline
 
-## Status
-
-**Implemented** - Core production system (service-oriented refactoring completed 2025-10-11)
+## Status: Implemented (2025-10-11)
 
 ## Context
 

@@ -1,8 +1,6 @@
 # ADR 2025-10-12: DuckDB Query Layer
 
-## Status
-
-Proposed (2025-10-12)
+## Status: Proposed (2025-10-12)
 
 ## Context
 
