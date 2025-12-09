@@ -20,16 +20,16 @@ This document records user-facing changes by release. Each section should captur
 
 ## 2025-12-06 — Version 0.4.1 (Shim Removal & Package Split)
 
+ - **Separation of Concerns (completion):** Finalized the separation-of-concerns work that began in the previous release: consolidated service boundaries, removed legacy shims, and completed package reorganization so core services (`ConfigService`, `TickerRegistry`, `IntervalScheduler`, `DataFetcher`, `StorageBackend`) are decoupled and importable from canonical modules. See `docs/adr/2025-12-06-separation-of-concerns.md` for details and migration guidance.
 - **Package separation completed:** Removed legacy shim modules now that all imports target `yf_parqed.common`, `yf_parqed.yahoo`, and `yf_parqed.xetra` directly. Tests updated to canonical paths; 402/402 passing.
 - **CLI entrypoints updated:** `yf-parqed` now resolves to `yf_parqed.yahoo.yfinance_cli:app` and `xetra-parqed` to `yf_parqed.xetra.xetra_cli:app`, aligning exposed endpoints with the new package layout.
 - **Metadata:** Bumped version to 0.4.1 to reflect the structural change. No behavioral changes expected beyond import/entrypoint paths.
 
-
+---
 
 ## 2025-12-05 — Version 0.4.0 (Daemon Mode)
 
-
-
+- **Separation of Concerns (initiation):** Began a formal separation-of-concerns effort (see `docs/adr/2025-12-06-separation-of-concerns.md`) to clarify service boundaries between CLI, fetchers, and storage. Work carried across the 0.4.x patch releases and completed in 0.4.1.
 - **Testing**: Expanded test coverage with daemon lifecycle tests, trading hours validation across timezones, and PID file management edge cases. Total: 183 Yahoo Finance tests + 129 Xetra tests.
 
   **Migration Notes**:
