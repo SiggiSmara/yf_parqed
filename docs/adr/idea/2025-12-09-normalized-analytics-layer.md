@@ -185,9 +185,25 @@ data/de/xetra/
 
 **EWMA (Default)**:
 - **Pros**: Simple, well-understood, numpy/pandas native, interpretable half-life parameter
-- **Cons**: Fixed decay rate (not adaptive to volatility)
+- **Cons**: Fixed decay rate (not adaptive to volatility), inherent lag
 - **Use case**: Most securities, baseline for comparison
 - **Parameters**: Fast half-life = 5 days, Slow half-life = 40 days, Weight = 70/30
+
+**HMA (Hull Moving Average)** - Zero-lag alternative:
+- **Formula**: `HMA(n) = WMA(2 * WMA(n/2) - WMA(n), sqrt(n))`
+- **Pros**: Near-zero lag, smooth, responsive to trend changes, well-established (2005)
+- **Cons**: Uses WMA (weighted moving average) which is more computationally expensive than EWMA
+- **Use case**: Real-time trading signals, trend following, fast-moving securities
+- **Parameters**: Period = 20 days for fast, 80 days for slow (or use single period with weighted combo)
+- **Reference**: [Alan Hull's HMA](https://alanhull.com/hull-moving-average)
+
+**TEMA (Triple Exponential Moving Average)** - Zero-lag alternative:
+- **Formula**: `TEMA = 3*EMA - 3*EMA(EMA) + EMA(EMA(EMA))`
+- **Pros**: Reduced lag vs EMA, smoother than HMA, uses familiar EMA building blocks
+- **Cons**: More complex calculation, can overshoot during volatile periods
+- **Use case**: Trend identification with minimal lag, volume baseline with quick response
+- **Parameters**: Period = 20 days (fast), 80 days (slow)
+- **Reference**: [TEMA Technical Definition](https://www.tradingtechnologies.com/xtrader-help/x-study/technical-indicator-definitions/triple-exponential-moving-average-tema/)
 
 **ALMA (Arnaud Legoux Moving Average)**:
 - **Pros**: Lag-free (offset parameter), configurable smoothness (sigma)
@@ -199,17 +215,37 @@ data/de/xetra/
 - **Cons**: Complex calculation, harder to tune
 - **Use case**: Securities with regime changes (low vol → high vol)
 
+**Comparison for Volume Baseline**:
+
+| MA Type | Lag | Smoothness | Fast/Slow Compatible | Complexity | Best For |
+|---------|-----|------------|----------------------|------------|----------|
+| EWMA | Moderate | High | ✅ Yes | Low ⭐ | Default/baseline |
+| HMA | Very Low | Moderate | ✅ Yes (drop-in) | Moderate | Real-time anomaly detection |
+| TEMA | Low | High | ✅ Yes (drop-in) | Moderate | Balance of responsiveness + smoothness |
+| ALMA | Very Low | Configurable | ❌ No (offset/sigma) | High | Advanced tuning |
+| KAMA | Adaptive | Variable | ❌ No (auto-adaptive) | High | Regime-dependent securities |
+
+**Fast/Slow Compatibility**:
+- **EWMA, HMA, TEMA**: Support fast/slow half-life with weighted averaging (e.g., 5-day fast + 40-day slow = 70/30 blend)
+  - EWMA: Half-life converted to span (span = 2 × half-life - 1)
+  - HMA: Half-life used directly as period (WMA window size)
+  - TEMA: Half-life converted to span (uses EMA internally)
+- **ALMA**: Uses single window with offset and sigma parameters (not fast/slow)
+- **KAMA**: Auto-adjusts to volatility, single efficiency ratio (not fast/slow)
+
+**Recommendation**: Start with **EWMA** (default), **HMA** and **TEMA** are drop-in replacements for faster anomaly detection (just change `ma_type='hma'` or `ma_type='tema'`).
+
 **Implementation**:
 ```python
 class VolumeNormalizer:
     def __init__(
         self, 
-        ma_type='ewma', 
-        fast_halflife=5,      # 5-day half-life for fast EWMA
-        slow_halflife=40,     # 40-day half-life for slow EWMA
-        fast_weight=0.7,      # 70% weight on fast EWMA
+        ma_type='ewma',       # 'ewma', 'hma', 'tema' (fast/slow), 'alma', 'kama' (single baseline)
+        fast_halflife=5,      # 5-day half-life for fast MA (EWMA/HMA/TEMA)
+        slow_halflife=40,     # 40-day half-life for slow MA (EWMA/HMA/TEMA)
+        fast_weight=0.7,      # 70% weight on fast MA (EWMA/HMA/TEMA)
         zscore_window=20,     # 20-day window for z-score
-        **kwargs
+        **kwargs              # Additional params for ALMA (offset, sigma), KAMA (fast, slow, pow)
     ):
         self.ma_type = ma_type
         self.fast_halflife = fast_halflife
@@ -223,21 +259,82 @@ class VolumeNormalizer:
         return 2 * halflife_days - 1
     
     def compute_baseline(self, volume_series):
-        if self.ma_type == 'ewma':
-            fast_span = self._halflife_to_span(self.fast_halflife)
-            slow_span = self._halflife_to_span(self.slow_halflife)
+        if self.ma_type in ['ewma', 'hma', 'tema']:
+            # Fast/slow weighted baseline (drop-in replacement for all three)
             
-            fast = volume_series.ewm(span=fast_span).mean()
-            slow = volume_series.ewm(span=slow_span).mean()
+            if self.ma_type == 'ewma':
+                # EWMA: Convert half-life to span parameter
+                fast_span = int(self._halflife_to_span(self.fast_halflife))
+                slow_span = int(self._halflife_to_span(self.slow_halflife))
+                fast = volume_series.ewm(span=fast_span).mean()
+                slow = volume_series.ewm(span=slow_span).mean()
+            elif self.ma_type == 'hma':
+                # HMA: Use half-life directly as period (WMA window size)
+                fast = self._hma(volume_series, period=self.fast_halflife)
+                slow = self._hma(volume_series, period=self.slow_halflife)
+            elif self.ma_type == 'tema':
+                # TEMA: Convert half-life to span parameter (uses EMA internally)
+                fast_span = int(self._halflife_to_span(self.fast_halflife))
+                slow_span = int(self._halflife_to_span(self.slow_halflife))
+                fast = self._tema(volume_series, span=fast_span)
+                slow = self._tema(volume_series, span=slow_span)
             
-            # Weighted average: default 70% fast, 30% slow
+            # Weighted average: default 70% fast, 30% slow (works for all three MA types)
             return self.fast_weight * fast + (1 - self.fast_weight) * slow
+        
         elif self.ma_type == 'alma':
+            # ALMA uses different parameters (window, offset, sigma) - not fast/slow compatible
             return self._alma(volume_series, **self.kwargs)
+        
         elif self.ma_type == 'kama':
+            # KAMA is adaptive (auto-adjusts to volatility) - not fast/slow compatible
             return self._kama(volume_series, **self.kwargs)
+        
         else:
             raise ValueError(f"Unknown MA type: {self.ma_type}")
+    
+    def _wma(self, series, period):
+        """Weighted Moving Average helper for HMA."""
+        weights = np.arange(1, period + 1)
+        return series.rolling(period).apply(
+            lambda x: np.dot(x, weights) / weights.sum(),
+            raw=True
+        )
+    
+    def _hma(self, series, period=20):
+        """
+        Hull Moving Average: Near-zero lag moving average.
+        HMA(n) = WMA(2*WMA(n/2) - WMA(n), sqrt(n))
+        
+        Args:
+            series: Volume series to smooth
+            period: Window size in days (half-life used directly, no conversion needed)
+        """
+        half_period = int(period / 2)
+        sqrt_period = int(np.sqrt(period))
+        
+        wma_half = self._wma(series, half_period)
+        wma_full = self._wma(series, period)
+        raw_hma = 2 * wma_half - wma_full
+        hma = self._wma(raw_hma, sqrt_period)
+        
+        return hma
+    
+    def _tema(self, series, span=20):
+        """
+        Triple Exponential Moving Average: Reduced lag vs standard EMA.
+        TEMA = 3*EMA - 3*EMA(EMA) + EMA(EMA(EMA))
+        
+        Args:
+            series: Volume series to smooth
+            span: EWMA span parameter (already converted from half-life)
+        """
+        ema1 = series.ewm(span=span, adjust=False).mean()
+        ema2 = ema1.ewm(span=span, adjust=False).mean()
+        ema3 = ema2.ewm(span=span, adjust=False).mean()
+        
+        tema = 3 * ema1 - 3 * ema2 + ema3
+        return tema
     
     def compute_zscore(self, relative_volume_adjusted):
         """Compute z-score for outlier detection using separate rolling window."""
@@ -513,6 +610,72 @@ def test_zscore_window_independence():
     # Days before spike should have normal z-scores
     assert zscore.iloc[20:35].abs().max() < 2.0
 
+def test_hma_zero_lag():
+    """Test Hull Moving Average has less lag than EWMA."""
+    # Create trending volume data
+    volume = pd.Series(range(1000, 1100))  # Upward trend
+    
+    normalizer_ewma = VolumeNormalizer(ma_type='ewma', fast_halflife=10)
+    normalizer_hma = VolumeNormalizer(ma_type='hma', fast_halflife=10)
+    
+    baseline_ewma = normalizer_ewma.compute_baseline(volume)
+    baseline_hma = normalizer_hma.compute_baseline(volume)
+    
+    # HMA should be closer to current value (less lag)
+    # Last 10 values: HMA should track closer to actual volume
+    lag_ewma = (volume.iloc[-10:] - baseline_ewma.iloc[-10:]).mean()
+    lag_hma = (volume.iloc[-10:] - baseline_hma.iloc[-10:]).mean()
+    
+    assert lag_hma < lag_ewma  # HMA has less lag
+    assert lag_hma < 5  # HMA is very close to current values
+
+def test_tema_reduced_lag():
+    """Test TEMA has reduced lag compared to single EMA."""
+    volume = pd.Series(range(1000, 1100))  # Upward trend
+    
+    normalizer_ema = VolumeNormalizer(ma_type='ewma', fast_halflife=10)
+    normalizer_tema = VolumeNormalizer(ma_type='tema', fast_halflife=10)
+    
+    baseline_ema = normalizer_ema.compute_baseline(volume)
+    baseline_tema = normalizer_tema.compute_baseline(volume)
+    
+    # TEMA should be closer to current value than single EMA
+    lag_ema = (volume.iloc[-10:] - baseline_ema.iloc[-10:]).mean()
+    lag_tema = (volume.iloc[-10:] - baseline_tema.iloc[-10:]).mean()
+    
+    assert lag_tema < lag_ema  # TEMA has less lag
+    
+def test_ma_type_selection():
+    """Test different MA types can be selected."""
+    volume = pd.Series([1000, 1100, 1050, 1200, 1150])
+    
+    for ma_type in ['ewma', 'hma', 'tema']:
+        normalizer = VolumeNormalizer(ma_type=ma_type)
+        baseline = normalizer.compute_baseline(volume)
+        assert len(baseline) == len(volume)
+        assert baseline.notna().any()  # Should have some valid values
+
+def test_fast_slow_compatibility():
+    """Test HMA and TEMA work as drop-in replacements for EWMA with fast/slow."""
+    volume = pd.Series(range(1000, 1100))
+    
+    # All three should accept same fast/slow parameters
+    for ma_type in ['ewma', 'hma', 'tema']:
+        normalizer = VolumeNormalizer(
+            ma_type=ma_type,
+            fast_halflife=5,
+            slow_halflife=40,
+            fast_weight=0.7
+        )
+        baseline = normalizer.compute_baseline(volume)
+        
+        # Should produce valid baseline with same parameter interface
+        assert len(baseline) == len(volume)
+        assert baseline.notna().any()
+        
+        # Baseline should be reasonable (not extreme)
+        assert 500 < baseline.iloc[-1] < 1500
+
 def test_seasonality_normalization():
     """Test seasonality adjustment removes intraday patterns."""
     # Create synthetic data with known seasonality
@@ -587,17 +750,29 @@ def test_normalize_ohlcv_data(tmp_path):
 
 **Simple MA**: `volume / sma(volume, 20)`
 - **Pros**: Simple, interpretable
-- **Cons**: Lags recent changes
+- **Cons**: Significant lag, equal weighting of all days in window
 
-**EWMA**: `volume / ewma(volume, span=20)`
-- **Pros**: Recent data weighted more
-- **Cons**: Still lags, uniform decay
+**EWMA (default)**: `volume / ewma(volume, span=20)`
+- **Pros**: Recent data weighted more, standard approach
+- **Cons**: Still has lag, uniform exponential decay
+
+**HMA**: `volume / hma(volume, period=20)`
+- **Pros**: Near-zero lag, responsive to trend changes
+- **Cons**: More computationally expensive (uses WMA), can be sensitive to noise
+
+**TEMA**: `volume / tema(volume, period=20)`
+- **Pros**: Reduced lag vs EMA, smoother than HMA, good balance
+- **Cons**: Can overshoot during high volatility
 
 **Z-score + Seasonality**: `(volume / baseline - mean) / std`, adjusted for intraday patterns
-- **Pros**: Dimensionless, removes seasonality, comparable
-- **Cons**: More complex, requires historical data
+- **Pros**: Dimensionless, removes seasonality, comparable across securities
+- **Cons**: Most complex, requires historical data for both baseline and seasonality
 
-**Decision**: Use Z-score + seasonality for maximum comparability, provide `relative_volume` for simpler use cases.
+**Decision**: 
+- **Default**: EWMA (fast/slow weighted) + seasonality + z-score for maximum comparability
+- **Drop-in alternatives**: HMA or TEMA for users needing faster anomaly detection (real-time trading, news-driven events) - use same fast/slow parameters
+- **Advanced alternatives**: ALMA (configurable lag), KAMA (volatility-adaptive) - use different parameter scheme
+- Provide `relative_volume` (simpler) and `volume_zscore` (outlier detection) as separate outputs
 
 ## Work Log
 
