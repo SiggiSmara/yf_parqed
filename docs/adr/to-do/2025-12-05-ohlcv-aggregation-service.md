@@ -92,12 +92,70 @@ data/de/xetra/stocks_1d/ticker=DE0005190003/...
 
 #### 4. Corporate Actions
 
-**Decision**: Naive aggregation without adjustments (Phase 2), add adjustment capability later.
+**Decision**: Store unadjusted prices in OHLCV aggregates. Adjustment handled downstream in normalized analytics layer.
 
 **Rationale**:
-- **Phase 2 Goal**: Prove aggregation pipeline works end-to-end
+- **Phase 2 Goal**: Prove aggregation pipeline works end-to-end with unadjusted data
 - **Data availability**: Xetra raw trades don't include split/dividend metadata
 - **External dependency**: Requires additional data source for corporate actions
+- **⚡ Key Insight**: Log returns (normalized analytics layer) **eliminate the need for split adjustments** in most analytical workflows
+
+**Why Log Returns Solve the Split Problem**:
+
+```python
+# Example: 2-for-1 stock split on Day 2
+# Unadjusted prices: [100, 50, 51, 52]
+# After split: price halves but shares double (value preserved)
+
+# Traditional approach: Adjust historical prices backward
+# Adjusted prices: [50, 50, 51, 52]  # ← Requires tracking splits
+
+# Normalized analytics approach: Use log returns directly
+log_returns = ln([100, 50, 51, 52] / [NaN, 100, 50, 51])
+            = [NaN, -0.693, 0.0198, 0.0196]
+
+# The split creates a -69.3% "return" that is clearly an outlier
+# Detection: if |log_return| > 0.5 (>50%), flag as corporate action
+# Then: exclude or interpolate that day's return
+
+# Result: Returns-based analysis works without adjustment metadata!
+```
+
+**Corporate Action Detection via Returns**:
+
+1. **Splits**: Overnight price changes >30% (|log_return| > 0.26) → likely split/reverse split
+2. **Dividends**: Moderate drops (~1-5%) on ex-dividend dates → can be ignored or flagged
+3. **Mergers**: Extreme price changes + volume spikes → flag for manual review
+
+**Workflow**:
+
+```python
+# In OHLCVAggregator: Store raw unadjusted prices
+ohlcv = aggregate_trades_to_ohlcv(raw_trades)  # No adjustment
+save_to_storage(ohlcv, dataset='stocks_1m')    # Raw data preserved
+
+# In NormalizedAnalyticsService: Detect and handle corporate actions
+log_returns = compute_log_returns(ohlcv['close'])
+corporate_action_days = detect_outliers(log_returns, threshold=0.26)  # >30% overnight
+log_returns_cleaned = interpolate_or_exclude(log_returns, corporate_action_days)
+
+# Analyst uses cleaned returns, never sees the split
+volatility = log_returns_cleaned.std()
+```
+
+**Trade-offs**:
+
+| Approach | Pros | Cons |
+|----------|------|------|
+| **Traditional (adjust prices)** | Continuous price series, simple charting | Requires split metadata, backfill historical data, cannot reconstruct unadjusted |
+| **Normalized (detect via returns)** | No metadata needed, preserves raw data, automated detection | Charts show discontinuities, requires outlier handling |
+
+**Decision for Phase 2**: Use normalized analytics approach
+- Store unadjusted prices in OHLCV (simple, no external dependencies)
+- Detect corporate actions via return outliers in normalized layer
+- Optional Phase 3: Integrate split metadata for improved accuracy (if user needs adjusted price charts)
+
+**Consequence**: Most analytical use cases (volatility, correlation, risk metrics) work immediately without split tracking infrastructure
 - **Complexity**: Adjustment logic is intricate, needs separate ADR and implementation phase
 
 **Phase 3 Roadmap**:
