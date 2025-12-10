@@ -367,7 +367,12 @@ do_update() {
     systemctl start yf-parqed 2>/dev/null || log_warn "yf-parqed not enabled"
     
     # Start each enabled xetra service individually (glob doesn't work with 'start')
-    enabled_xetra=$(systemctl list-unit-files 'xetra@*.service' --state=enabled --no-legend 2>/dev/null | awk '{print $1}' | sed 's/.service$//')
+    enabled_xetra=$(systemctl list-unit-files xetra@*.service --state=enabled,enabled-runtime --no-legend 2>/dev/null | awk '{print $1}' | sed 's/.service$//')
+    if [ -z "$enabled_xetra" ]; then
+        # Fallback: detect enabled instances via symlinks in multi-user.target.wants
+        enabled_xetra=$(ls /etc/systemd/system/multi-user.target.wants/xetra@*.service 2>/dev/null | xargs -r -n1 basename | sed 's/.service$//')
+    fi
+
     if [ -n "$enabled_xetra" ]; then
         for service in $enabled_xetra; do
             systemctl start "$service" 2>/dev/null || log_warn "Failed to start $service"
