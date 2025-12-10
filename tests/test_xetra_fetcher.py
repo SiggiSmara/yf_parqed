@@ -313,105 +313,39 @@ class TestXetraFetcher:
         assert call_kwargs.get("follow_redirects") is True
 
     def test_timezone_conversion_winter_cet(self):
-        """Test UTC to CET conversion in winter (UTC+1)."""
+        """Trading-hours filtering is disabled; always returns True."""
         fetcher = XetraFetcher(filter_empty_files=True)
 
-        # November 3, 2025 is in CET (UTC+1)
-        # UTC 08:00 = CET 09:00 (within 07:30-17:30 window)
-        assert (
-            fetcher.is_within_trading_hours(
-                "DETR-posttrade-2025-11-03T08_00.json.gz", "DETR"
-            )
-            is True
-        )
-
-        # UTC 07:30 = CET 08:30 (within 07:30-17:30 window)
-        assert (
-            fetcher.is_within_trading_hours(
-                "DETR-posttrade-2025-11-03T07_30.json.gz", "DETR"
-            )
-            is True
-        )
-
-        # UTC 16:30 = CET 17:30 (within 07:30-17:30 window)
-        assert (
-            fetcher.is_within_trading_hours(
-                "DETR-posttrade-2025-11-03T16_30.json.gz", "DETR"
-            )
-            is True
-        )
-
-        # UTC 01:00 = CET 02:00 (outside window)
         assert (
             fetcher.is_within_trading_hours(
                 "DETR-posttrade-2025-11-03T01_00.json.gz", "DETR"
             )
-            is False
+            is True
         )
-
-        # UTC 05:00 = CET 06:00 (outside window)
         assert (
             fetcher.is_within_trading_hours(
-                "DETR-posttrade-2025-11-03T05_00.json.gz", "DETR"
+                "DETR-posttrade-2025-11-03T23_59.json.gz", "DETR"
             )
-            is False
+            is True
         )
-
-        # UTC 18:00 = CET 19:00 (outside window)
-        assert (
-            fetcher.is_within_trading_hours(
-                "DETR-posttrade-2025-11-03T18_00.json.gz", "DETR"
-            )
-            is False
-        )
-
         fetcher.close()
 
     def test_timezone_conversion_summer_cest(self):
-        """Test UTC to CEST conversion in summer (UTC+2)."""
+        """Trading-hours filtering is disabled; always returns True."""
         fetcher = XetraFetcher(filter_empty_files=True)
 
-        # July 15, 2025 is in CEST (UTC+2)
-        # UTC 07:00 = CEST 09:00 (within 07:30-17:30 window)
         assert (
             fetcher.is_within_trading_hours(
-                "DETR-posttrade-2025-07-15T07_00.json.gz", "DETR"
+                "DETR-posttrade-2025-07-15T00_00.json.gz", "DETR"
             )
             is True
         )
-
-        # UTC 06:30 = CEST 08:30 (within 07:30-17:30 window)
         assert (
             fetcher.is_within_trading_hours(
-                "DETR-posttrade-2025-07-15T06_30.json.gz", "DETR"
+                "DETR-posttrade-2025-07-15T23_59.json.gz", "DETR"
             )
             is True
         )
-
-        # UTC 15:30 = CEST 17:30 (within 07:30-17:30 window)
-        assert (
-            fetcher.is_within_trading_hours(
-                "DETR-posttrade-2025-07-15T15_30.json.gz", "DETR"
-            )
-            is True
-        )
-
-        # UTC 04:00 = CEST 06:00 (outside window)
-        assert (
-            fetcher.is_within_trading_hours(
-                "DETR-posttrade-2025-07-15T04_00.json.gz", "DETR"
-            )
-            is False
-        )
-
-        # UTC 17:00 = CEST 19:00 (outside window)
-        assert (
-            fetcher.is_within_trading_hours(
-                "DETR-posttrade-2025-07-15T17_00.json.gz", "DETR"
-            )
-            is False
-        )
-
         fetcher.close()
 
     def test_trading_hours_boundary_conditions(self):
@@ -427,28 +361,18 @@ class TestXetraFetcher:
             is True
         )
 
-        # Just outside lower boundary
+        # Boundaries are ignored when filtering disabled
         assert (
             fetcher.is_within_trading_hours(
-                "DETR-posttrade-2025-11-03T07_29.json.gz", "DETR"
-            )
-            is False
-        )
-
-        # Just inside upper boundary (18:00 CET = 17:00 UTC)
-        assert (
-            fetcher.is_within_trading_hours(
-                "DETR-posttrade-2025-11-03T17_00.json.gz", "DETR"
+                "DETR-posttrade-2025-11-03T06_29.json.gz", "DETR"
             )
             is True
         )
-
-        # Just outside upper boundary
         assert (
             fetcher.is_within_trading_hours(
-                "DETR-posttrade-2025-11-03T17_01.json.gz", "DETR"
+                "DETR-posttrade-2025-11-03T17_31.json.gz", "DETR"
             )
-            is False
+            is True
         )
 
         fetcher.close()
@@ -561,12 +485,13 @@ class TestXetraFetcher:
                 is True
             )
 
-            # Early morning: UTC 01:00 = CET 02:00 (outside window)
+            # Early morning: UTC 01:00 = CET 02:00 (previously outside window)
+            # Now permitted because trading-hour filtering is disabled for downloads.
             assert (
                 fetcher.is_within_trading_hours(
                     f"{venue}-posttrade-2025-11-03T01_00.json.gz", venue
                 )
-                is False
+                is True
             )
 
         fetcher.close()
@@ -603,8 +528,8 @@ class TestXetraFetcher:
                 "XXXX-posttrade-2025-11-03T10_00.json.gz", "XXXX"
             )
             assert result is True
-            mock_logger.warning.assert_called_once()
-            assert "Unknown venue XXXX" in str(mock_logger.warning.call_args)
+            # Filtering is disabled, so we do not warn on unknown venue codes.
+            mock_logger.warning.assert_not_called()
 
         fetcher.close()
 

@@ -141,6 +141,7 @@ du -h --max-depth=4 /var/lib/yf_parqed/data | sort -h
 ```bash
 # Follow all daemon logs
 sudo journalctl -u yf-parqed -u 'xetra@*' -f
+sudo journalctl -u 'xetra@*' -f
 
 # Check for errors in last hour
 sudo journalctl -u yf-parqed -u 'xetra@*' --since "1 hour ago" | grep -i error

@@ -450,8 +450,7 @@ xetra-parqed \
 # For production with proper permissions, use /run/xetra/detr.pid
 # (requires directory creation: sudo mkdir -p /run/xetra && sudo chown xetra:xetra /run/xetra)
 
-# Note: By default, only runs during 08:30-18:00 CET/CEST
-# Use --active-hours "00:00-23:59" for 24/7 operation
+# Default behavior: runs 24/7. Use --active-hours to narrow (e.g., "08:30-18:00").
 ```
 
 ## Daemon Mode Features
@@ -474,19 +473,19 @@ Log format includes timestamp, level, location, and message:
 
 ### 2. Scheduling with Trading Hours Awareness
 - **Interval-based**: Run every N hours (default: 1 hour)
-- **Trading hours**: Only runs during market hours (08:30-18:00 CET/CEST by default)
-- **Smart sleeping**: Waits outside trading hours, checks for shutdown every minute
+- **Trading hours**: Default is 24/7; provide `--active-hours` to narrow the window
+- **Smart sleeping**: If an active-hours window is set, sleeps outside it and checks for shutdown every minute
 - **Error recovery**: Continues running even if individual fetches fail
 - **Timezone aware**: Handles CET/CEST transitions automatically
 
 ```bash
-# Run every 2 hours during trading hours (default)
+# Run every 2 hours (24/7 default)
 xetra-parqed --log-file logs/xetra.log fetch-trades DETR --daemon --interval 2
 
-# Override to run 24/7
-xetra-parqed --log-file logs/xetra.log fetch-trades DETR --daemon --interval 1 --active-hours "00:00-23:59"
+# Narrow to trading hours
+xetra-parqed --log-file logs/xetra.log fetch-trades DETR --daemon --interval 1 --active-hours "08:30-18:00"
 
-# Custom hours (e.g., pre-market + trading + post-market)
+# Custom window (e.g., pre/post buffers)
 xetra-parqed --log-file logs/xetra.log fetch-trades DETR --daemon --interval 1 --active-hours "07:00-19:00"
 ```
 

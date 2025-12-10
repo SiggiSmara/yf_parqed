@@ -18,6 +18,8 @@ Rate limit recovery: Wait at least 60 seconds between full live test runs.
 
 from datetime import datetime, timedelta
 
+import os
+
 import pandas as pd
 import pytest
 
@@ -299,6 +301,11 @@ class TestXetraLiveAPI:
 
         NOTE: Only lists files (no downloads) to avoid rate limiting.
         """
+        if os.getenv("RUN_XETRA_MULTI_VENUE", "0") != "1":
+            pytest.skip(
+                "Skip multi-venue live listing by default (set RUN_XETRA_MULTI_VENUE=1 to run)"
+            )
+
         fetcher = XetraFetcher()
 
         venues = ["DETR", "DFRA", "DGAT", "DEUR"]

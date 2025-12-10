@@ -19,7 +19,6 @@ app = typer.Typer()
 def _check_and_write_pid_file(pid_file: Path) -> None:
     """
     Check if another instance is running and write PID file.
-
     Args:
         pid_file: Path to PID file
 
@@ -195,8 +194,8 @@ def fetch_trades(
     source = "xetra"
 
     # Initialize trading hours checker
-    # Default to Xetra trading hours (08:30-18:00 CET/CEST)
-    default_hours = active_hours or "08:30-18:00"
+    # Default to 24/7 operation; callers can still supply narrower windows
+    default_hours = active_hours or "00:00-23:59"
     start_time, end_time = TradingHoursChecker.parse_active_hours(default_hours)
     hours_checker = TradingHoursChecker(
         start_time=start_time,
@@ -219,6 +218,15 @@ def fetch_trades(
     if daemon:
         signal.signal(signal.SIGTERM, signal_handler)
         signal.signal(signal.SIGINT, signal_handler)
+
+    def _sleep_with_shutdown(total_seconds: int, check_interval: int = 60) -> None:
+        """Sleep in small increments while honoring shutdown requests."""
+
+        remaining = total_seconds
+        while remaining > 0 and not shutdown_requested["flag"]:
+            sleep_chunk = min(check_interval, remaining)
+            time.sleep(sleep_chunk)
+            remaining -= sleep_chunk
 
     def run_fetch_once():
         """Execute one fetch cycle."""
@@ -277,51 +285,50 @@ def fetch_trades(
                 f"PID: {Path('/proc/self').resolve().name if Path('/proc/self').exists() else 'unknown'}"
             )
 
-            # Check if this is initial startup with no data
-            # If so, fetch all available data (within trading hours)
             config = ConfigService(base_path=wrk_dir)
             root_path = wrk_dir / "data"
 
             def make_service() -> XetraService:
                 return XetraService(config=config, root_path=root_path)
 
+            initial_fetch_performed = False
             with make_service() as service:
                 if not service.has_any_data(venue, market, source):
-                    logger.info(f"No existing data found for {venue} - performing initial fetch of all available data")
+                    logger.info(
+                        f"No existing data found for {venue} - performing initial fetch of all available data"
+                    )
                     try:
-                        logger.info("Fetching all available data (API is available 24/7)...")
+                        logger.info(
+                            "Fetching all available data (API is available 24/7)..."
+                        )
                         run_fetch_once()
+                        initial_fetch_performed = True
                         logger.info("Initial data fetch completed successfully")
                     except Exception as e:
-                        logger.error(f"Error during initial data fetch: {e}", exc_info=True)
+                        logger.error(
+                            f"Error during initial data fetch: {e}", exc_info=True
+                        )
                         logger.info("Will retry on next cycle")
 
             run_count = 0
             while not shutdown_requested["flag"]:
-                # Check if within active hours
+                if initial_fetch_performed and run_count == 0:
+                    logger.info(
+                        "Initial fetch completed; waiting until next scheduled interval before daemon cycles"
+                    )
+                    _sleep_with_shutdown(interval * 3600)
+                    if shutdown_requested["flag"]:
+                        break
+
                 if not hours_checker.is_within_hours():
                     wait_seconds = hours_checker.seconds_until_active()
                     next_active = hours_checker.next_active_time()
                     logger.info(
                         f"Outside active hours. Waiting until {next_active.strftime('%Y-%m-%d %H:%M:%S %Z')}"
                     )
-
-                    # Sleep in small intervals to check for shutdown
-                    sleep_interval = 60  # Check every minute
-                    for _ in range(int(wait_seconds / sleep_interval)):
-                        if shutdown_requested["flag"]:
-                            break
-                        time.sleep(sleep_interval)
-
-                    # Sleep remaining time
-                    if not shutdown_requested["flag"]:
-                        remaining = wait_seconds % sleep_interval
-                        if remaining > 0:
-                            time.sleep(remaining)
-
+                    _sleep_with_shutdown(int(wait_seconds), check_interval=60)
                     if shutdown_requested["flag"]:
                         break
-
                     logger.info("Entering active hours, starting fetch cycle")
 
                 run_count += 1
@@ -335,12 +342,10 @@ def fetch_trades(
                     logger.error(
                         f"Error in daemon run #{run_count}: {e}", exc_info=True
                     )
-                    # Continue running despite errors
 
                 if shutdown_requested["flag"]:
                     break
 
-                # Calculate next run time, but avoid sleeping past market close
                 base_sleep_seconds = interval * 3600
                 close_remaining = hours_checker.seconds_until_close()
                 if close_remaining > 0:
@@ -349,33 +354,17 @@ def fetch_trades(
                 next_run_local = datetime.now(hours_checker.system_tz) + timedelta(
                     seconds=base_sleep_seconds
                 )
-
-                # Log completion message
                 logger.info(
                     f"=== Daemon run #{run_count} completed. "
                     f"Next scheduled: {next_run_local.strftime('%Y-%m-%d %H:%M:%S %Z')} ==="
                 )
 
-                # Sleep in small intervals to check for shutdown signal
-                sleep_seconds = base_sleep_seconds
-                sleep_interval = 10  # Check every 10 seconds
-                for _ in range(int(sleep_seconds / sleep_interval)):
-                    if shutdown_requested["flag"]:
-                        break
-                    time.sleep(sleep_interval)
-
-                # Sleep remaining time
-                if not shutdown_requested["flag"]:
-                    remaining = sleep_seconds % sleep_interval
-                    if remaining > 0:
-                        time.sleep(remaining)
+                _sleep_with_shutdown(int(base_sleep_seconds), check_interval=10)
 
             logger.info("Daemon shutting down gracefully")
         else:
-            # One-time run
             summary = run_fetch_once()
 
-            # Show summary for one-time runs
             if summary and not no_store:
                 if summary["dates_partial"]:
                     typer.echo(
@@ -399,7 +388,6 @@ def fetch_trades(
                     )
                     typer.echo("Re-run the command to resume from where you left off")
     finally:
-        # Cleanup PID file
         if pid_file and pid_file.exists():
             pid_file.unlink()
             logger.info(f"PID file removed: {pid_file}")

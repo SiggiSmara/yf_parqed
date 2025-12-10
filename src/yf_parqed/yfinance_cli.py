@@ -265,14 +265,13 @@ def update_data(
 
     Basic Usage:
         yf-parqed update-data                    # Update once
-        yf-parqed update-data --daemon           # Run continuously during trading hours
+        yf-parqed update-data --daemon           # Run continuously (24/7 by default)
 
     Daemon Mode:
         Use --daemon to run continuously, fetching data every --interval hours.
-        By default, only runs during NYSE regular trading hours (09:30-16:00 US/Eastern).
+        Trading hours gating is optional; by default the daemon runs 24/7.
 
-        Trading Hours:
-        • Regular: 09:30-16:00 (default)
+        Trading Hours (optional):
         • Extended: 04:00-20:00 (--extended-hours)
         • Custom: --trading-hours "HH:MM-HH:MM"
 
@@ -302,23 +301,27 @@ def update_data(
     if pid_file and daemon:
         _check_and_write_pid_file(pid_file)
 
-    # Determine trading hours
+    # Determine trading hours (optional gating for daemon scheduling)
+    trading_hours_enabled = False
     if trading_hours:
         start_time, end_time = TradingHoursChecker.parse_active_hours(trading_hours)
+        trading_hours_enabled = True
     elif extended_hours:
         # Extended hours: pre-market + regular + after-hours (04:00-20:00)
         start_time, end_time = dt_time(4, 0), dt_time(20, 0)
+        trading_hours_enabled = True
     else:
-        # Regular NYSE hours (09:30-16:00)
-        start_time, end_time = dt_time(9, 30), dt_time(16, 0)
+        # Default: run 24/7 with no trading-hours gating
+        start_time, end_time = dt_time(0, 0), dt_time(23, 59, 59)
 
-    # Create trading hours checker
-    hours_checker = TradingHoursChecker(
-        start_time=start_time,
-        end_time=end_time,
-        market_timezone=market_timezone,
-        system_timezone=system_timezone,
-    )
+    hours_checker = None
+    if trading_hours_enabled:
+        hours_checker = TradingHoursChecker(
+            start_time=start_time,
+            end_time=end_time,
+            market_timezone=market_timezone,
+            system_timezone=system_timezone,
+        )
 
     # Ticker maintenance tracking
     last_maintenance = {"time": None}
@@ -493,7 +496,10 @@ def update_data(
     try:
         if daemon:
             logger.info(f"Starting daemon mode: updating every {interval} hour(s)")
-            logger.info(f"Trading hours: {hours_checker._calculate_local_hours()}")
+            if hours_checker:
+                logger.info(f"Trading hours: {hours_checker._calculate_local_hours()}")
+            else:
+                logger.info("Trading hours: disabled (running 24/7)")
             logger.info(f"Ticker maintenance: {ticker_maintenance}")
             logger.info(
                 f"PID: {Path('/proc/self').resolve().name if Path('/proc/self').exists() else os.getpid()}"
@@ -502,7 +508,7 @@ def update_data(
             run_count = 0
             while not shutdown_requested["flag"]:
                 # Check if within trading hours
-                if not hours_checker.is_within_hours():
+                if hours_checker and not hours_checker.is_within_hours():
                     wait_seconds = hours_checker.seconds_until_active()
                     next_active = hours_checker.next_active_time()
                     logger.info(
@@ -547,9 +553,10 @@ def update_data(
 
                 # Calculate next run time, capped so we do not oversleep past close
                 base_sleep_seconds = interval * 3600
-                close_remaining = hours_checker.seconds_until_close()
-                if close_remaining > 0:
-                    base_sleep_seconds = min(base_sleep_seconds, close_remaining)
+                if hours_checker:
+                    close_remaining = hours_checker.seconds_until_close()
+                    if close_remaining > 0:
+                        base_sleep_seconds = min(base_sleep_seconds, close_remaining)
 
                 next_run = datetime.now() + timedelta(seconds=base_sleep_seconds)
                 logger.info(

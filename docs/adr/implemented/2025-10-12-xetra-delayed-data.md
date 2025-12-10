@@ -270,11 +270,10 @@ xetra-parqed update-data --backfill-hours 24
 
 **Implementation** (Completed 2025-12-01):
 
-**Daemon Features**:
 - **Continuous operation**: Run `xetra-parqed fetch-trades DETR --daemon --interval 1` for unattended collection
-- **Trading hours awareness**: Active 08:30-18:00 CET/CEST by default (aligned with Xetra market hours)
-- **Smart sleeping**: Outside active hours, daemon sleeps and checks for shutdown every minute (avoids API calls when no data available)
-- **Configurable hours**: `--active-hours "07:00-20:00"` or `--active-hours "00:00-23:59"` for custom schedules
+- **Trading hours awareness**: Defaults to 24/7; use `--active-hours` to narrow windows (e.g., `"07:00-20:00"`) when desired
+- **Smart sleeping**: Respects active-hours window when provided and checks for shutdown every minute
+- **Configurable hours**: `--active-hours` remains available for custom schedules
 - **Timezone handling**: Automatic CET/CEST transitions (Europe/Berlin timezone)
 
 **Operational Hardening**:
@@ -297,7 +296,7 @@ xetra-parqed update-data --backfill-hours 24
 
 **Rationale**:
 - **24-hour retention window**: Deutsche Börse data expires after ~24 hours, requires automated collection without manual intervention
-- **Trading hours optimization**: Reduces API calls by 56.5% (no data updates outside 08:30-18:00), prevents unnecessary weekend/holiday runs
+- **24/7 default**: Avoids gaps when late files arrive; operators can still narrow with `--active-hours` for cost control
 - **Production reliability**: PID management prevents overlapping runs, signal handling enables zero-downtime restarts, file logging enables debugging
 - **Operational monitoring**: DuckDB queries show daily trade counts, minute coverage, volume metrics for validation
 
@@ -310,7 +309,7 @@ xetra-parqed update-data --backfill-hours 24
 | Alternative | Pros | Cons | Decision |
 |-------------|------|------|----------|
 | **Cron scheduling** | Simple, widely understood, no daemon code | No graceful shutdown, run-lock coordination needed, harder error handling | ❌ Rejected - daemon mode provides better UX |
-| **24/7 operation** | Maximally available, catches data immediately | Wastes resources, 56.5% unnecessary API calls, weekend/holiday runs find no data | ❌ Rejected - trading hours default, 24/7 available via flag |
+| **24/7 operation** | Maximally available, catches data immediately | Potentially more API calls; mitigate by optional `--active-hours` | ✅ Selected as default with optional narrowing |
 | **External orchestration** (Airflow, Prefect) | Enterprise scheduling, complex workflows, monitoring dashboards | Deployment complexity, additional dependencies, overkill for single service | 🔮 Deferred - daemon sufficient for MVP |
 
 **Documentation**: Complete guide in `/docs/DAEMON_MODE.md` with systemd configuration, Docker examples, monitoring queries, troubleshooting steps.

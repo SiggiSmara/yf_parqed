@@ -12,17 +12,14 @@ from ..common.rate_limiter import CallableRateLimiter, RateLimiter
 class XetraFetcher:
     """Fetch and decompress Xetra trade data files from Deutsche Börse API."""
 
-    # Venue-specific trading hours (HH:MM format, CET/CEST)
-    # Based on empirical testing - includes 30min safety margins
-    # NOTE: File timestamps are in UTC, these hours are in Europe/Berlin timezone
-    # Xetra continuous trading: 09:00-17:30 CET (verified 2025-11-03)
-    # No warmup data found in 08:50-09:00 window - trades start at 09:00 sharp
+    # Optional venue trading hours (HH:MM, CET/CEST) used only when
+    # filter_empty_files=True. Defaults now download ALL files (no filtering),
+    # because file timestamps are capture times, not trade times.
     VENUE_TRADING_HOURS = {
-        "DETR": ("08:00", "18:30"),  # Xetra: data 09:00-17:30 CET, +30min safety
-        "DFRA": ("08:30", "18:00"),  # Frankfurt: assumed same as DETR
-        "DGAT": ("08:30", "18:00"),  # XETRA GATEWAYS: assumed same as DETR
-        "DEUR": ("08:30", "18:00"),  # Eurex: assumed same as DETR
-        # Add more venues as needed with their specific hours
+        "DETR": ("07:30", "18:30"),
+        "DFRA": ("07:30", "18:30"),
+        "DGAT": ("07:30", "18:30"),
+        "DEUR": ("07:30", "18:30"),
     }
 
     def __init__(
@@ -31,7 +28,7 @@ class XetraFetcher:
         inter_request_delay: float = 0.6,
         burst_size: int = 30,
         burst_cooldown: int = 35,
-        filter_empty_files: bool = True,
+        filter_empty_files: bool = False,
     ):
         """
         Initialize XetraFetcher with empirically validated rate limiting.
@@ -41,7 +38,7 @@ class XetraFetcher:
             inter_request_delay: Delay between consecutive requests in seconds (default: 0.6)
             burst_size: Number of requests before triggering cooldown (default: 30)
             burst_cooldown: Cooldown period in seconds after burst (default: 35)
-            filter_empty_files: Skip files outside trading hours (default: True)
+            filter_empty_files: Skip files outside trading hours (default: False)
 
         NOTE: Rate limiting based on empirical testing (Nov 2025):
         - 0.6s inter-request delay + 35s cooldown after 30 requests = stable, zero 429 errors
@@ -49,20 +46,17 @@ class XetraFetcher:
         - Validated over 810 files (3 stress tests × 9 bursts × 30 files) with zero failures
         - Burst cooldown accounts for API's cumulative rate limiting window
 
-        NOTE: Trading hours filtering (2025-11-03 empirical testing on DETR):
-        - Continuous trading: 09:00-17:30 CET (no warmup data in 08:50-09:00 window)
-        - Data found: UTC 08:00-16:30 = CET 09:00-17:30 (1,169-1,790 trades per file)
-        - Empty files: 20 bytes, 0 trades (before 09:00 and after 17:30 CET)
-        - Potential savings: ~56.5% of files can be skipped
-        - Safety margin: 30 minutes before/after observed data window (07:30-18:00 CET)
-        - Implementation: Files filtered to 08:30-18:00 CET/CEST window by default
-        - IMPORTANT: File timestamps are UTC, automatically converted to Europe/Berlin timezone
+                NOTE: Default behavior downloads ALL files (no file-time filtering).
+                - File timestamps are capture times, not trade times; late files may contain
+                    valid trades from the prior 30-60 minutes.
+                - Optional filtering can be re-enabled with filter_empty_files=True, using
+                    VENUE_TRADING_HOURS as the allow-list.
 
         Example:
             Default (0.6s delay + 35s cooldown after 30 files):
             >>> fetcher = XetraFetcher()
             >>> # Empirically validated: zero 429 errors over 810 files
-            >>> # Automatically filters files to 08:30-18:00 trading window
+            >>> # Downloads ALL files (no trading-hour filtering)
 
             Faster (shorter delay, may require longer cooldown):
             >>> fetcher = XetraFetcher(inter_request_delay=0.25, burst_cooldown=46)
@@ -86,8 +80,8 @@ class XetraFetcher:
         self.last_request_time: datetime | None = None
         self.rate_limiter: RateLimiter = CallableRateLimiter(self.enforce_limits)
 
-        # Trading hours filtering
-        self.filter_empty_files = filter_empty_files
+        # Trading hours filtering is disabled for downloads; daemon scheduling may still use hours
+        self.filter_empty_files = False
     def enforce_limits(self):
         """
         Enforce empirically validated rate limiting.
@@ -151,6 +145,7 @@ class XetraFetcher:
             >>> fetcher.is_within_trading_hours('DETR-posttrade-2025-11-03T01_00.json.gz', 'DETR')
             False
         """
+        # Filtering disabled → always allow
         if not self.filter_empty_files:
             return True
 
@@ -279,9 +274,13 @@ class XetraFetcher:
                         # Fallback if format doesn't match expectations
                         clean_filename = raw_filename
 
-                    # Filter by trading hours if enabled
-                    if self.is_within_trading_hours(clean_filename, venue):
-                        all_files.append(clean_filename)
+                    # By default, keep all files. Optional filtering only when requested.
+                    if self.filter_empty_files and not self.is_within_trading_hours(
+                        clean_filename, venue
+                    ):
+                        continue
+
+                    all_files.append(clean_filename)
 
                 logger.info(
                     f"Found {len(raw_filenames)} total {file_type} files for {venue}"

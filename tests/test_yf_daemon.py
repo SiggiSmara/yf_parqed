@@ -289,6 +289,34 @@ class TestTradingHoursIntegration:
     """Test daemon respects trading hours."""
 
     @freeze_time("2025-12-04 08:00:00-05:00")  # 08:00 EST (before market open)
+    def test_daemon_runs_without_trading_hours_gating(
+        self, runner, stub, tmp_path, monkeypatch
+    ):
+        """Daemon runs even outside market hours when no trading window is set."""
+        sleep_calls = []
+
+        def mock_sleep(seconds):
+            sleep_calls.append(seconds)
+            # Stop after first sleep interval
+            raise KeyboardInterrupt()
+
+        monkeypatch.setattr(time, "sleep", mock_sleep)
+
+        with patch("yf_parqed.yfinance_cli.GlobalRunLock") as mock_lock:
+            mock_lock_instance = MagicMock()
+            mock_lock_instance.try_acquire.return_value = True
+            mock_lock.return_value = mock_lock_instance
+
+            runner.invoke(
+                main.app,
+                ["--wrk-dir", str(tmp_path), "update-data", "--daemon"],
+                catch_exceptions=False,
+            )
+
+        # Should have run at least one update even though time is before market open
+        assert stub.update_data_calls >= 1
+
+    @freeze_time("2025-12-04 08:00:00-05:00")  # 08:00 EST (before market open)
     def test_daemon_waits_outside_trading_hours(
         self, runner, stub, tmp_path, monkeypatch
     ):
@@ -310,7 +338,14 @@ class TestTradingHoursIntegration:
 
             runner.invoke(
                 main.app,
-                ["--wrk-dir", str(tmp_path), "update-data", "--daemon"],
+                [
+                    "--wrk-dir",
+                    str(tmp_path),
+                    "update-data",
+                    "--daemon",
+                    "--trading-hours",
+                    "09:30-16:00",
+                ],
                 catch_exceptions=False,
             )
 

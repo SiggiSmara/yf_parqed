@@ -171,7 +171,7 @@ ExecStart=/opt/yf_parqed/.venv/bin/yf-parqed \
     --log-level INFO \
     update-data \
     --daemon \
-    --interval 1 \
+    --interval 2 \
     --ticker-maintenance weekly \
     --pid-file /run/yf_parqed/yf-parqed.pid
 
@@ -213,7 +213,7 @@ User=yfparqed
 Group=yfparqed
 WorkingDirectory=/var/lib/yf_parqed
 
-# Daemon runs 24/7 to ensure all available data is captured
+# Daemon runs 24/7 by default (active-hours overrides remain available via CLI)
 # File filtering (07:30-18:30) and trade filtering (08:00-18:00) happen in the fetcher/parser
 ExecStart=/opt/yf_parqed/.venv/bin/xetra-parqed \
     --wrk-dir /var/lib/yf_parqed \
@@ -222,7 +222,6 @@ ExecStart=/opt/yf_parqed/.venv/bin/xetra-parqed \
     fetch-trades %i \
     --daemon \
     --interval 1 \
-    --active-hours "00:00-23:59" \
     --pid-file /run/yf_parqed/xetra-%i.pid
 
 ExecStop=/bin/kill -TERM $MAINPID
@@ -351,11 +350,31 @@ do_update() {
     # Update code
     clone_or_update_repo
     install_dependencies
+
+    # Optional: reinstall systemd unit templates (overwrites local edits)
+    read -p "Reinstall systemd service templates (will overwrite local changes)? [y/N]: " reinstall_units
+    case "$reinstall_units" in
+        [yY])
+            install_systemd_services
+            ;;
+        *)
+            log_info "Keeping existing systemd service files"
+            ;;
+    esac
     
     # Restart services
     log_info "Restarting daemons..."
     systemctl start yf-parqed 2>/dev/null || log_warn "yf-parqed not enabled"
-    systemctl start 'xetra@*' 2>/dev/null || log_warn "No xetra services enabled"
+    
+    # Start each enabled xetra service individually (glob doesn't work with 'start')
+    enabled_xetra=$(systemctl list-unit-files 'xetra@*.service' --state=enabled --no-legend 2>/dev/null | awk '{print $1}' | sed 's/.service$//')
+    if [ -n "$enabled_xetra" ]; then
+        for service in $enabled_xetra; do
+            systemctl start "$service" 2>/dev/null || log_warn "Failed to start $service"
+        done
+    else
+        log_warn "No xetra services enabled"
+    fi
     
     log_info "Update complete!"
     echo
