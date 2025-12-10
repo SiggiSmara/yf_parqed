@@ -18,7 +18,7 @@ class XetraFetcher:
     # Xetra continuous trading: 09:00-17:30 CET (verified 2025-11-03)
     # No warmup data found in 08:50-09:00 window - trades start at 09:00 sharp
     VENUE_TRADING_HOURS = {
-        "DETR": ("08:30", "18:00"),  # Xetra: data 09:00-17:30 CET, +30min safety
+        "DETR": ("08:00", "18:30"),  # Xetra: data 09:00-17:30 CET, +30min safety
         "DFRA": ("08:30", "18:00"),  # Frankfurt: assumed same as DETR
         "DGAT": ("08:30", "18:00"),  # XETRA GATEWAYS: assumed same as DETR
         "DEUR": ("08:30", "18:00"),  # Eurex: assumed same as DETR
@@ -141,10 +141,13 @@ class XetraFetcher:
 
         Example:
             >>> fetcher = XetraFetcher()
-            >>> # UTC 07:30 = CET 08:30 (winter) or CEST 09:30 (summer)
-            >>> fetcher.is_within_trading_hours('DETR-posttrade-2025-11-03T07_30.json.gz', 'DETR')
+            >>> # UTC 06:30 = CET 07:30 (winter) - within download window
+            >>> fetcher.is_within_trading_hours('DETR-posttrade-2025-11-03T06_30.json.gz', 'DETR')
             True
-            >>> # UTC 01:00 = CET 02:00 (winter), outside trading hours
+            >>> # UTC 17:30 = CET 18:30 (winter) - within download window (borderline)
+            >>> fetcher.is_within_trading_hours('DETR-posttrade-2025-11-03T17_30.json.gz', 'DETR')
+            True
+            >>> # UTC 01:00 = CET 02:00 (winter) - outside download window
             >>> fetcher.is_within_trading_hours('DETR-posttrade-2025-11-03T01_00.json.gz', 'DETR')
             False
         """

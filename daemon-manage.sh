@@ -213,6 +213,8 @@ User=yfparqed
 Group=yfparqed
 WorkingDirectory=/var/lib/yf_parqed
 
+# Daemon runs 24/7 to ensure all available data is captured
+# File filtering (07:30-18:30) and trade filtering (08:00-18:00) happen in the fetcher/parser
 ExecStart=/opt/yf_parqed/.venv/bin/xetra-parqed \
     --wrk-dir /var/lib/yf_parqed \
     --log-file /var/log/yf_parqed/xetra-%i.log \
@@ -220,6 +222,7 @@ ExecStart=/opt/yf_parqed/.venv/bin/xetra-parqed \
     fetch-trades %i \
     --daemon \
     --interval 1 \
+    --active-hours "00:00-23:59" \
     --pid-file /run/yf_parqed/xetra-%i.pid
 
 ExecStop=/bin/kill -TERM $MAINPID
