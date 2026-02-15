@@ -127,8 +127,8 @@ data/de/xetra/trades/venue=DGAT/year=2025/month=12/day=03/trades.parquet
     "volume": int64,                # Trade volume (shares)
     "currency": string,             # Currency code (EUR)
     "quote_type": string,           # Quote type
-    "trade_time": datetime64[ns],   # Trade timestamp
-    "distribution_time": datetime64[ns],  # Data distribution timestamp
+    "trade_time": datetime64[ns],   # Trade timestamp (UTC)
+    "distribution_time": datetime64[ns],  # Data distribution timestamp (UTC)
     "venue": string,                # Trading venue code
     "tick_action": string,          # Tick action
     "instrument_code": string,      # Instrument code
@@ -146,7 +146,8 @@ data/de/xetra/trades/venue=DGAT/year=2025/month=12/day=03/trades.parquet
 
 - **Daily files**: `trades.parquet`
 - **One file per venue per day**: Contains all trades for that venue on that date
-- **Trading hours filtering**: Data limited to market hours (08:00-18:00 CET by default)
+- **Trading hours filtering**: Data limited to market hours (09:00-17:30 CET/CEST, official Xetra hours)
+- **Timezone note**: Timestamps stored in UTC, trading occurs in CET (UTC+1) or CEST (UTC+2) during DST
 
 ### Monthly Consolidation
 
@@ -171,7 +172,115 @@ data/de/xetra/trades_monthly/venue=DFRA/year=2025/month=11/trades.parquet
 
 ---
 
-## Xetra OHLCV (Future - Phase 2)
+## Xetra Normalized Trades (Phase 2a - In Progress)
+
+### Path Pattern
+
+**DECISION: Use separate `trades_by_isin` path with venue + isin partitioning**
+
+```
+data/de/xetra/trades_by_isin/venue=<VENUE>/isin=<ISIN>/year=<YYYY>/month=<MM>/trades.parquet
+```
+
+**Rationale**:
+- **Venue segregation**: Supports multi-venue data (DETR, DFRA, etc.)
+- **Clear naming**: `isin=` (not `ticker=`) explicitly shows these are ISINs, not ticker symbols
+- **Separation of concerns**: `trades/` = raw daily, `trades_by_isin/` = normalized monthly
+- **Query safety**: DuckDB wildcards won't accidentally mix daily and monthly data
+- **Future-proof**: Leaves door open for other trade organization schemes (`trades_by_mic`, etc.)
+
+### Purpose
+
+Intermediate storage layer that re-partitions venue-first raw trades into ISIN-first layout:
+- **Query optimization**: DuckDB can scan single ISIN (avg 115KB, but highly skewed: top 1% = 5-20MB) instead of all ISINs (~480MB monthly)
+- **Aggregation source**: Simplified input for OHLCV aggregation (Phase 2b)
+- **Still raw data**: Preserves all trade-level detail, no aggregation yet
+- **Multi-venue support**: Venue partition allows easy filtering by trading venue
+
+### Examples
+
+```
+data/de/xetra/trades_by_isin/venue=DETR/isin=DE0005190003/year=2025/month=12/trades.parquet  # BMW @ Xetra
+data/de/xetra/trades_by_isin/venue=DETR/isin=DE0008469008/year=2025/month=12/trades.parquet  # Daimler @ Xetra
+data/de/xetra/trades_by_isin/venue=DFRA/isin=DE0005140008/year=2025/month=12/trades.parquet  # Deutsche Bank @ Frankfurt
+```
+
+### Partition Keys
+
+| Level | Key | Description | Example |
+|-------|-----|-------------|---------|
+| 1 | Market | Two-letter country code | `de` |
+| 2 | Source | Data provider name | `xetra` |
+| 3 | Dataset | `trades_by_isin` (normalized) | `trades_by_isin` |
+| 4 | Venue | Trading venue code | `venue=DETR` |
+| 5 | ISIN | Stock identifier (12-char) | `isin=DE0005190003` |
+| 6 | Year | Four-digit year | `year=2025` |
+| 7 | Month | Two-digit month (zero-padded) | `month=12` |
+
+### Path Structure Alternatives Considered
+
+#### Option 1: Separate `trades_by_isin` Path (SELECTED)
+```
+# Raw daily (mixed ISINs):
+data/de/xetra/trades/venue=DETR/year=2025/month=12/day=05/trades.parquet
+
+# Normalized monthly (per-ISIN):
+data/de/xetra/trades_by_isin/venue=DETR/isin=DE0005190003/year=2025/month=12/trades.parquet
+```
+**Pros**: Clear separation, can't accidentally mix daily/monthly, explicit naming  
+**Cons**: Two top-level paths for trades
+
+#### Option 2: Single `trades` Path with Mixed Partitions
+```
+# Raw daily (has day partition):
+data/de/xetra/trades/venue=DETR/year=2025/month=12/day=05/trades.parquet
+
+# Normalized monthly (has isin partition, no day):
+data/de/xetra/trades/venue=DETR/isin=DE0005190003/year=2025/month=12/trades.parquet
+```
+**Pros**: Single `trades` path  
+**Cons**: Mixing partition schemes is confusing, DuckDB wildcards require care, harder to document  
+**Rejected**: Mixing daily and monthly partitions in same path tree is error-prone
+
+#### Option 3: Explicit `daily` / `monthly` Subdirectories
+```
+# Raw daily:
+data/de/xetra/trades/venue=DETR/daily/year=2025/month=12/day=05/trades.parquet
+
+# Normalized monthly:
+data/de/xetra/trades/venue=DETR/monthly/isin=DE0005190003/year=2025/month=12/trades.parquet
+```
+**Pros**: Very explicit, single `trades` root  
+**Cons**: Non-standard Hive partitioning (daily/monthly not partition keys), extra nesting  
+**Rejected**: Breaks Hive partitioning conventions
+
+### Schema
+
+Same as raw trades (all 23 columns preserved), just re-partitioned by ISIN instead of venue.
+
+### File Naming
+
+- **Monthly files**: `trades.parquet`
+- **One file per ISIN per month**: Contains all trades for that ISIN in the month
+- **Typical size**: 115KB average (range: <1KB to 20MB, highly skewed by liquidity)
+- **Distribution**: Top 1% ISINs (42 out of 4,200) account for ~60% of processing time and file sizes
+
+### Creation
+
+```bash
+# CLI command to create normalized layout from venue/day raw trades:
+xetra-parqed update DETR --normalize-only  # Auto-detects what needs processing
+
+# Or with explicit month (testing/debugging):
+xetra-parqed update DETR --normalize-only --month 2025-12
+
+# Reads:  data/de/xetra/trades/venue=DETR/year=2025/month=12/day=*/trades.parquet
+# Writes: data/de/xetra/trades_by_isin/venue=DETR/isin=*/year=2025/month=12/trades.parquet
+```
+
+---
+
+## Xetra OHLCV (Future - Phase 2b)
 
 ### Path Pattern
 
@@ -179,16 +288,38 @@ data/de/xetra/trades_monthly/venue=DFRA/year=2025/month=11/trades.parquet
 data/de/xetra/stocks_<interval>/ticker=<ISIN_OR_TICKER>/year=<YYYY>/month=<MM>/data.parquet
 ```
 
+### Purpose
+
+Aggregate OHLCV bars from normalized trades (Phase 2a output):
+- **Input**: `trades_by_isin/` (ISIN-partitioned raw trades)
+- **Aggregation**: pandas resampling to 1m, 1h, 1d intervals
+- **Output**: Same structure as Yahoo Finance for unified querying
+
 ### Examples (Planned)
 
 ```
-# By ISIN (unmapped tickers)
+# By ISIN (unmapped tickers) - note: partition directory still named 'ticker=' for consistency with Yahoo
 data/de/xetra/stocks_1m/ticker=DE0005190003/year=2025/month=12/data.parquet
 data/de/xetra/stocks_1h/ticker=DE0005190003/year=2025/month=12/data.parquet
 data/de/xetra/stocks_1d/ticker=DE0005190003/year=2025/month=12/data.parquet
 
 # By ticker symbol (mapped tickers, Phase 2.5)
 data/de/xetra/stocks_1d/ticker=BMW/year=2025/month=12/data.parquet
+```
+
+**Note**: OHLCV storage uses `ticker=` (not `isin=`) to match Yahoo Finance convention for cross-source consistency. Values are ISINs for unmapped securities, ticker symbols for mapped ones.
+
+### Creation (Planned)
+
+```bash
+# CLI command to aggregate normalized trades into OHLCV bars:
+xetra-parqed update DETR --intervals 1m,1h,1d  # Auto-detects, runs full pipeline
+
+# Or skip normalization (if already done):
+xetra-parqed update DETR --skip-normalize --intervals 1m,1h,1d
+
+# Reads:  data/de/xetra/trades_by_isin/venue=DETR/isin=*/year=2025/month=12/trades.parquet
+# Writes: data/de/xetra/stocks_*/ticker=*/year=2025/month=12/data.parquet
 ```
 
 ### Partition Keys
@@ -366,7 +497,8 @@ uv run yf-parqed-migrate migrate --venue us:yahoo --interval 1m
 | Yahoo Finance | 1d | 1 | ~1 KB | Gzip |
 | Yahoo Finance | 1h | 6-7 | ~15 KB | Gzip |
 | Yahoo Finance | 1m | 390 | ~400 KB | Gzip |
-| Xetra Trades | tick | ~50,000 | ~50 MB | Snappy |
+| Xetra Trades (daily, all ISINs) | tick | ~535,000 | ~23 MB/day, ~690 MB/month | Snappy |
+| Xetra Trades (per-ISIN, monthly) | tick | varies | avg 115KB (range: <1KB to 20MB) | Snappy |
 | Xetra OHLCV | 1m | ~390 | ~50 KB | Gzip |
 | Xetra OHLCV | 1h | ~10 | ~2 KB | Gzip |
 | Xetra OHLCV | 1d | 1 | ~1 KB | Gzip |
@@ -378,10 +510,13 @@ uv run yf-parqed-migrate migrate --venue us:yahoo --interval 1m
 - 1h: ~75 MB/month
 - 1m: ~2 GB/month
 
-**Xetra (4 venues, 500 ISINs):**
-- Raw trades: ~200 MB/day, ~6 GB/month
-- OHLCV 1m: ~100 MB/month
-- OHLCV 1h/1d: ~5 MB/month
+**Xetra (single venue DETR, ~4,200 ISINs, real data Feb 2026):**
+- Raw trades: ~23 MB/day, ~690 MB/month (535K trades/day across all ISINs)
+- Raw trades normalized: ~480 MB/month (re-partitioned by ISIN, 115KB avg per ISIN)
+- OHLCV 1m: ~210 MB/month (~50KB per ISIN)
+- OHLCV 1h/1d: ~10 MB/month (~2KB per ISIN)
+
+**Note**: ISIN distribution is highly skewed - top 1% (42 ISINs) = 5-20MB files, bottom 50% = <10KB files
 
 ---
 
