@@ -279,19 +279,202 @@ install_monitoring_script() {
     
     cat > /usr/local/bin/yf-parqed-status << 'EOF'
 #!/bin/bash
+# YF Parqed Daemon Status Monitor (Ultra-fast filesystem-based)
+# Uses file modification times instead of reading parquet content
+
+DATA_DIR="/var/lib/yf_parqed/data"
+
+# Colors
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
 echo "=== YF Parqed Daemon Status ==="
 echo
+
+# Service status
 echo "Services:"
 systemctl is-active yf-parqed xetra@* 2>/dev/null | paste -d ' ' <(echo "yf-parqed"; systemctl list-units 'xetra@*' --no-legend | awk '{print $1}') - || echo "No services running"
 echo
-echo "Data freshness (last 5 updates):"
-find /var/lib/yf_parqed/data -name "*.parquet" -type f -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -5 | awk '{print strftime("%Y-%m-%d %H:%M:%S", $1), $2}' || echo "No data found"
+
+# Data freshness using file modification times (very fast!)
+echo "Data freshness (by file modification time):"
+
+# Yahoo Finance - sample recent files across intervals
+for interval in 1m 1h 1d; do
+    INTERVAL_DIR="$DATA_DIR/us/yahoo/stocks_$interval"
+    if [ -d "$INTERVAL_DIR" ]; then
+        echo -e "  ${GREEN}Yahoo/$interval${NC}:"
+        
+        # Find most recently modified files (limit search depth to avoid hanging)
+        echo "    Latest (top 3 by mod time):"
+        timeout 5 find "$INTERVAL_DIR" -maxdepth 6 -name "data.parquet" -type f -printf '%T@ %p\n' 2>/dev/null | \
+            sort -rn | head -3 | \
+            awk '{
+                cmd = "date -d @"$1" +\"%Y-%m-%d %H:%M:%S\""
+                cmd | getline formatted_date
+                close(cmd)
+                
+                # Extract ticker from path
+                split($2, parts, "/")
+                for (i in parts) {
+                    if (parts[i] ~ /^ticker=/) {
+                        split(parts[i], ticker_parts, "=")
+                        ticker = ticker_parts[2]
+                    }
+                }
+                printf "      %s  %s\n", formatted_date, ticker
+            }' || echo "      (timeout or no files)"
+        
+        # Find oldest files to show collection start date
+        echo "    Earliest (collection start):"
+        timeout 5 find "$INTERVAL_DIR" -maxdepth 6 -name "data.parquet" -type f -printf '%T@ %p\n' 2>/dev/null | \
+            sort -n | head -3 | \
+            awk '{
+                cmd = "date -d @"$1" +\"%Y-%m-%d %H:%M:%S\""
+                cmd | getline formatted_date
+                close(cmd)
+                
+                # Extract ticker from path
+                split($2, parts, "/")
+                for (i in parts) {
+                    if (parts[i] ~ /^ticker=/) {
+                        split(parts[i], ticker_parts, "=")
+                        ticker = ticker_parts[2]
+                    }
+                }
+                printf "      %s  %s\n", formatted_date, ticker
+            }' || echo "      (timeout or no files)"
+        echo
+    fi
+done
+
+# Xetra - check recent venues
+XETRA_DIR="$DATA_DIR/de/xetra/trades"
+if [ -d "$XETRA_DIR" ]; then
+    echo -e "  ${GREEN}Xetra/DETR${NC}:"
+    
+    echo "    Latest (top 3 by mod time):"
+    # Find most recent trade files
+    timeout 5 find "$XETRA_DIR/venue=DETR" -maxdepth 5 -name "trades.parquet" -type f -printf '%T@ %p\n' 2>/dev/null | \
+        sort -rn | head -3 | \
+        awk '{
+            cmd = "date -d @"$1" +\"%Y-%m-%d %H:%M:%S\""
+            cmd | getline formatted_date
+            close(cmd)
+            
+            # Extract date from path
+            split($2, parts, "/")
+            for (i in parts) {
+                if (parts[i] ~ /^day=/) {
+                    split(parts[i], day_parts, "=")
+                    day = day_parts[2]
+                }
+                if (parts[i] ~ /^month=/) {
+                    split(parts[i], month_parts, "=")
+                    month = month_parts[2]
+                }
+                if (parts[i] ~ /^year=/) {
+                    split(parts[i], year_parts, "=")
+                    year = year_parts[2]
+                }
+            }
+            printf "      %s  (date=%s-%s-%s)\n", formatted_date, year, month, day
+        }' || echo "      (timeout or no files)"
+    
+    echo "    Earliest (collection start):"
+    # Find oldest trade files
+    timeout 5 find "$XETRA_DIR/venue=DETR" -maxdepth 5 -name "trades.parquet" -type f -printf '%T@ %p\n' 2>/dev/null | \
+        sort -n | head -3 | \
+        awk '{
+            cmd = "date -d @"$1" +\"%Y-%m-%d %H:%M:%S\""
+            cmd | getline formatted_date
+            close(cmd)
+            
+            # Extract date from path
+            split($2, parts, "/")
+            for (i in parts) {
+                if (parts[i] ~ /^day=/) {
+                    split(parts[i], day_parts, "=")
+                    day = day_parts[2]
+                }
+                if (parts[i] ~ /^month=/) {
+                    split(parts[i], month_parts, "=")
+                    month = month_parts[2]
+                }
+                if (parts[i] ~ /^year=/) {
+                    split(parts[i], year_parts, "=")
+                    year = year_parts[2]
+                }
+            }
+            printf "      %s  (date=%s-%s-%s)\n", formatted_date, year, month, day
+        }' || echo "      (timeout or no files)"
+fi
+
+if [ ! -d "$DATA_DIR/us/yahoo" ] && [ ! -d "$DATA_DIR/de/xetra" ]; then
+    echo "    No data directories found"
+fi
 echo
+
+# Quick file/directory counts
+echo "Quick Stats:"
+if [ -d "$DATA_DIR/us/yahoo/stocks_1d" ]; then
+    TICKER_COUNT_1D=$(timeout 3 find "$DATA_DIR/us/yahoo/stocks_1d" -maxdepth 1 -type d -name "ticker=*" 2>/dev/null | wc -l)
+    echo -e "  Yahoo 1d tickers: $TICKER_COUNT_1D"
+fi
+
+if [ -d "$DATA_DIR/us/yahoo/stocks_1h" ]; then
+    TICKER_COUNT_1H=$(timeout 3 find "$DATA_DIR/us/yahoo/stocks_1h" -maxdepth 1 -type d -name "ticker=*" 2>/dev/null | wc -l)
+    echo -e "  Yahoo 1h tickers: $TICKER_COUNT_1H"
+fi
+
+if [ -d "$DATA_DIR/us/yahoo/stocks_1m" ]; then
+    TICKER_COUNT_1M=$(timeout 3 find "$DATA_DIR/us/yahoo/stocks_1m" -maxdepth 1 -type d -name "ticker=*" 2>/dev/null | wc -l)
+    echo -e "  Yahoo 1m tickers: $TICKER_COUNT_1M"
+fi
+
+if [ -d "$DATA_DIR/de/xetra/trades/venue=DETR" ]; then
+    DAY_COUNT=$(timeout 3 find "$DATA_DIR/de/xetra/trades/venue=DETR" -type d -name "day=*" 2>/dev/null | wc -l)
+    echo -e "  Xetra DETR days: $DAY_COUNT"
+fi
+echo
+
+# Storage usage (top-level summary only)
 echo "Storage usage:"
-du -sh /var/lib/yf_parqed/data/* 2>/dev/null || echo "No data yet"
+if [ -d "$DATA_DIR/us" ]; then
+    US_SIZE=$(timeout 10 du -sh "$DATA_DIR/us" 2>/dev/null | awk '{print $1}')
+    echo "  US (Yahoo):               ${US_SIZE:-calculating...}"
+fi
+if [ -d "$DATA_DIR/de" ]; then
+    DE_SIZE=$(timeout 10 du -sh "$DATA_DIR/de" 2>/dev/null | awk '{print $1}')
+    echo "  DE (Xetra):               ${DE_SIZE:-calculating...}"
+fi
 echo
+
+# Recent errors (last hour)
 echo "Recent errors (last hour):"
-journalctl -u yf-parqed -u 'xetra@*' --since "1 hour ago" 2>/dev/null | grep -i error | tail -10 || echo "No errors"
+journalctl -u yf-parqed -u 'xetra@*' --since "1 hour ago" --no-pager 2>/dev/null | \
+    grep -i -E "error|fail|exception" | tail -5 || echo "  No errors"
+echo
+
+# Daemon uptime & next run
+echo "Daemon info:"
+for service in yf-parqed "xetra@DETR"; do
+    if systemctl is-active "$service" &>/dev/null; then
+        uptime_sec=$(systemctl show "$service" --property=ActiveEnterTimestampMonotonic --value)
+        uptime_readable=$(systemctl show "$service" --property=ActiveEnterTimestamp --value | awk '{print $2, $3, $4}')
+        echo "  $service: up since $uptime_readable"
+    fi
+done
+echo
+
+# Show daemon configuration from systemd
+echo "Configuration:"
+echo "  yf-parqed interval: $(systemctl show yf-parqed --property=ExecStart --value | grep -oP '(?<=--interval )\d+' || echo 'unknown') hours"
+if systemctl is-active "xetra@DETR" &>/dev/null; then
+    echo "  xetra@DETR interval: $(systemctl show xetra@DETR --property=ExecStart --value | grep -oP '(?<=--interval )\d+' || echo 'unknown') hour"
+fi
 EOF
 
     chmod +x /usr/local/bin/yf-parqed-status
