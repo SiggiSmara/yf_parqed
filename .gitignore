@@ -9,6 +9,7 @@ migration_plan.json
 stocks_*/
 data/*
 backup_ticker_files/*
+docs/medium/WIP/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
