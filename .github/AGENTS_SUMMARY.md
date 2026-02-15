@@ -3,6 +3,8 @@
 
 This file preserves the historical notes and compact coverage/achievement map previously kept at the repository root for agent and automation consumption. It is not the canonical runbook — operational guidance, safety rules and runbooks live under `.github/` and `docs/` and should be used for day-to-day operations.
 
+Draft article workspace: `docs/medium/WIP/` is git-ignored on purpose for in-progress Medium drafts; leave it untouched in commits and automation.
+
 ## Service-Oriented Refactor (Completed)
 
 - Completed: Service extraction (Steps 1.1–1.7) — COMPLETED ✅ (2025-10-11)
