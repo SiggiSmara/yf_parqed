@@ -5,8 +5,10 @@ description = "Persistent storage of yfinance ticker data in parquet"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "beautifulsoup4>=4.14.2",
     "httpx>=0.28.1",
     "loguru>=0.7.3",
+    "lxml>=6.1.0",
     "pandas>=2.2.3",
     "pyarrow>=18.1.0",
     "rich>=13.0.0",

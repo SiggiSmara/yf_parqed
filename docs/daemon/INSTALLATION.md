@@ -187,6 +187,73 @@ WantedBy=multi-user.target
 EOF
 ```
 
+#### Xetra ISIN Mapping Service
+
+Create `/etc/systemd/system/xetra-isin-mapping.service`:
+
+```bash
+sudo tee /etc/systemd/system/xetra-isin-mapping.service > /dev/null << 'EOF'
+[Unit]
+Description=Xetra ISIN Mapping Daemon
+After=network-online.target
+Wants=network-online.target
+Documentation=https://github.com/SiggiSmara/yf_parqed
+
+[Service]
+Type=simple
+User=yfparqed
+Group=yfparqed
+WorkingDirectory=/var/lib/yf_parqed
+
+# Run daemon mode — updates at 00:05 CET each night
+ExecStart=/opt/yf_parqed/.venv/bin/xetra-parqed \
+    --wrk-dir /var/lib/yf_parqed \
+    --log-file /var/log/yf_parqed/xetra-isin-mapping.log \
+    --log-level INFO \
+    update-isin-mapping \
+    --daemon \
+    --pid-file /run/yf_parqed/xetra-isin-mapping.pid
+
+ExecStop=/bin/kill -TERM $MAINPID
+TimeoutStopSec=30
+KillMode=mixed
+
+Restart=on-failure
+RestartSec=60
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/yf_parqed /var/log/yf_parqed
+
+RuntimeDirectory=yf_parqed
+RuntimeDirectoryMode=0755
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=xetra-isin-mapping
+
+[Install]
+WantedBy=multi-user.target
+EOF
+```
+
+Enable and start:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable xetra-isin-mapping
+sudo systemctl start xetra-isin-mapping
+sudo systemctl status xetra-isin-mapping
+
+# View logs
+sudo journalctl -u xetra-isin-mapping -f
+
+# Verify cache was created
+ls -lh /var/lib/yf_parqed/data/reference/isin_mapping.parquet
+```
+
 #### Xetra Service Template
 
 Create `/etc/systemd/system/xetra@.service`:
@@ -462,12 +529,13 @@ To completely remove yf_parqed daemons:
 
 ```bash
 # Stop and disable services
-sudo systemctl stop yf-parqed 'xetra@*'
-sudo systemctl disable yf-parqed 'xetra@*'
+sudo systemctl stop yf-parqed 'xetra@*' xetra-isin-mapping
+sudo systemctl disable yf-parqed 'xetra@*' xetra-isin-mapping
 
 # Remove service files
 sudo rm /etc/systemd/system/yf-parqed.service
 sudo rm /etc/systemd/system/xetra@.service
+sudo rm /etc/systemd/system/xetra-isin-mapping.service
 sudo systemctl daemon-reload
 
 # Remove user and data (WARNING: deletes all data!)

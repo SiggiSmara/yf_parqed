@@ -6,12 +6,25 @@ import signal
 import time
 import os
 import atexit
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time as dtime
+from zoneinfo import ZoneInfo
 from typing_extensions import Annotated
 
 from .common.config_service import ConfigService
 from .xetra.trading_hours_checker import TradingHoursChecker
 from .xetra.xetra_service import XetraService
+from .xetra.isin_mapping_updater import ISINMappingUpdater
+
+_BERLIN = ZoneInfo("Europe/Berlin")
+_ISIN_DAEMON_TARGET_TIME = dtime(0, 5)  # run at 00:05 CET/CEST each night
+
+
+def _seconds_until_isin_next_run() -> int:
+    """Seconds until next 00:05 CET (anchored, not fixed-interval)."""
+    now = datetime.now(_BERLIN)
+    tomorrow = (now + timedelta(days=1)).date()
+    next_run = datetime.combine(tomorrow, _ISIN_DAEMON_TARGET_TIME).replace(tzinfo=_BERLIN)
+    return max(60, int((next_run - now).total_seconds()))
 
 app = typer.Typer()
 
@@ -689,3 +702,132 @@ def consolidate_month(
         typer.echo(
             f"  Daily files preserved in: data/{market}/{source}/trades/venue={venue}/..."
         )
+
+
+@app.command()
+def update_isin_mapping(
+    ctx: typer.Context,
+    force: Annotated[
+        bool, typer.Option("--force", help="Force update even if cache is less than 24 hours old")
+    ] = False,
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Show what would be written without saving")
+    ] = False,
+    daemon: Annotated[
+        bool, typer.Option("--daemon", help="Run continuously, updating at 00:05 CET each day")
+    ] = False,
+    pid_file: Annotated[
+        Path | None,
+        typer.Option(help="PID file path to prevent duplicate daemon instances"),
+    ] = None,
+):
+    """
+    Update the ISIN→ticker mapping cache from Deutsche Börse.
+
+    Scrapes the Deutsche Börse instruments page to find the current CSV URL,
+    downloads the semicolon-delimited CSV (~4,280 active instruments), and
+    merges it with the local Parquet cache at data/reference/isin_mapping.parquet.
+
+    Update logic:
+      • Existing ISINs  → update last_seen (and fields if changed)
+      • New ISINs       → insert with first_seen = today  [logged at INFO]
+      • Delisted ISINs  → mark status=inactive             [logged at INFO]
+
+    Cache is stored at:
+      <wrk-dir>/data/reference/isin_mapping.parquet
+
+    Daemon mode:
+      Use --daemon to run continuously. The daemon runs one update immediately,
+      then sleeps until 00:05 CET each night (anchored to time-of-day, not a
+      fixed interval, so drift never accumulates). Use with --pid-file and
+      --log-file for production deployments.
+
+    Examples:
+        xetra-parqed update-isin-mapping              # one-shot update
+        xetra-parqed update-isin-mapping --force      # ignore cache age
+        xetra-parqed update-isin-mapping --dry-run    # preview only
+
+        # Daemon mode
+        xetra-parqed --log-file /var/log/yf_parqed/isin.log \\
+            update-isin-mapping --daemon --pid-file /run/yf_parqed/isin.pid
+    """
+    wrk_dir: Path = ctx.obj.get("wrk_dir", Path.cwd())
+    cache_path = wrk_dir / "data" / "reference" / "isin_mapping.parquet"
+
+    if pid_file and daemon:
+        _check_and_write_pid_file(pid_file)
+
+    shutdown_requested = {"flag": False}
+
+    def signal_handler(signum, frame):
+        logger.info(f"Received signal {signum}, shutting down gracefully...")
+        shutdown_requested["flag"] = True
+
+    if daemon:
+        signal.signal(signal.SIGTERM, signal_handler)
+        signal.signal(signal.SIGINT, signal_handler)
+
+    def _sleep_chunks(total_seconds: int) -> None:
+        remaining = total_seconds
+        while remaining > 0 and not shutdown_requested["flag"]:
+            chunk = min(60, remaining)
+            time.sleep(chunk)
+            remaining -= chunk
+
+    def _run_once() -> None:
+        if not force and not daemon and cache_path.exists():
+            age_hours = (
+                datetime.now().timestamp() - cache_path.stat().st_mtime
+            ) / 3600
+            if age_hours < 24:
+                logger.info(
+                    f"Cache is fresh ({age_hours:.1f}h old); skipping. Use --force to override."
+                )
+                typer.echo(
+                    f"Cache is fresh ({age_hours:.1f}h old). Use --force to update now."
+                )
+                return
+
+        with ISINMappingUpdater() as updater:
+            if dry_run:
+                logger.info("Scraping CSV URL (dry-run)...")
+                csv_url = updater.get_csv_url()
+                logger.info(f"CSV URL: {csv_url}")
+                new_data = updater.download_and_parse(csv_url)
+                merged = updater.merge_with_cache(new_data, cache_path)
+                typer.echo(f"[dry-run] Would write {len(merged)} entries to {cache_path}")
+            else:
+                updater.run(cache_path)
+                typer.echo(f"ISIN mapping updated → {cache_path}")
+
+    try:
+        if daemon:
+            logger.info("Starting ISIN mapping daemon (updates daily at 00:05 CET)")
+            run_count = 0
+            while not shutdown_requested["flag"]:
+                run_count += 1
+                logger.info(f"=== ISIN mapping run #{run_count} ===")
+                try:
+                    with ISINMappingUpdater() as updater:
+                        updater.run(cache_path)
+                except Exception as e:
+                    logger.error(f"ISIN mapping run #{run_count} failed: {e}", exc_info=True)
+
+                if shutdown_requested["flag"]:
+                    break
+
+                sleep_secs = _seconds_until_isin_next_run()
+                next_run_dt = datetime.now(_BERLIN) + timedelta(seconds=sleep_secs)
+                logger.info(
+                    f"Next ISIN update scheduled for "
+                    f"{next_run_dt.strftime('%Y-%m-%d %H:%M %Z')} ({sleep_secs}s)"
+                )
+                _sleep_chunks(sleep_secs)
+
+            logger.info("ISIN mapping daemon shutting down")
+        else:
+            _run_once()
+    finally:
+        if pid_file and pid_file.exists():
+            pid_file.unlink()
+            logger.info(f"PID file removed: {pid_file}")
