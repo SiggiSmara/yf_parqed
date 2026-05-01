@@ -206,27 +206,27 @@ class TestXetraLiveAPI:
                 )
 
             # Check required columns exist
-            required_cols = ["isin", "price", "volume", "currency", "trade_time"]
+            required_cols = ["isin", "price", "quantity", "price_currency", "trading_date_time"]
             for col in required_cols:
                 assert col in df.columns, f"Missing column: {col}"
 
             # Validate data types
             assert df["price"].dtype == "float64"
-            assert df["volume"].dtype == "float64"
-            assert pd.api.types.is_datetime64_any_dtype(df["trade_time"])
+            assert df["quantity"].dtype == "float64"
+            assert pd.api.types.is_datetime64_any_dtype(df["trading_date_time"])
 
             print(f"\n✓ Parsed {len(df)} trades from {filename}")
             print(f"  - ISINs: {len(df['isin'].unique())} unique")
             print(
                 f"  - Price range: €{df['price'].min():.2f} - €{df['price'].max():.2f}"
             )
-            print(f"  - Total volume: {df['volume'].sum():,.0f}")
+            print(f"  - Total volume: {df['quantity'].sum():,.0f}")
 
             # Sample first few rows
             print("\n  Sample trades:")
             for _, row in df.head(3).iterrows():
                 print(
-                    f"    {row['isin']}: {row['volume']:.0f} @ €{row['price']:.2f} at {row['trade_time']}"
+                    f"    {row['isin']}: {row['quantity']:.0f} @ €{row['price']:.2f} at {row['trading_date_time']}"
                 )
 
     def test_full_workflow_real_api(self, tmp_path):
@@ -360,33 +360,30 @@ class TestXetraLiveAPI:
 
             # Validate core required columns exist (using actual parser output names)
             # NOTE: Not all MiFID II transparency fields may be present in every API response
+            # Core columns present in both legacy and 2026-mifid schemas
             required_cols = [
-                "message_id",
-                "source_name",
                 "isin",
-                "instrument_id",
-                "trans_id",
-                "tick_id",
                 "price",
-                "volume",
-                "currency",
-                "quote_type",
-                "trade_time",
-                "distribution_time",
-                "venue",
-                "tick_action",
-                "instrument_code",
-                "market_mechanism",
+                "quantity",
+                "price_currency",
+                "trading_date_time",
+                "execution_venue",
+                "transaction_id",
                 "trading_mode",
                 "modification_flag",
                 "benchmark_flag",
                 "pub_deferral",
                 "algo_indicator",
+                "schema_version",
             ]
 
-            # Optional columns that may or may not be present
+            # Optional: present in 2026-mifid only; legacy-only columns omitted
             optional_cols = [
-                "negotiated_flag",  # mmtNegotTransPretrdWaivInd may be omitted
+                "distribution_time",
+                "trading_system",
+                "price_notation",
+                "venue_publication",
+                "negotiated_flag",  # legacy-only (mmtNegotTransPretrdWaivInd)
             ]
 
             # Check required columns

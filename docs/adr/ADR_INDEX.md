@@ -33,6 +33,8 @@ This index lists ADRs and provides a suggested classification (implemented / in-
 | 2025-10-12 | `2025-10-12-xetra-delayed-data.md` | Xetra Delayed Data | implemented | ADR: Phase 1 complete, Phase 2 & 3 (OHLCV aggregation) deferred to own ADR.
 | 2025-12-05 | `2025-12-05-ohlcv-aggregation-service.md` | OHLCV Aggregation Service | in-progress | Roadmap / release notes mark OHLCV aggregation as Phase 2 (pending).
 | 2025-12-06 | `2025-12-06-separation-of-concerns.md` | Separation of Concerns | implemented | Package refactor completed; tests and import shims updated (see ADR contents).
+| 2026-04-26 | `2026-04-26-xetra-parser-schema-resilience.md` | Xetra Parser Schema Resilience | in-progress | Core parser + quarantine done (2026-05-01); `reprocess-quarantine` CLI and DATA_MODEL.md update deferred.
+| 2026-04-26 | `2026-04-26-xetra-two-tier-storage.md` | Xetra Two-Tier Trade Storage | to-do | Stable 7-column MiFIR core contract + flexible extended metadata tier; insulates OHLCV from vendor schema changes.
 
 
 ## How to use

@@ -126,13 +126,10 @@ def test_schema_completeness_before_storage():
 
     df = parser.parse(minimal_json)
 
-    # Verify all 22 columns from FIELD_MAPPING are present
-    expected_columns = set(parser.FIELD_MAPPING.values())
+    # Verify all legacy schema columns + schema_version are present
+    expected_columns = set(XetraParser.SCHEMAS["2025-legacy"].values()) | {"schema_version"}
     actual_columns = set(df.columns)
 
-    assert len(expected_columns) == 22, (
-        f"Expected 22 columns in FIELD_MAPPING, got {len(expected_columns)}"
-    )
     assert actual_columns == expected_columns, (
         f"Column mismatch:\n"
         f"  Missing: {expected_columns - actual_columns}\n"
@@ -156,16 +153,15 @@ def test_schema_completeness_before_storage():
     for col in optional_columns:
         assert col in df.columns, f"Optional column '{col}' missing from DataFrame"
 
-    # Verify required columns have actual data
+    # Verify hard-required columns have actual data
     required_columns = [
         "isin",
         "price",
-        "volume",
-        "currency",
-        "trade_time",
-        "venue",
-        "trans_id",
-        "tick_id",
+        "quantity",
+        "price_currency",
+        "trading_date_time",
+        "execution_venue",
+        "transaction_id",
     ]
     for col in required_columns:
         assert col in df.columns, f"Required column '{col}' missing"
@@ -173,7 +169,8 @@ def test_schema_completeness_before_storage():
 
     # Verify DataFrame is ready for storage (no schema inconsistencies)
     assert len(df) == 2, "Should have parsed 2 trades"
-    assert df.shape[1] == 22, f"Should have exactly 22 columns, got {df.shape[1]}"
+    # Legacy schema: 22 mapped columns + schema_version = 23
+    assert df.shape[1] == 23, f"Should have exactly 23 columns, got {df.shape[1]}"
 
 
 def test_schema_stability_across_multiple_parses():
@@ -204,9 +201,9 @@ def test_schema_stability_across_multiple_parses():
         f"  df2 only: {set(df2.columns) - set(df1.columns)}"
     )
 
-    # Verify both have 22 columns
-    assert len(df1.columns) == 22, f"df1 should have 22 columns, got {len(df1.columns)}"
-    assert len(df2.columns) == 22, f"df2 should have 22 columns, got {len(df2.columns)}"
+    # Verify both have 23 columns (22 legacy mapped + schema_version)
+    assert len(df1.columns) == 23, f"df1 should have 23 columns, got {len(df1.columns)}"
+    assert len(df2.columns) == 23, f"df2 should have 23 columns, got {len(df2.columns)}"
 
     # Verify DataFrames can be safely concatenated (Parquet merge simulation)
     try:
@@ -219,7 +216,7 @@ def test_schema_stability_across_multiple_parses():
             merged = pd.concat([df1, df2], ignore_index=True)
 
         assert len(merged) == 2, "Concatenation should preserve both rows"
-        assert len(merged.columns) == 22, "Concatenation should preserve all 22 columns"
+        assert len(merged.columns) == 23, "Concatenation should preserve all 23 columns"
     except Exception as e:
         pytest.fail(f"DataFrame concatenation failed (schema instability): {e}")
 

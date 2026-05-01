@@ -1963,6 +1963,7 @@ start_hour = 7 if is_cest else 8  # Must update annually!
 4. **Don't skip trading hours filtering** - Pre-market/post-trade filings are only 0.3% but may contain test data
 5. **Don't use `.tz_convert()` on DataFrames** - Filter in UTC, resample in UTC, convert output if needed
 6. **Don't hardcode DST dates** - Use `pytz` library for automatic handling
+7. **Translate MiFIR column names to finance conventions** - Tier 1 source data (see [Two-Tier Storage ADR](./2026-04-26-xetra-two-tier-storage.md)) uses MiFIR Article 10 terminology: `quantity` (not `volume`), `trading_date_time` (not `trade_time`). The aggregator must rename these explicitly — `quantity → volume`, `trading_date_time → timestamp` — before writing OHLCV output. Do not pass MiFIR column names through to the OHLCV layer.
 
 ### Debugging Tips
 
@@ -2020,6 +2021,8 @@ Before implementation:
 - [Xetra Phase 1 ADR](2025-10-12-xetra-delayed-data.md)
 - [Partition Storage ADR](2025-10-12-partition-aware-storage.md)
 - [DuckDB Query Layer ADR](2025-10-12-duckdb-query-layer.md)
+- [Xetra Two-Tier Trade Storage ADR](2026-04-26-xetra-two-tier-storage.md) — defines Tier 1 MiFIR column names that this aggregator consumes
+- [Xetra Parser Schema Resilience ADR](2026-04-26-xetra-parser-schema-resilience.md) — defines quarantine/reprocessing that feeds Tier 1
 - [Yahoo Finance Pipeline ADR](2025-10-10-yahoo-finance-data-pipeline.md)
 
 ---

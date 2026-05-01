@@ -2,90 +2,96 @@ import json
 import pandas as pd
 from loguru import logger
 
+from .exceptions import XetraSchemaUnknownError
+
 
 class XetraParser:
     """Parse Xetra trade JSON into validated DataFrames."""
 
-    # Required fields that must be present in every trade record
-    REQUIRED_FIELDS = [
-        "isin",
-        "lastTrade",
-        "lastQty",
-        "currency",
-        "lastTradeTime",
-        "transIdCode",
-        "tickId",
-    ]
-
-    # Complete field mapping: JSON field name → DataFrame column name
-    FIELD_MAPPING = {
-        # Core identifiers
-        "messageId": "message_id",
-        "sourceName": "source_name",
-        "isin": "isin",
-        "instrumentId": "instrument_id",
-        "transIdCode": "trans_id",
-        "tickId": "tick_id",
-        # Trade details
-        "lastTrade": "price",
-        "lastQty": "volume",
-        "currency": "currency",
-        "quotationType": "quote_type",
-        # Timestamps
-        "lastTradeTime": "trade_time",
-        "distributionDateTime": "distribution_time",
-        # Execution venue
-        "executionVenueId": "venue",
-        # MiFID II transparency fields
-        "tickActionIndicator": "tick_action",
-        "instrumentIdCode": "instrument_code",
-        "mmtMarketMechanism": "market_mechanism",
-        "mmtTradingMode": "trading_mode",
-        "mmtNegotTransPretrdWaivInd": "negotiated_flag",
-        "mmtModificationInd": "modification_flag",
-        "mmtBenchmarkRefprcInd": "benchmark_flag",
-        "mmtPubModeDefReason": "pub_deferral",
-        "mmtAlgoInd": "algo_indicator",
+    # Multi-schema registry: version → {json_field: df_column}
+    SCHEMAS = {
+        "2025-legacy": {
+            "messageId": "message_id",
+            "sourceName": "source_name",
+            "isin": "isin",                              # sentinel
+            "instrumentId": "instrument_id",
+            "transIdCode": "transaction_id",
+            "tickId": "tick_id",
+            "lastTrade": "price",
+            "lastQty": "quantity",
+            "currency": "price_currency",
+            "quotationType": "quote_type",
+            "lastTradeTime": "trading_date_time",
+            "distributionDateTime": "distribution_time",
+            "executionVenueId": "execution_venue",
+            "tickActionIndicator": "tick_action",
+            "instrumentIdCode": "instrument_code",
+            "mmtMarketMechanism": "market_mechanism",
+            "mmtTradingMode": "trading_mode",
+            "mmtNegotTransPretrdWaivInd": "negotiated_flag",
+            "mmtModificationInd": "modification_flag",
+            "mmtBenchmarkRefprcInd": "benchmark_flag",
+            "mmtPubModeDefReason": "pub_deferral",
+            "mmtAlgoInd": "algo_indicator",
+        },
+        "2026-mifid": {
+            "instrumentIdentificationCode": "isin",      # sentinel
+            "transactionIdentificationCode": "transaction_id",
+            "price": "price",
+            "quantity": "quantity",
+            "priceCurrency": "price_currency",
+            "tradingDateAndTime": "trading_date_time",
+            "venueOfExecution": "execution_venue",
+            "publicationDateAndTime": "distribution_time",
+            "tradingSystem": "trading_system",
+            "priceNotation": "price_notation",
+            "venueOfPublication": "venue_publication",
+            "mmtTradingMode": "trading_mode",
+            "mmtModificationInd": "modification_flag",
+            "mmtBenchmarkRefprcInd": "benchmark_flag",
+            "mmtPubModeDefReason": "pub_deferral",
+            "mmtAlgoInd": "algo_indicator",
+        },
     }
 
-    # Expected data types for validation
+    # Presence of this JSON field in the first record → schema version. First match wins.
+    SCHEMA_SENTINELS = {
+        "isin": "2025-legacy",
+        "instrumentIdentificationCode": "2026-mifid",
+    }
+
+    # Records missing any hard-required DF column are dropped.
+    HARD_REQUIRED_FIELDS = {"isin", "price", "quantity", "trading_date_time"}
+
+    # Missing soft-required DF columns are added as null with a WARNING (record kept).
+    SOFT_REQUIRED_FIELDS = {"transaction_id", "execution_venue", "price_currency"}
+
+    # dtypes enforced after rename; used by validate_schema too.
     EXPECTED_DTYPES = {
         "isin": "object",
         "price": "float64",
-        "volume": "float64",
-        "currency": "object",
-        "trade_time": "datetime64[ns]",
-        "venue": "object",
-        "trans_id": "object",
-        "tick_id": "int64",
+        "quantity": "float64",
+        "price_currency": "object",
+        "trading_date_time": "datetime64[ns]",
+        "distribution_time": "datetime64[ns]",
+        "execution_venue": "object",
+        "transaction_id": "object",
+        "schema_version": "object",
     }
 
     def parse(self, json_str: str) -> pd.DataFrame:
         """
-        Parse Xetra JSON string into DataFrame.
-
-        Args:
-            json_str: JSON string containing array of trade records (one JSON object per line)
-
-        Returns:
-            DataFrame with normalized column names and proper data types
+        Parse Xetra JSONL string into a validated DataFrame.
 
         Raises:
-            ValueError: If JSON is malformed or required fields missing
-            json.JSONDecodeError: If JSON syntax is invalid
-
-        Example:
-            >>> parser = XetraParser()
-            >>> json_data = '{"isin":"DE0007100000","lastTrade":56.20,...}\\n{"isin":"...",...}'
-            >>> df = parser.parse(json_data)
-            >>> print(df.columns)
-            Index(['isin', 'price', 'volume', 'currency', 'trade_time', ...])
+            XetraSchemaUnknownError: Field names match no registered schema.
+            ValueError: Hard-required fields absent after schema detection.
+            json.JSONDecodeError: JSON syntax is invalid.
         """
         try:
-            # Parse JSONL (one JSON object per line)
             trades = []
             for line in json_str.strip().split("\n"):
-                if line.strip():  # Skip empty lines
+                if line.strip():
                     trades.append(json.loads(line))
 
             if not trades:
@@ -94,30 +100,27 @@ class XetraParser:
 
             logger.debug(f"Parsed {len(trades)} trade records from JSON")
 
-            # Convert to DataFrame
+            raw_fields = list(trades[0].keys())
+            schema_version = self._detect_schema(raw_fields)
+            field_mapping = self.SCHEMAS[schema_version]
+            logger.debug(f"Detected schema: {schema_version}")
+
             df = pd.DataFrame(trades)
+            df = df.rename(columns=field_mapping)
 
-            # Rename columns using mapping
-            df = df.rename(columns=self.FIELD_MAPPING)
-
-            # Validate required fields
             self._validate_required_fields(df)
 
-            # Convert timestamps
             df = self._convert_timestamps(df)
-
-            # Normalize data types
             df = self._normalize_types(df)
 
-            # Convert algo indicator to boolean
             if "algo_indicator" in df.columns:
                 df["algo_indicator"] = df["algo_indicator"] == "H"
 
-            # Ensure all expected columns are present for Parquet schema stability
-            df = self._ensure_complete_schema(df)
+            df["schema_version"] = schema_version
+            df = self._ensure_complete_schema(df, field_mapping)
 
             logger.info(
-                f"Successfully parsed {len(df)} trades with {len(df.columns)} columns"
+                f"Successfully parsed {len(df)} trades [{schema_version}] with {len(df.columns)} columns"
             )
 
             return df
@@ -125,139 +128,104 @@ class XetraParser:
         except json.JSONDecodeError as e:
             logger.error(f"JSON parsing error: {e}")
             raise
+        except (XetraSchemaUnknownError, ValueError):
+            raise
         except Exception as e:
             logger.error(f"Unexpected parsing error: {e}")
             raise
 
+    def _detect_schema(self, raw_fields: list[str]) -> str:
+        """Return the schema version for the given JSON field list, or raise XetraSchemaUnknownError."""
+        for sentinel, version in self.SCHEMA_SENTINELS.items():
+            if sentinel in raw_fields:
+                return version
+        raise XetraSchemaUnknownError(raw_fields)
+
     def _validate_required_fields(self, df: pd.DataFrame) -> None:
         """
-        Validate that all required fields are present.
+        Apply tiered field validation.
 
-        Raises:
-            ValueError: If any required field is missing
+        Hard-required: raises ValueError if any are absent.
+        Soft-required: adds null column with a WARNING if absent.
         """
-        # Map required JSON fields to DataFrame column names
-        required_columns = [self.FIELD_MAPPING[field] for field in self.REQUIRED_FIELDS]
-
-        missing = [col for col in required_columns if col not in df.columns]
-
-        if missing:
+        missing_hard = [col for col in self.HARD_REQUIRED_FIELDS if col not in df.columns]
+        if missing_hard:
             raise ValueError(
-                f"Missing required fields in trade data: {', '.join(missing)}"
+                f"Missing hard-required fields in trade data: {', '.join(sorted(missing_hard))}"
             )
 
+        missing_soft = [col for col in self.SOFT_REQUIRED_FIELDS if col not in df.columns]
+        if missing_soft:
+            logger.warning(
+                f"Soft-required fields missing, storing as null: {sorted(missing_soft)}"
+            )
+            for col in missing_soft:
+                df[col] = None
+
     def _convert_timestamps(self, df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Convert timestamp strings to pandas datetime.
-
-        Handles nanosecond precision ISO 8601 timestamps.
-        """
-        timestamp_cols = ["trade_time", "distribution_time"]
-
-        for col in timestamp_cols:
+        """Convert ISO 8601 timestamp strings to timezone-naive datetime64[ns]."""
+        for col in ("trading_date_time", "distribution_time"):
             if col in df.columns:
-                # Parse ISO 8601 with nanosecond precision, remove timezone info
                 df[col] = pd.to_datetime(df[col], utc=True).dt.tz_localize(None)
-
         return df
 
     def _normalize_types(self, df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Normalize data types to expected schema.
-
-        Ensures price/volume are float64, tick_id is int64, etc.
-        """
+        """Enforce expected dtypes on key columns."""
         for col, dtype in self.EXPECTED_DTYPES.items():
             if col in df.columns:
                 if dtype == "float64":
                     df[col] = pd.to_numeric(df[col], errors="coerce")
                 elif dtype == "int64":
                     df[col] = pd.to_numeric(df[col], errors="coerce").astype("Int64")
-                # object types don't need conversion
-
         return df
 
-    def _ensure_complete_schema(self, df: pd.DataFrame) -> pd.DataFrame:
+    def _ensure_complete_schema(self, df: pd.DataFrame, field_mapping: dict) -> pd.DataFrame:
         """
-        Ensure all columns from FIELD_MAPPING are present in DataFrame.
+        Add any missing mapped columns as None; drop unmapped columns; reorder.
 
-        API responses may omit optional fields like mmtNegotTransPretrdWaivInd.
-        Missing columns are added with None/NaN values to maintain stable Parquet schema.
-
-        Args:
-            df: Parsed DataFrame with potentially missing columns
-
-        Returns:
-            DataFrame with all expected columns present
+        Columns are ordered by field_mapping sequence with schema_version appended.
         """
-        expected_columns = list(self.FIELD_MAPPING.values())
-        missing_columns = [col for col in expected_columns if col not in df.columns]
+        expected = list(dict.fromkeys(list(field_mapping.values()) + ["schema_version"]))
 
-        if missing_columns:
-            logger.debug(
-                f"Adding {len(missing_columns)} missing columns to DataFrame: {missing_columns}"
-            )
-            for col in missing_columns:
-                df[col] = (
-                    None  # Will be properly typed by _normalize_types if applicable
-                )
+        missing = [col for col in expected if col not in df.columns]
+        if missing:
+            logger.debug(f"Adding {len(missing)} missing optional columns: {missing}")
+            for col in missing:
+                df[col] = None
 
-        # Reorder columns to match FIELD_MAPPING order for consistency
-        df = df[expected_columns]
-
-        return df
+        return df[[col for col in expected if col in df.columns]]
 
     def _create_empty_dataframe(self) -> pd.DataFrame:
-        """
-        Create empty DataFrame with correct schema.
-
-        Used when no trades are found in JSON.
-        """
-        # Create DataFrame with all mapped columns
-        columns = list(self.FIELD_MAPPING.values())
+        """Create an empty DataFrame with minimum schema for no-data files."""
+        columns = (
+            sorted(self.HARD_REQUIRED_FIELDS | self.SOFT_REQUIRED_FIELDS)
+            + ["distribution_time", "algo_indicator", "schema_version"]
+        )
         df = pd.DataFrame(columns=columns)
-
-        # Set data types for empty DataFrame
         for col, dtype in self.EXPECTED_DTYPES.items():
             if col in df.columns:
                 if dtype == "datetime64[ns]":
                     df[col] = pd.to_datetime(df[col])
                 elif dtype == "float64":
                     df[col] = pd.to_numeric(df[col], errors="coerce")
-                elif dtype == "int64":
-                    df[col] = pd.array([], dtype="Int64")
-
         return df
 
     def validate_schema(self, df: pd.DataFrame) -> bool:
         """
         Validate DataFrame schema matches expected structure.
 
-        Args:
-            df: DataFrame to validate
-
-        Returns:
-            True if schema is valid
-
         Raises:
-            ValueError: If schema validation fails
+            ValueError: If hard-required columns are missing or dtypes are wrong.
         """
-        # Check required columns exist
-        required_columns = [self.FIELD_MAPPING[field] for field in self.REQUIRED_FIELDS]
-        missing = [col for col in required_columns if col not in df.columns]
-
+        missing = [col for col in self.HARD_REQUIRED_FIELDS if col not in df.columns]
         if missing:
             raise ValueError(f"Schema validation failed: missing columns {missing}")
 
-        # Check data types for critical columns
         for col, expected_dtype in self.EXPECTED_DTYPES.items():
             if col in df.columns:
                 actual_dtype = str(df[col].dtype)
-
-                # Allow Int64 (nullable) for int64
                 if expected_dtype == "int64" and actual_dtype == "Int64":
                     continue
-
                 if not actual_dtype.startswith(expected_dtype.split("[")[0]):
                     raise ValueError(
                         f"Schema validation failed: column '{col}' has dtype '{actual_dtype}', "

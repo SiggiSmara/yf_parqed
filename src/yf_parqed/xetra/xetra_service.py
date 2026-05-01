@@ -9,6 +9,7 @@ from ..common.partitioned_storage_backend import PartitionedStorageBackend
 from ..common.partition_path_builder import PartitionPathBuilder
 from .xetra_fetcher import XetraFetcher
 from .xetra_parser import XetraParser
+from .exceptions import XetraSchemaUnknownError
 from ..common.config_service import ConfigService
 
 
@@ -48,10 +49,11 @@ class XetraService:
             burst_cooldown=burst_cooldown,
         )
         self.parser = parser or XetraParser()
+        self.root_path = root_path or Path("data")
 
         # Default backend configuration for Xetra trades
         if backend is None:
-            path_builder = PartitionPathBuilder(root=root_path or Path("data"))
+            path_builder = PartitionPathBuilder(root=self.root_path)
             self.backend = PartitionedStorageBackend(
                 empty_frame_factory=lambda: pd.DataFrame(),
                 normalizer=lambda df: df,
@@ -254,8 +256,20 @@ class XetraService:
         # Decompress
         json_str = self.fetcher.decompress_gzip(compressed_data)
 
-        # Parse to DataFrame
-        df = self.parser.parse(json_str)
+        # Parse to DataFrame — quarantine raw bytes before re-raising on unknown schema
+        try:
+            df = self.parser.parse(json_str)
+        except XetraSchemaUnknownError as e:
+            quarantine_path = (
+                self.root_path / "de" / "xetra" / "quarantine" / venue / filename
+            )
+            quarantine_path.parent.mkdir(parents=True, exist_ok=True)
+            quarantine_path.write_bytes(compressed_data)
+            logger.error(
+                f"Unknown schema in {filename}: quarantined to {quarantine_path}. "
+                f"Fields received: {sorted(e.actual_fields)}"
+            )
+            raise
 
         logger.debug(
             f"Parsed {len(df)} trades from {filename} ({len(df['isin'].unique())} unique ISINs)"
@@ -293,9 +307,10 @@ class XetraService:
             try:
                 df = self.fetch_and_parse_trades(venue, date, filename)
                 all_trades.append(df)
+            except XetraSchemaUnknownError:
+                raise  # All files share the same schema — no point continuing
             except Exception as e:
                 logger.error(f"Failed to process {filename}: {e}")
-                # Continue with other files
                 continue
 
         if not all_trades:

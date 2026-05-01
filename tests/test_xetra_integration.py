@@ -109,18 +109,18 @@ class TestXetraIntegrationMocked:
         required_columns = [
             "isin",
             "price",
-            "volume",
-            "currency",
-            "trade_time",
-            "venue",
+            "quantity",
+            "price_currency",
+            "trading_date_time",
+            "execution_venue",
         ]
         for col in required_columns:
             assert col in df.columns, f"Missing column: {col}"
 
         # Validate data types
         assert df["price"].dtype == "float64"
-        assert df["volume"].dtype == "float64"
-        assert pd.api.types.is_datetime64_any_dtype(df["trade_time"])
+        assert df["quantity"].dtype == "float64"
+        assert pd.api.types.is_datetime64_any_dtype(df["trading_date_time"])
 
         # Step 3: Store to parquet
         trade_date = datetime(2025, 11, 1)
@@ -149,7 +149,7 @@ class TestXetraIntegrationMocked:
         # Verify data integrity (sample checks)
         assert df_read["isin"].tolist()[0] == "DE0007100000"
         assert df_read["price"].tolist()[0] == 100.0
-        assert df_read["volume"].tolist()[0] == 10.0
+        assert df_read["quantity"].tolist()[0] == 10.0
 
         # Performance check (should be fast with 100 trades)
         assert fetch_time < 5.0, (
