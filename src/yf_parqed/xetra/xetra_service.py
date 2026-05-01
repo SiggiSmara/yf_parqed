@@ -5,7 +5,6 @@ import gc
 import os
 
 import pandas as pd
-import polars as pl
 import pyarrow as pa
 import pyarrow.parquet as pq
 from loguru import logger
@@ -1099,25 +1098,53 @@ class XetraService:
                     summary["paths_migrated"].append(str(path))
                     continue
 
-                # Polars handles dict-encoded columns transparently, avoiding
-                # the PyArrow "unable to merge" error on files with inconsistent
-                # row-group encodings (string vs dictionary<string>).
-                df = pl.read_parquet(path)
-                rename_map = {k: v for k, v in self.LEGACY_COLUMN_RENAMES.items() if k in df.columns}
-                df = df.rename(rename_map)
-                df = df.with_columns(pl.lit("2025-legacy").alias("schema_version"))
-
-                # Normalize dict-encoded columns to plain String so the output
-                # file has consistent types across all row groups.
-                df = df.with_columns(
-                    [pl.col(c).cast(pl.String) for c in df.columns if df[c].dtype == pl.Categorical]
-                )
-
+                # Read one row group at a time so we never ask PyArrow to merge
+                # row groups with incompatible column encodings (string vs
+                # dictionary<string>). Each group is cast to plain string before
+                # being written, keeping memory proportional to one row group.
+                reader = pq.ParquetFile(path)
                 tmp_path = path.with_suffix(".parquet.tmp")
-                df.write_parquet(tmp_path)
+                writer = None
+                try:
+                    for i in range(reader.metadata.num_row_groups):
+                        rg = reader.read_row_group(i)
+                        new_cols = {
+                            field.name: (
+                                rg.column(field.name).cast(
+                                    rg.column(field.name).type.value_type
+                                )
+                                if pa.types.is_dictionary(rg.column(field.name).type)
+                                else rg.column(field.name)
+                            )
+                            for field in rg.schema
+                        }
+                        rg = pa.table(new_cols)
+                        new_names = [
+                            self.LEGACY_COLUMN_RENAMES.get(name, name)
+                            for name in rg.schema.names
+                        ]
+                        rg = rg.rename_columns(new_names)
+                        rg = rg.append_column(
+                            "schema_version",
+                            pa.array(["2025-legacy"] * len(rg), type=pa.string()),
+                        )
+                        if writer is None:
+                            writer = pq.ParquetWriter(
+                                tmp_path, rg.schema, use_dictionary=False
+                            )
+                        writer.write_table(rg)
+                    if writer is not None:
+                        writer.close()
+                        writer = None
+                except Exception:
+                    if writer is not None:
+                        try:
+                            writer.close()
+                        except Exception:
+                            pass
+                    tmp_path.unlink(missing_ok=True)
+                    raise
                 os.replace(tmp_path, path)
-
-                del df
                 gc.collect()
 
                 logger.info(f"Migrated: {path}")

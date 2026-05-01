@@ -2,10 +2,13 @@
 
 import gzip
 import json
-from datetime import datetime
+from datetime import datetime, timezone
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
 import pytest
 
 from yf_parqed.xetra.xetra_service import XetraService
@@ -728,3 +731,178 @@ class TestDownloadLogTracking:
             "Should only download 1 missing file"
         )
         assert summary["total_files"] == 1
+
+
+class TestMigrateLegacyColumns:
+    """Tests for XetraService.migrate_legacy_columns and find_unmigrated_files."""
+
+    @staticmethod
+    def _monthly_parquet_path(root: Path, year: int = 2025, month: int = 10) -> Path:
+        p = (
+            root
+            / "de"
+            / "xetra"
+            / "trades_monthly"
+            / "venue=DETR"
+            / f"year={year}"
+            / f"month={month:02d}"
+            / "trades.parquet"
+        )
+        p.parent.mkdir(parents=True, exist_ok=True)
+        return p
+
+    @classmethod
+    def _write_legacy_file(
+        cls,
+        root: Path,
+        *,
+        dict_encode_venue: bool = False,
+        num_rows: int = 2,
+        year: int = 2025,
+        month: int = 10,
+    ) -> Path:
+        """Write a legacy monthly Parquet file without schema_version."""
+        venue_arr = pa.array(["XETA"] * num_rows)
+        if dict_encode_venue:
+            venue_arr = venue_arr.dictionary_encode()
+
+        table = pa.table(
+            {
+                "isin": pa.array(["DE0007100000"] * num_rows),
+                "price": pa.array([100.0] * num_rows),
+                "volume": pa.array([10] * num_rows),
+                "currency": pa.array(["EUR"] * num_rows),
+                "trade_time": pa.array(
+                    [datetime(year, month, 1, 12, tzinfo=timezone.utc)] * num_rows,
+                    type=pa.timestamp("us", tz="UTC"),
+                ),
+                "trans_id": pa.array([f"TX{i:03d}" for i in range(num_rows)]),
+                "venue": venue_arr,
+            }
+        )
+        path = cls._monthly_parquet_path(root, year=year, month=month)
+        pq.write_table(table, path)
+        return path
+
+    def test_renames_columns_and_adds_schema_version(self, tmp_path):
+        """Migration renames all legacy columns and adds schema_version."""
+        path = self._write_legacy_file(tmp_path)
+        service = XetraService(root_path=tmp_path)
+
+        summary = service.migrate_legacy_columns("DETR")
+
+        assert summary["migrated"] == 1
+        assert summary["failed"] == 0
+        assert str(path) in summary["paths_migrated"]
+
+        schema = pq.read_schema(path)
+        assert "schema_version" in schema.names
+        assert "execution_venue" in schema.names
+        assert "transaction_id" in schema.names
+        assert "quantity" in schema.names
+        assert "price_currency" in schema.names
+        assert "trading_date_time" in schema.names
+
+        assert "venue" not in schema.names
+        assert "trans_id" not in schema.names
+        assert "volume" not in schema.names
+        assert "currency" not in schema.names
+        assert "trade_time" not in schema.names
+
+        table = pq.read_table(path)
+        assert len(table) == 2
+        assert table.column("schema_version").to_pylist() == ["2025-legacy"] * 2
+
+    def test_dict_encoded_venue_is_cast_to_plain_string(self, tmp_path):
+        """
+        When venue is stored as a DictionaryArray (as some older write paths produced
+        via pandas Categorical), migration must cast it to plain string.
+
+        The cast happens in the per-row-group loop: pa.types.is_dictionary check +
+        col.cast(value_type). This test verifies both that the cast is applied and
+        that the output file has plain string type for execution_venue.
+        """
+        path = self._write_legacy_file(tmp_path, dict_encode_venue=True)
+
+        # Fixture sanity: venue must be dict-encoded to exercise the cast path
+        assert pa.types.is_dictionary(pq.read_schema(path).field("venue").type), (
+            "fixture must have dict-encoded venue"
+        )
+
+        service = XetraService(root_path=tmp_path)
+        summary = service.migrate_legacy_columns("DETR")
+
+        assert summary["migrated"] == 1
+        assert summary["failed"] == 0
+
+        out_schema = pq.read_schema(path)
+        assert out_schema.field("execution_venue").type == pa.string(), (
+            "dict-encoded venue must be cast to plain string after migration"
+        )
+        assert "schema_version" in out_schema.names
+
+    def test_mixed_encoding_regression_no_read_table(self, tmp_path, monkeypatch):
+        """
+        pq.read_table raises "Unable to merge: Field venue has incompatible types"
+        on the production monthly files that had mixed string/dictionary<string>
+        row-group encodings. Migration must not call read_table.
+
+        This guard patches read_table to raise the production error. If a future
+        change reintroduces read_table in the migration path, the migration fails
+        and this test catches it.
+        """
+        path = self._write_legacy_file(tmp_path, dict_encode_venue=True)
+
+        def _raise_merge_error(*args, **kwargs):
+            raise Exception(
+                "Unable to merge: Field venue has incompatible types: "
+                "string vs dictionary<values=string, indices=int32, ordered=0>"
+            )
+
+        import pyarrow.parquet as _pq
+        monkeypatch.setattr(_pq, "read_table", _raise_merge_error)
+
+        service = XetraService(root_path=tmp_path)
+        summary = service.migrate_legacy_columns("DETR")
+
+        assert summary["migrated"] == 1
+        assert summary["failed"] == 0
+
+    def test_already_migrated_files_are_skipped(self, tmp_path):
+        """Files that already have schema_version are not touched again."""
+        path = self._write_legacy_file(tmp_path)
+        service = XetraService(root_path=tmp_path)
+
+        service.migrate_legacy_columns("DETR")
+        mtime_after_first = path.stat().st_mtime
+
+        summary2 = service.migrate_legacy_columns("DETR")
+        assert summary2["migrated"] == 0
+        assert path.stat().st_mtime == mtime_after_first
+
+    def test_dry_run_does_not_modify_file(self, tmp_path):
+        """dry_run=True reports the file but leaves it unchanged."""
+        path = self._write_legacy_file(tmp_path)
+        mtime_before = path.stat().st_mtime
+
+        service = XetraService(root_path=tmp_path)
+        summary = service.migrate_legacy_columns("DETR", dry_run=True)
+
+        assert summary["migrated"] == 1
+        assert path.stat().st_mtime == mtime_before
+        assert "schema_version" not in pq.read_schema(path).names
+
+    def test_multiple_monthly_files_all_migrated(self, tmp_path):
+        """All unmigrated files across different months are processed."""
+        paths = [
+            self._write_legacy_file(tmp_path, year=2026, month=1),
+            self._write_legacy_file(tmp_path, year=2026, month=2),
+        ]
+
+        service = XetraService(root_path=tmp_path)
+        summary = service.migrate_legacy_columns("DETR")
+
+        assert summary["migrated"] == 2
+        assert summary["failed"] == 0
+        for p in paths:
+            assert "schema_version" in pq.read_schema(p).names
