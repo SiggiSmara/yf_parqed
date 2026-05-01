@@ -576,6 +576,13 @@ do_update() {
     clone_or_update_repo
     install_dependencies
 
+    # Clear stale bytecache so the new source takes effect immediately.
+    # Without this, Python may run Dec-era .pyc files even after a code update
+    # (reproduced 2026-05-01: old xetra_parser.pyc caused every 2026-04-30 parse to fail).
+    log_info "Clearing Python bytecache..."
+    find "$INSTALL_DIR/src" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+    log_info "Bytecache cleared"
+
     # Optional: reinstall systemd unit templates (overwrites local edits)
     read -p "Reinstall systemd service templates (will overwrite local changes)? [y/N]: " reinstall_units
     case "$reinstall_units" in
