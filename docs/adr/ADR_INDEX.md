@@ -35,6 +35,7 @@ This index lists ADRs and provides a suggested classification (implemented / in-
 | 2025-12-06 | `2025-12-06-separation-of-concerns.md` | Separation of Concerns | implemented | Package refactor completed; tests and import shims updated (see ADR contents).
 | 2026-04-26 | `2026-04-26-xetra-parser-schema-resilience.md` | Xetra Parser Schema Resilience | in-progress | Core parser + quarantine done (2026-05-01); `reprocess-quarantine` CLI and DATA_MODEL.md update deferred.
 | 2026-04-26 | `2026-04-26-xetra-two-tier-storage.md` | Xetra Two-Tier Trade Storage | to-do | Stable 7-column MiFIR core contract + flexible extended metadata tier; insulates OHLCV from vendor schema changes.
+| 2026-05-01 | `2026-05-01-xetra-daemon-write-path-perf.md` | Xetra Daemon Write-Path Performance and Hygiene | to-do | Eliminate O(n²) intra-day rewrites in `save_xetra_trades` and monthly consolidation; fix `trade_time` post-migration regression; misc daemon hygiene.
 
 
 ## How to use
