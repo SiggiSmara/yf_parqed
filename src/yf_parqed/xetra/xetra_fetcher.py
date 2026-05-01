@@ -352,9 +352,7 @@ class XetraFetcher:
             except httpx.HTTPStatusError as e:
                 # Handle rate limiting with exponential backoff
                 if e.response.status_code == 429 and attempt < max_retries - 1:
-                    delay = base_delay * (
-                        2**attempt
-                    )  # Exponential backoff: 4s, 8s, 16s, 32s
+                    delay = base_delay * (2**attempt)
                     logger.warning(
                         f"Rate limited (429) on attempt {attempt + 1}/{max_retries}. "
                         f"Retrying in {delay}s..."
@@ -366,6 +364,16 @@ class XetraFetcher:
                         f"HTTP {e.response.status_code} error downloading {filename}: {e}"
                     )
                     raise
+            except (httpx.RemoteProtocolError, httpx.ConnectError) as e:
+                if attempt < max_retries - 1:
+                    logger.warning(
+                        f"Connection error on attempt {attempt + 1}/{max_retries} "
+                        f"downloading {filename}: {e} — rotating client and retrying"
+                    )
+                    self.rotate_client()
+                    continue
+                logger.error(f"Connection error downloading {filename} after {max_retries} attempts: {e}")
+                raise
             except httpx.RequestError as e:
                 logger.error(f"Network error downloading {filename}: {e}")
                 raise
@@ -406,6 +414,12 @@ class XetraFetcher:
         except UnicodeDecodeError as e:
             logger.error(f"UTF-8 decoding error: {e}")
             raise
+
+    def rotate_client(self) -> None:
+        """Close and reopen the HTTP client, clearing any stale connections."""
+        self.client.close()
+        self.client = httpx.Client(timeout=30.0)
+        logger.debug("HTTP client rotated")
 
     def close(self):
         """Close the HTTP client."""

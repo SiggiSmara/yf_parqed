@@ -20,6 +20,7 @@ data/
 │   └── xetra/                   # Deutsche Börse Xetra source
 │       ├── trades/              # Raw per-trade data (daily partitions)
 │       ├── trades_monthly/      # Consolidated monthly trade data
+│       ├── raw/                 # Raw .json.gz download cache (7-day TTL)
 │       ├── stocks_1m/           # 1-minute OHLCV (aggregated, Phase 2)
 │       ├── stocks_1h/           # 1-hour OHLCV (aggregated, Phase 2)
 │       └── stocks_1d/           # 1-day OHLCV (aggregated, Phase 2)
@@ -169,6 +170,65 @@ data/de/xetra/trades_monthly/venue=DFRA/year=2025/month=11/trades.parquet
 - **Space optimization**: Consolidates daily files into monthly archives
 - **Query performance**: Fewer files to scan for month-level queries
 - **Retention**: Daily files can be deleted after consolidation
+
+---
+
+### Raw JSON Download Cache
+
+#### Path Pattern
+
+```
+data/de/xetra/raw/<VENUE>/year=<YYYY>/month=<MM>/day=<DD>/<filename>.json.gz
+```
+
+Note: the venue directory is a plain name (not `venue=DETR`), since this is operational scratch rather than a Hive-partitioned query dataset.
+
+#### Examples
+
+```
+data/de/xetra/raw/DETR/year=2026/month=04/day=30/DETR-posttrade-2026-04-30T09_00.json.gz
+data/de/xetra/raw/DETR/year=2026/month=04/day=30/DETR-posttrade-2026-04-30T09_01.json.gz
+```
+
+#### Purpose
+
+Every downloaded `.json.gz` is written here **before** it is parsed. This provides:
+
+- **Data safety**: A SIGKILL mid-Parquet-write does not lose raw data. The raw file can be reprocessed via `reprocess-raw-cache`.
+- **Resume detection**: `_is_cached()` is a single `path.exists()` — no Parquet read, no timestamp extraction. Works for empty files (zero trades) that would leave no trace in the Parquet.
+- **Unknown-schema recovery**: Files that fail parsing due to an unrecognised schema are preserved here (previously they went to `quarantine/`, which is now deprecated).
+
+#### TTL and cleanup
+
+Files are kept for **7 days** (default). The daemon runs `cleanup_raw_cache` at the start of each fetch cycle. A file is deleted when **both** conditions hold:
+1. The file is older than the TTL.
+2. A readable daily or monthly Parquet exists that confirms the data has been persisted.
+
+Files older than the TTL but without a readable Parquet are **kept** and logged as warnings — this is a signal that data may be unaccounted for.
+
+Orphaned `.json.gz.tmp` files (from interrupted writes) are removed unconditionally on the next cleanup run.
+
+#### Disk space
+
+~15 KB per file × 800 files/day × 4 venues × 7 days ≈ **336 MB ceiling**.
+
+#### CLI commands
+
+```bash
+# Inspect what would be deleted (dry run)
+xetra-parqed cleanup-raw-cache DETR --dry-run
+
+# Delete aged files
+xetra-parqed cleanup-raw-cache DETR
+
+# Rebuild a daily Parquet from raw cache (after corruption or data loss)
+xetra-parqed reprocess-raw-cache DETR 2026-04-30
+xetra-parqed reprocess-raw-cache DETR 2026-04-30 --force   # even if Parquet looks OK
+```
+
+#### Deprecated: `.download_log.parquet`
+
+The file `data/de/xetra/.download_log.parquet` was the previous resume mechanism. It is no longer written. Existing files on disk are ignored and can be removed manually.
 
 ---
 

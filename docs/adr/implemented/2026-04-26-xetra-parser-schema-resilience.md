@@ -1,6 +1,6 @@
 # ADR 2026-04-26: Xetra Parser Schema Resilience
 
-## Status: In Progress
+## Status: Implemented
 
 ## Context
 
@@ -92,9 +92,9 @@ Add a `schema_version: str` column to every stored row (value = detected version
 - [x] Update `_create_empty_dataframe` and `_ensure_complete_schema` for new registry shape
 - [x] Update `tests/test_xetra_parser.py` — fixtures for both schemas, schema detection tests, soft-required fallback, `schema_version` assertions
 - [x] Run `uv run pytest` — 448 passed, 0 failed (2026-05-01)
-- [ ] Update `DATA_MODEL.md` with `schema_version` column and schema version table
-- [ ] *(deferred)* Add `reprocess-quarantine` CLI subcommand to `xetra_cli.py`
-- [ ] *(deferred)* Add tests for quarantine write path and reprocess command
+- [x] Update `DATA_MODEL.md` with `schema_version` column, schema version table, and corrected column names (2026-05-01)
+- [ ] ~~*(deferred)* Add `reprocess-quarantine` CLI subcommand to `xetra_cli.py`~~ **Superseded**: quarantine write path removed (write-path ADR Step B, 2026-05-01). `reprocess-raw-cache` is the functional replacement — it covers the same recovery scenario using the raw JSON cache.
+- [ ] ~~*(deferred)* Add tests for quarantine write path and reprocess command~~ **Superseded**: raw cache tests in `tests/test_xetra_raw_cache.py` cover the scenario.
 
 ## Risk Controls
 

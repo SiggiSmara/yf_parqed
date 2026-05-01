@@ -274,6 +274,7 @@ class TestXetraLiveAPI:
         # Step 3: Store to parquet
         trade_date = datetime.strptime(trading_day, "%Y-%m-%d")
         service.store_trades(df, "DETR", trade_date, market="de", source="xetra")
+        service._consolidate_daily_files("DETR", trading_day)
 
         # Step 4: Verify file exists
         expected_path = (

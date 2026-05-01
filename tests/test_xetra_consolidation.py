@@ -74,6 +74,7 @@ class TestIncrementalStorage:
         trade_date = datetime(2025, 11, 4)
 
         service.store_trades(sample_trades_df, venue, trade_date)
+        service._consolidate_daily_files(venue, "2025-11-04")
 
         # Check file exists in expected location
         expected_path = (
@@ -119,6 +120,7 @@ class TestIncrementalStorage:
             }
         )
         service.store_trades(more_trades, venue, trade_date)
+        service._consolidate_daily_files(venue, "2025-11-04")
 
         # Check merged data
         expected_path = (
@@ -175,11 +177,11 @@ class TestMonthlyConsolidation:
             df = sample_trades_df.copy()
             df["time"] = pd.to_datetime(f"{year}-{month:02d}-{day:02d} 09:00:00")
             service.store_trades(df, venue, trade_date)
+            service._consolidate_daily_files(venue, f"{year}-{month:02d}-{day:02d}")
 
         # Consolidate
         service._consolidate_to_monthly(venue, year, month)
 
-        # Check monthly file exists
         monthly_path = (
             temp_root
             / "de"
@@ -208,6 +210,7 @@ class TestMonthlyConsolidation:
             df = sample_trades_df.copy()
             df["time"] = pd.to_datetime(f"{year}-{month:02d}-{day:02d} 09:00:00")
             service.store_trades(df, venue, trade_date)
+            service._consolidate_daily_files(venue, f"{year}-{month:02d}-{day:02d}")
 
         # Consolidate
         service._consolidate_to_monthly(venue, year, month)
@@ -261,6 +264,7 @@ class TestMonthlyConsolidation:
         # Create daily file
         trade_date = datetime(year, month, 4)
         service.store_trades(sample_trades_df, venue, trade_date)
+        service._consolidate_daily_files(venue, f"{year}-{month:02d}-04")
 
         daily_path = (
             temp_root

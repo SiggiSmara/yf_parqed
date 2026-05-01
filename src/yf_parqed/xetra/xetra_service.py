@@ -3,6 +3,7 @@ from typing import List, Optional
 from pathlib import Path
 import gc
 import os
+import time
 
 import pandas as pd
 import pyarrow as pa
@@ -95,6 +96,237 @@ class XetraService:
         parquet_files = list(venue_dir.rglob("*.parquet"))
         return len(parquet_files) > 0
 
+    # --- Raw cache helpers ---
+
+    def _raw_cache_path(
+        self,
+        venue: str,
+        date_str: str,
+        filename: str,
+        market: str = "de",
+        source: str = "xetra",
+    ) -> Path:
+        d = datetime.strptime(date_str, "%Y-%m-%d")
+        return (
+            self.root_path
+            / market
+            / source
+            / "raw"
+            / venue
+            / f"year={d.year}"
+            / f"month={d.month:02d}"
+            / f"day={d.day:02d}"
+            / filename
+        )
+
+    def _save_to_raw_cache(
+        self,
+        compressed_data: bytes,
+        venue: str,
+        date_str: str,
+        filename: str,
+        market: str = "de",
+        source: str = "xetra",
+    ) -> Path:
+        cache_path = self._raw_cache_path(venue, date_str, filename, market, source)
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = cache_path.with_name(cache_path.name + ".tmp")
+        try:
+            tmp_path.write_bytes(compressed_data)
+            tmp_path.rename(cache_path)
+        except Exception:
+            tmp_path.unlink(missing_ok=True)
+            raise
+        return cache_path
+
+    def _is_cached(
+        self,
+        venue: str,
+        date_str: str,
+        filename: str,
+        market: str = "de",
+        source: str = "xetra",
+    ) -> bool:
+        return self._raw_cache_path(venue, date_str, filename, market, source).exists()
+
+    def _is_parquet_readable(self, path: Path) -> bool:
+        try:
+            pq.read_metadata(str(path))
+            pd.read_parquet(path, columns=[])
+            return True
+        except Exception:
+            return False
+
+    def cleanup_raw_cache(
+        self,
+        venue: str,
+        max_age_days: int = 7,
+        market: str = "de",
+        source: str = "xetra",
+        dry_run: bool = False,
+    ) -> dict:
+        """
+        Delete raw cache files older than max_age_days when a readable Parquet confirms the data.
+
+        Returns dict with keys: deleted, kept_recent, kept_no_parquet, errors.
+        """
+        raw_dir = self.root_path / market / source / "raw" / venue
+        if not raw_dir.exists():
+            return {"deleted": 0, "kept_recent": 0, "kept_no_parquet": 0, "errors": 0}
+
+        now = time.time()
+        ttl = max_age_days * 86400
+        deleted = kept_recent = kept_no_parquet = errors = 0
+
+        # Remove orphaned .tmp files unconditionally
+        for tmp_path in raw_dir.rglob("*.json.gz.tmp"):
+            try:
+                if not dry_run:
+                    tmp_path.unlink(missing_ok=True)
+                deleted += 1
+            except Exception as e:
+                logger.warning(f"Failed to remove orphaned tmp {tmp_path}: {e}")
+                errors += 1
+
+        for cache_file in raw_dir.rglob("*.json.gz"):
+            try:
+                if now - cache_file.stat().st_mtime < ttl:
+                    kept_recent += 1
+                    continue
+
+                parts = cache_file.parent.parts
+                year_part = next((p for p in parts if p.startswith("year=")), None)
+                month_part = next((p for p in parts if p.startswith("month=")), None)
+                day_part = next((p for p in parts if p.startswith("day=")), None)
+
+                if not (year_part and month_part and day_part):
+                    logger.warning(f"Cannot parse date from raw cache path {cache_file}")
+                    kept_no_parquet += 1
+                    continue
+
+                year = year_part.split("=")[1]
+                month = month_part.split("=")[1]
+                day = day_part.split("=")[1]
+
+                daily_path = (
+                    self.root_path / market / source / "trades"
+                    / f"venue={venue}" / f"year={year}" / f"month={month}" / f"day={day}"
+                    / "trades.parquet"
+                )
+                monthly_path = (
+                    self.root_path / market / source / "trades_monthly"
+                    / f"venue={venue}" / f"year={year}" / f"month={month}"
+                    / "trades.parquet"
+                )
+
+                if self._is_parquet_readable(daily_path) or self._is_parquet_readable(monthly_path):
+                    if not dry_run:
+                        cache_file.unlink(missing_ok=True)
+                    deleted += 1
+                    logger.debug(f"Cleaned up aged raw cache file {cache_file.name}")
+                else:
+                    kept_no_parquet += 1
+                    logger.warning(
+                        f"Raw cache {cache_file.name} is >{max_age_days}d old "
+                        f"but no readable Parquet found — keeping"
+                    )
+            except Exception as e:
+                logger.warning(f"Error processing raw cache file {cache_file}: {e}")
+                errors += 1
+
+        label = " [DRY RUN]" if dry_run else ""
+        logger.info(
+            f"Raw cache cleanup {venue}{label}: "
+            f"deleted={deleted}, kept_recent={kept_recent}, "
+            f"kept_no_parquet={kept_no_parquet}, errors={errors}"
+        )
+        return {
+            "deleted": deleted,
+            "kept_recent": kept_recent,
+            "kept_no_parquet": kept_no_parquet,
+            "errors": errors,
+        }
+
+    def reprocess_from_raw_cache(
+        self,
+        venue: str,
+        date_str: str,
+        market: str = "de",
+        source: str = "xetra",
+        force: bool = False,
+    ) -> dict:
+        """
+        Rebuild the daily Parquet for venue/date from raw .json.gz cache files.
+
+        If a readable daily Parquet already exists and force=False, returns early.
+        Unknown-schema files are logged as errors but do not abort the run.
+
+        Returns dict with keys: processed, trades, skipped_unknown_schema, errors.
+        """
+        trade_date = datetime.strptime(date_str, "%Y-%m-%d")
+        cache_dir = (
+            self.root_path / market / source / "raw" / venue
+            / f"year={trade_date.year}" / f"month={trade_date.month:02d}"
+            / f"day={trade_date.day:02d}"
+        )
+        if not cache_dir.exists():
+            raise FileNotFoundError(f"No raw cache for {venue} {date_str} at {cache_dir}")
+
+        if not force:
+            daily_path = (
+                self.root_path / market / source / "trades"
+                / f"venue={venue}" / f"year={trade_date.year}"
+                / f"month={trade_date.month:02d}" / f"day={trade_date.day:02d}"
+                / "trades.parquet"
+            )
+            if self._is_parquet_readable(daily_path):
+                logger.info(
+                    f"Readable Parquet already exists for {venue} {date_str}; "
+                    f"use force=True to reprocess anyway"
+                )
+                return {"processed": 0, "trades": 0, "skipped_unknown_schema": 0, "errors": 0}
+
+        raw_files = sorted(cache_dir.glob("*.json.gz"))
+        if not raw_files:
+            raise FileNotFoundError(f"Raw cache directory exists but is empty: {cache_dir}")
+
+        processed = trades = skipped_unknown_schema = errors = 0
+
+        for raw_file in raw_files:
+            try:
+                compressed_data = raw_file.read_bytes()
+                json_str = self.fetcher.decompress_gzip(compressed_data)
+                df = self.parser.parse(json_str)
+                if not df.empty:
+                    self.store_trades(df, venue, trade_date, market, source)
+                    trades += len(df)
+                processed += 1
+            except XetraSchemaUnknownError as e:
+                logger.error(
+                    f"Unknown schema in {raw_file.name}: {sorted(e.actual_fields)}"
+                )
+                skipped_unknown_schema += 1
+            except Exception as e:
+                logger.error(f"Failed to reprocess {raw_file.name}: {e}")
+                errors += 1
+
+        logger.info(
+            f"Reprocess {venue} {date_str}: {processed} files, {trades} trades, "
+            f"{skipped_unknown_schema} unknown-schema, {errors} errors"
+        )
+
+        try:
+            self._consolidate_daily_files(venue, date_str, market, source)
+        except Exception as e:
+            logger.error(f"Failed to consolidate daily files for {venue} {date_str}: {e}")
+
+        return {
+            "processed": processed,
+            "trades": trades,
+            "skipped_unknown_schema": skipped_unknown_schema,
+            "errors": errors,
+        }
+
     def get_missing_dates(
         self, venue: str, market: str = "de", source: str = "xetra"
     ) -> List[str]:
@@ -152,39 +384,10 @@ class XetraService:
 
         available_dates = sorted(list(available_dates_set))
 
-        # Check which dates need to be fetched (either missing or incomplete)
-        # Return all available dates - the incremental logic will check which files are already stored
-        missing_dates = []
-        for date_str in available_dates:
-            trade_date = datetime.strptime(date_str, "%Y-%m-%d")
-            year = trade_date.year
-            month = f"{trade_date.month:02d}"
-            day = f"{trade_date.day:02d}"
-
-            # Check if parquet file exists for this date
-            base_dir = (
-                self.backend._path_builder._root
-                / market
-                / source
-                / "trades"
-                / f"venue={venue}"
-                / f"year={year}"
-                / f"month={month}"
-                / f"day={day}"
-            )
-            parquet_path = base_dir / "trades.parquet"
-
-            if not parquet_path.exists():
-                missing_dates.append(date_str)
-                logger.info(f"Missing: {venue} {date_str} (not stored locally)")
-            else:
-                # File exists but may be incomplete - include it so incremental logic can check
-                missing_dates.append(date_str)
-                logger.debug(
-                    f"Checking {venue} {date_str} for missing files (incremental)"
-                )
-
-        return missing_dates
+        logger.info(
+            f"Will check {len(available_dates)} dates for {venue}: {available_dates}"
+        )
+        return available_dates
 
     def list_files(self, venue: str, date: str) -> List[str]:
         """
@@ -257,26 +460,28 @@ class XetraService:
         # Download gzipped file
         compressed_data = self.fetcher.download_file(venue, date, filename)
 
+        # Save raw bytes before parsing — file is preserved even on parse failure or SIGKILL
+        try:
+            self._save_to_raw_cache(compressed_data, venue, date, filename)
+        except Exception as e:
+            logger.warning(f"Failed to cache {filename}: {e}")
+
         # Decompress
         json_str = self.fetcher.decompress_gzip(compressed_data)
 
-        # Parse to DataFrame — quarantine raw bytes before re-raising on unknown schema
+        # Parse to DataFrame
         try:
             df = self.parser.parse(json_str)
         except XetraSchemaUnknownError as e:
-            quarantine_path = (
-                self.root_path / "de" / "xetra" / "quarantine" / venue / filename
-            )
-            quarantine_path.parent.mkdir(parents=True, exist_ok=True)
-            quarantine_path.write_bytes(compressed_data)
             logger.error(
-                f"Unknown schema in {filename}: quarantined to {quarantine_path}. "
+                f"Unknown schema in {filename}: raw file is in raw cache. "
                 f"Fields received: {sorted(e.actual_fields)}"
             )
             raise
 
+        isin_count = df["isin"].nunique() if "isin" in df.columns else 0
         logger.debug(
-            f"Parsed {len(df)} trades from {filename} ({len(df['isin'].unique())} unique ISINs)"
+            f"Parsed {len(df)} trades from {filename} ({isin_count} unique ISINs)"
         )
 
         return df
@@ -399,6 +604,7 @@ class XetraService:
         total_files = 0
         dates_fetched = []
         dates_partial = []
+        last_processed_month: tuple | None = None
 
         for date_str in missing_dates:
             try:
@@ -414,117 +620,31 @@ class XetraService:
                     f"Found {len(files)} files available from API for {venue} on {date_str}"
                 )
 
-                # Check which timestamps are already stored
                 trade_date = datetime.strptime(date_str, "%Y-%m-%d")
-                year = trade_date.year
-                month = f"{trade_date.month:02d}"
-                day = f"{trade_date.day:02d}"
+                this_month = (trade_date.year, trade_date.month)
 
-                base_dir = (
-                    self.backend._path_builder._root
-                    / market
-                    / source
-                    / "trades"
-                    / f"venue={venue}"
-                    / f"year={year}"
-                    / f"month={month}"
-                    / f"day={day}"
-                )
-                parquet_path = base_dir / "trades.parquet"
-
-                # Use centralized download log instead of per-day metadata
-                download_log_path = (
-                    self.backend._path_builder._root
-                    / market
-                    / source
-                    / ".download_log.parquet"
-                )
-
-                # Track which timestamps have been downloaded (including empty files)
-                already_downloaded_timestamps = set()
-
-                # Check centralized download log
-                if download_log_path.exists():
+                # H: consolidate previous month when month rolls over
+                if consolidate and last_processed_month is not None and this_month != last_processed_month:
+                    py, pm = last_processed_month
                     try:
-                        import pandas as pd
-
-                        # Read only rows for this venue and date
-                        df_log = pd.read_parquet(download_log_path)
-                        df_filtered = df_log[
-                            (df_log["venue"] == venue) & (df_log["date"] == date_str)
-                        ]
-
-                        if len(df_filtered) > 0:
-                            already_downloaded_timestamps = set(
-                                df_filtered["timestamp"].unique()
-                            )
-                            logger.debug(
-                                f"Found {len(already_downloaded_timestamps)} completed downloads from log for {date_str}"
-                            )
+                        logger.info(
+                            f"Month rolled over {py}-{pm:02d} → "
+                            f"{this_month[0]}-{this_month[1]:02d}, consolidating"
+                        )
+                        self._consolidate_to_monthly(venue, py, pm, market, source)
                     except Exception as e:
-                        logger.warning(
-                            f"Could not read download log for {date_str}: {e}"
-                        )
+                        logger.error(f"Failed to consolidate {py}-{pm:02d}: {e}")
 
-                # Also check parquet file for timestamps with actual trade data
-                # (timestamps not yet tracked in download log)
-                if parquet_path.exists():
-                    try:
-                        import pandas as pd
-
-                        # Use pandas to avoid schema issues (it handles type conversions automatically)
-                        df_existing = pd.read_parquet(
-                            parquet_path, columns=["trade_time"]
-                        )
-
-                        if len(df_existing) > 0:
-                            parquet_timestamps_before = len(
-                                already_downloaded_timestamps
-                            )
-                            # Extract minute-level timestamps (YYYY-MM-DDTHH_MM format from filenames)
-                            # Timestamps in data are like "2025-11-04 09:00:00.123456"
-                            # Convert to "2025-11-04T09_00" format to match filenames
-                            for ts in df_existing["trade_time"]:
-                                # Format: YYYY-MM-DDTHH_MM
-                                timestamp_str = ts.strftime("%Y-%m-%dT%H_%M")
-                                already_downloaded_timestamps.add(timestamp_str)
-
-                            parquet_timestamps_added = (
-                                len(already_downloaded_timestamps)
-                                - parquet_timestamps_before
-                            )
-                            if parquet_timestamps_added > 0:
-                                logger.debug(
-                                    f"Found {parquet_timestamps_added} additional timestamps from parquet for {date_str}"
-                                )
-
-                            logger.debug(
-                                f"Total tracked timestamps: {len(already_downloaded_timestamps)} (download log + data timestamps)"
-                            )
-                    except Exception as e:
-                        # Can't read parquet file - continue with what we have from log
-                        logger.warning(
-                            f"Could not read parquet timestamps for {date_str}: {e}"
-                        )
-
-                # Filter files to only those not yet downloaded
-                files_to_fetch = []
-                for filename in files:
-                    # Extract timestamp from filename: "DETR-posttrade-2025-11-04T09_00.json.gz"
-                    try:
-                        timestamp_part = filename.split("DETR-posttrade-")[1].split(
-                            ".json.gz"
-                        )[0]  # "2025-11-04T09_00"
-                        if timestamp_part not in already_downloaded_timestamps:
-                            files_to_fetch.append(filename)
-                    except IndexError:
-                        # Can't parse filename, include it to be safe
-                        files_to_fetch.append(filename)
+                files_to_fetch = [
+                    f for f in files if not self._is_cached(venue, date_str, f, market, source)
+                ]
 
                 if not files_to_fetch:
+                    self._consolidate_daily_files(venue, date_str, market, source)
                     logger.info(
-                        f"All {len(files)} files already stored for {date_str}, skipping"
+                        f"All {len(files)} files already cached for {date_str}, skipping"
                     )
+                    last_processed_month = this_month
                     continue
 
                 logger.info(
@@ -533,7 +653,6 @@ class XetraService:
 
                 date_trades = 0
                 date_files = 0
-                completed_timestamps_this_run = []
 
                 # Process each file individually - store immediately after each file
                 for i, filename in enumerate(files_to_fetch, 1):
@@ -542,8 +661,6 @@ class XetraService:
                         df = self.fetch_and_parse_trades(venue, date_str, filename)
 
                         if not df.empty:
-                            # Store immediately (merge with existing data)
-                            # This makes interruptions safe - worst case is losing current file
                             self.store_trades(df, venue, trade_date, market, source)
 
                             date_trades += len(df)
@@ -552,75 +669,13 @@ class XetraService:
                             total_files += 1
                         else:
                             # Empty file (no trades) - still count as processed
-                            # This prevents re-downloading empty files on subsequent runs
                             date_files += 1
                             total_files += 1
                             logger.debug(
                                 f"Processed empty file {filename} for {date_str}"
                             )
 
-                        # Track this timestamp as completed (whether it had data or not)
-                        try:
-                            timestamp_part = filename.split("DETR-posttrade-")[1].split(
-                                ".json.gz"
-                            )[0]
-                            completed_timestamps_this_run.append(
-                                {
-                                    "venue": venue,
-                                    "date": date_str,
-                                    "timestamp": timestamp_part,
-                                    "has_data": not df.empty,
-                                    "trade_count": len(df) if not df.empty else 0,
-                                    "downloaded_at": datetime.now(),
-                                }
-                            )
-                            already_downloaded_timestamps.add(timestamp_part)
-                        except IndexError:
-                            pass  # Can't parse filename
-
-                        # Append to centralized download log every 10 files to enable resume
-                        if (
-                            i % 10 == 0 or i == len(files_to_fetch)
-                        ) and completed_timestamps_this_run:
-                            try:
-                                import pandas as pd
-
-                                # Create DataFrame from new log entries
-                                df_new_log = pd.DataFrame(completed_timestamps_this_run)
-
-                                # Append to existing log or create new one
-                                log_dir = download_log_path.parent
-                                log_dir.mkdir(parents=True, exist_ok=True)
-
-                                if download_log_path.exists():
-                                    # Append to existing log
-                                    df_existing_log = pd.read_parquet(download_log_path)
-                                    df_combined = pd.concat(
-                                        [df_existing_log, df_new_log], ignore_index=True
-                                    )
-                                    # Remove duplicates (in case of retry)
-                                    df_combined = df_combined.drop_duplicates(
-                                        subset=["venue", "date", "timestamp"],
-                                        keep="last",
-                                    )
-                                    df_combined.to_parquet(
-                                        download_log_path, index=False
-                                    )
-                                else:
-                                    # Create new log
-                                    df_new_log.to_parquet(
-                                        download_log_path, index=False
-                                    )
-
-                                # Clear the buffer after saving
-                                completed_timestamps_this_run = []
-
-                            except Exception as e:
-                                logger.warning(f"Could not save download log: {e}")
-
-                        if i % 50 == 0 or i == len(
-                            files_to_fetch
-                        ):  # Log every 50 files and at end
+                        if i % 50 == 0 or i == len(files_to_fetch):
                             logger.info(
                                 f"✓ [{i}/{len(files_to_fetch)}] Processed {date_files} files, "
                                 f"{date_trades:,} trades for {date_str}"
@@ -628,7 +683,6 @@ class XetraService:
 
                     except Exception as e:
                         logger.error(f"Failed to process {filename}: {e}")
-                        # Continue with next file - partial progress is saved
                         continue
 
                 # Check if we completed all files for this date
@@ -637,21 +691,10 @@ class XetraService:
                     logger.info(
                         f"✓ Completed {venue} {date_str}: {date_trades:,} trades from {date_files} files"
                     )
-
-                    # Monthly consolidation: after successful date, consolidate month-to-date
-                    if consolidate:
-                        try:
-                            trade_date = datetime.strptime(date_str, "%Y-%m-%d")
-                            logger.info(
-                                f"Consolidating month {trade_date.year}-{trade_date.month:02d} "
-                                f"(includes {date_str})..."
-                            )
-                            self._consolidate_to_monthly(
-                                venue, trade_date.year, trade_date.month, market, source
-                            )
-                        except Exception as e:
-                            logger.error(f"Failed to consolidate month: {e}")
-                            # Don't fail the whole process - data is still stored daily
+                    try:
+                        self._consolidate_daily_files(venue, date_str, market, source)
+                    except Exception as e:
+                        logger.error(f"Failed to consolidate daily files for {date_str}: {e}")
 
                 elif date_files > 0:
                     dates_partial.append(date_str)
@@ -660,9 +703,22 @@ class XetraService:
                         f"from {date_files}/{len(files)} files (can resume)"
                     )
 
+                last_processed_month = this_month
+
             except Exception as e:
                 logger.error(f"Failed to fetch {venue} on {date_str}: {e}")
                 continue
+
+        # H: consolidate last processed month if it's a fully past month
+        if consolidate and last_processed_month is not None:
+            now = datetime.now()
+            py, pm = last_processed_month
+            if (py, pm) < (now.year, now.month):
+                try:
+                    logger.info(f"Consolidating last processed month {py}-{pm:02d}")
+                    self._consolidate_to_monthly(venue, py, pm, market, source)
+                except Exception as e:
+                    logger.error(f"Failed to consolidate {py}-{pm:02d}: {e}")
 
         summary = {
             "dates_checked": missing_dates,
@@ -683,6 +739,71 @@ class XetraService:
             )
 
         return summary
+
+    def _consolidate_daily_files(
+        self,
+        venue: str,
+        date_str: str,
+        market: str = "de",
+        source: str = "xetra",
+    ) -> None:
+        """
+        Merge per-call mini-Parquets into a single daily trades.parquet.
+
+        If trades.parquet already exists (crash-during-cleanup scenario), the
+        mini-files are stale and are deleted without re-reading them.
+        """
+        d = datetime.strptime(date_str, "%Y-%m-%d")
+        daily_dir = (
+            self.root_path / market / source / "trades"
+            / f"venue={venue}"
+            / f"year={d.year}"
+            / f"month={d.month:02d}"
+            / f"day={d.day:02d}"
+        )
+        if not daily_dir.exists():
+            return
+
+        final_path = daily_dir / "trades.parquet"
+        mini_files = sorted(daily_dir.glob("trades-*.parquet"))
+
+        if not mini_files:
+            return
+
+        if final_path.exists():
+            for mini in mini_files:
+                mini.unlink(missing_ok=True)
+            logger.debug(f"Cleaned {len(mini_files)} stale mini-files for {venue} {date_str}")
+            return
+
+        tables = []
+        for mini in mini_files:
+            try:
+                tables.append(pq.read_table(str(mini)))
+            except Exception as e:
+                logger.warning(f"Skipping unreadable mini-file {mini.name}: {e}")
+
+        if not tables:
+            return
+
+        combined = pa.concat_tables(tables)
+        tmp_path = final_path.with_name("trades.parquet.tmp")
+        tmp_path.unlink(missing_ok=True)
+        try:
+            pq.write_table(combined, str(tmp_path), use_dictionary=False, compression="gzip")
+            with open(tmp_path, "rb") as fd:
+                os.fsync(fd.fileno())
+            tmp_path.replace(final_path)
+        except Exception:
+            tmp_path.unlink(missing_ok=True)
+            raise
+
+        for mini in mini_files:
+            mini.unlink(missing_ok=True)
+        logger.info(
+            f"Consolidated {len(mini_files)} mini-files → trades.parquet "
+            f"for {venue} {date_str} ({len(combined)} rows)"
+        )
 
     def _consolidate_to_monthly(
         self,
@@ -710,9 +831,6 @@ class XetraService:
             market: Market code
             source: Source code
         """
-        import pyarrow.parquet as pq
-
-        # Find all daily files for this month
         month_str = f"{month:02d}"
         daily_root = (
             self.backend._path_builder._root
@@ -778,24 +896,21 @@ class XetraService:
         # Use same atomic write pattern as backend
         temp_file = monthly_file.with_suffix(".tmp")
         try:
-            import pyarrow as pa
-            import os
-            import shutil
-
             table = pa.Table.from_pandas(monthly_df)
             pq.write_table(
                 table,
                 str(temp_file),
                 compression="gzip",
-                row_group_size=100000,  # Optimize for ~100K rows per group
+                row_group_size=100000,
             )
             with open(temp_file, "rb") as fd:
                 os.fsync(fd.fileno())
-            shutil.move(str(temp_file), str(monthly_file))
+            temp_file.replace(monthly_file)
 
             logger.info(
                 f"✓ Consolidated to monthly: {monthly_file.name} "
-                f"({total_trades:,} trades, {len(monthly_df['isin'].unique())} unique ISINs)"
+                f"({total_trades:,} trades, "
+                f"{monthly_df['isin'].nunique() if 'isin' in monthly_df.columns else 0} unique ISINs)"
             )
         except Exception as e:
             logger.error(f"Failed to write monthly file: {e}")
@@ -860,10 +975,12 @@ class XetraService:
                     day = int(day_dir.name.split("=")[1])
                     date_str = f"{year}-{month:02d}-{day:02d}"
 
-                    # Count parquet files (incremental storage creates many temp files)
-                    parquet_files = list(day_dir.glob("trades.parquet"))
+                    # Count parquet files (trades.parquet = consolidated; trades-*.parquet = in-progress)
+                    has_data = (day_dir / "trades.parquet").exists() or any(
+                        day_dir.glob("trades-*.parquet")
+                    )
 
-                    if parquet_files:
+                    if has_data:
                         # Has data - check if it looks complete
                         # We can't know exact expected count without calling API,
                         # but we can mark dates with data
@@ -998,27 +1115,44 @@ class XetraService:
         """
         Store trades to partitioned parquet storage.
 
+        Writes a uniquely-named mini-file per call; caller must invoke
+        _consolidate_daily_files() at end-of-date to produce trades.parquet.
+
         Args:
             df: DataFrame with trade data
             venue: Venue code (DETR, DFRA, etc.)
             trade_date: Trade date
             market: Market code (default: 'de' for Germany)
             source: Source code (default: 'xetra')
-
-        Example:
-            >>> service = XetraService()
-            >>> df = service.fetch_all_trades_for_date('DETR', '2025-10-31')
-            >>> service.store_trades(df, 'DETR', datetime(2025, 10, 31))
         """
         if df.empty:
             logger.warning("No trades to store (empty DataFrame)")
             return
 
-        self.backend.save_xetra_trades(df, venue, trade_date, market, source)
-        logger.debug(
-            f"Stored {len(df)} trades for {venue} on {trade_date.date()} "
-            f"({len(df['isin'].unique())} unique ISINs)"
+        d = trade_date if isinstance(trade_date, datetime) else datetime.strptime(str(trade_date), "%Y-%m-%d")
+        daily_dir = (
+            self.root_path / market / source / "trades"
+            / f"venue={venue}"
+            / f"year={d.year}"
+            / f"month={d.month:02d}"
+            / f"day={d.day:02d}"
         )
+        daily_dir.mkdir(parents=True, exist_ok=True)
+
+        mini_name = f"trades-{os.getpid()}-{time.time_ns()}.parquet"
+        mini_path = daily_dir / mini_name
+        tmp_path = mini_path.with_suffix(".tmp")
+        try:
+            table = pa.Table.from_pandas(df, preserve_index=False)
+            pq.write_table(table, str(tmp_path), use_dictionary=False, compression="gzip")
+            with open(tmp_path, "rb") as fd:
+                os.fsync(fd.fileno())
+            tmp_path.replace(mini_path)
+            logger.debug(f"Staged {len(df)} trades → {mini_name}")
+        except Exception as e:
+            tmp_path.unlink(missing_ok=True)
+            logger.warning(f"Failed to stage trades for {venue} {d.date()}: {e}")
+            raise
 
     # ------------------------------------------------------------------
     # Schema migration helpers
@@ -1034,6 +1168,11 @@ class XetraService:
         "venue": "execution_venue",
     }
 
+    def _migration_sentinel_path(
+        self, venue: str, market: str = "de", source: str = "xetra"
+    ) -> Path:
+        return self.root_path / market / source / "trades" / f"venue={venue}" / ".migration_complete"
+
     def find_unmigrated_files(
         self,
         venue: str,
@@ -1045,7 +1184,12 @@ class XetraService:
 
         Detection is fast: reads only Parquet file metadata (no row data).
         A file is considered unmigrated if it lacks a 'schema_version' column.
+        Returns [] immediately when the migration-complete sentinel exists.
         """
+        if self._migration_sentinel_path(venue, market, source).exists():
+            logger.debug(f"Migration sentinel present for {venue} — skipping scan")
+            return []
+
         base = self.root_path / market / source
         patterns = [
             f"trades/venue={venue}/year=*/month=*/day=*/trades.parquet",
@@ -1060,6 +1204,17 @@ class XetraService:
                         unmigrated.append(path)
                 except Exception as e:
                     logger.warning(f"Could not read schema of {path}: {e}")
+
+        if not unmigrated:
+            # All files already migrated (or no files yet). Write sentinel so
+            # future calls skip the scan — handles daemons migrated before this
+            # change was deployed.
+            sentinel = self._migration_sentinel_path(venue, market, source)
+            if not sentinel.exists():
+                sentinel.parent.mkdir(parents=True, exist_ok=True)
+                sentinel.touch()
+                logger.info(f"All files migrated for {venue} — wrote sentinel {sentinel}")
+
         return unmigrated
 
     def migrate_legacy_columns(
@@ -1083,6 +1238,11 @@ class XetraService:
 
         if not unmigrated:
             logger.info(f"No unmigrated files found for {venue} — already up to date.")
+            if not dry_run:
+                sentinel = self._migration_sentinel_path(venue, market, source)
+                sentinel.parent.mkdir(parents=True, exist_ok=True)
+                sentinel.touch()
+                logger.info(f"Wrote migration sentinel: {sentinel}")
             return summary
 
         logger.info(
@@ -1160,6 +1320,11 @@ class XetraService:
             f"{summary['migrated']} migrated, {summary['skipped']} skipped, "
             f"{summary['failed']} failed."
         )
+        if not dry_run and summary["failed"] == 0:
+            sentinel = self._migration_sentinel_path(venue, market, source)
+            sentinel.parent.mkdir(parents=True, exist_ok=True)
+            sentinel.touch()
+            logger.info(f"Wrote migration sentinel: {sentinel}")
         return summary
 
     def close(self) -> None:

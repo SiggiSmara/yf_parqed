@@ -125,6 +125,7 @@ class TestXetraIntegrationMocked:
         # Step 3: Store to parquet
         trade_date = datetime(2025, 11, 1)
         service.store_trades(df, "DETR", trade_date, market="de", source="xetra")
+        service._consolidate_daily_files("DETR", "2025-11-01")
 
         # Step 4: Verify parquet files exist
         # Path: {tmp_path}/de/xetra/trades/venue=DETR/year=2025/month=11/day=01/trades.parquet

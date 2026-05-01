@@ -60,7 +60,7 @@ data/de/xetra/trades_by_isin/venue=DETR/isin=DE0005190003/year=2025/month=12/tra
 2. Group by ISIN
 3. For each ISIN:
    - Extract all trades
-   - Sort by trade_time
+   - Sort by trading_date_time
    - Write to trades_by_isin/venue=DETR/isin=<ISIN>/year=2025/month=12/trades.parquet
 4. Preserve ALL columns (no schema changes, no aggregation)
 ```
@@ -88,7 +88,7 @@ WHERE isin = 'DE0005190003' AND date >= '2025-12-01';
 
 -- After: Scan 100 KB (ISIN partition pruning)
 SELECT * FROM read_parquet('data/de/xetra/trades_by_isin/venue=DETR/isin=DE0005190003/year=2025/month=12/trades.parquet')
-WHERE trade_time >= '2025-12-01';
+WHERE trading_date_time >= '2025-12-01';
 ```
 
 **Success Criteria for Phase 2a**:
@@ -222,8 +222,8 @@ df = df[(df['Time'] >= start_utc) & (df['Time'] <= end_utc)]
 ```sql
 -- EFFICIENT: Compute UTC bounds once (DuckDB - requires manual DST)
 -- Feb 13, 2026 is CET (UTC+1): 09:00 CET = 08:00 UTC
-WHERE EXTRACT(HOUR FROM trade_time) BETWEEN 8 AND 16
-   OR (EXTRACT(HOUR FROM trade_time) = 16 AND EXTRACT(MINUTE FROM trade_time) <= 30)
+WHERE EXTRACT(HOUR FROM trading_date_time) BETWEEN 8 AND 16
+   OR (EXTRACT(HOUR FROM trading_date_time) = 16 AND EXTRACT(MINUTE FROM trading_date_time) <= 30)
 ```
 
 **Rationale**: Timestamps are stored in UTC (timezone-naive). Converting millions of timestamps to CET just to filter is wasteful when we can convert the constant filter boundaries instead.
@@ -895,7 +895,7 @@ def aggregate_with_pandas(isin_file: Path, interval: str):
     # Resample to target interval with OHLC
     ohlcv = df.resample(interval).agg({
         'price': ['first', 'max', 'min', 'last'],  # Open, High, Low, Close
-        'volume': 'sum',
+        'quantity': 'sum',
         'trades': 'sum'
     })
     
@@ -903,8 +903,8 @@ def aggregate_with_pandas(isin_file: Path, interval: str):
     ohlcv.columns = ['open', 'high', 'low', 'close', 'volume', 'trades']
     
     # Calculate VWAP
-    df['pv'] = df['price'] * df['volume']
-    vwap = df.resample(interval)['pv'].sum() / df.resample(interval)['volume'].sum()
+    df['pv'] = df['price'] * df['quantity']
+    vwap = df.resample(interval)['pv'].sum() / df.resample(interval)['quantity'].sum()
     ohlcv['vwap'] = vwap
     
     # Filter zero-volume bars
@@ -977,25 +977,25 @@ def aggregate_with_duckdb(isin_file: Path, interval: str, date: datetime.date):
     
     query = f"""
         SELECT
-            time_bucket(INTERVAL '{interval_map[interval]}', trade_time) as time,
-            FIRST(price ORDER BY trade_time) as open,
+            time_bucket(INTERVAL '{interval_map[interval]}', trading_date_time) as time,
+            FIRST(price ORDER BY trading_date_time) as open,
             MAX(price) as high,
             MIN(price) as low,
-            LAST(price ORDER BY trade_time) as close,
-            SUM(volume) as volume,
+            LAST(price ORDER BY trading_date_time) as close,
+            SUM(quantity) as volume,
             COUNT(*) as trades,
-            SUM(price * volume) / NULLIF(SUM(volume), 0) as vwap
+            SUM(price * quantity) / NULLIF(SUM(quantity), 0) as vwap
         FROM read_parquet('{isin_file}')
-        WHERE volume > 0
+        WHERE quantity > 0
           AND (
-              EXTRACT(HOUR FROM trade_time) > {start_hour}
-              OR (EXTRACT(HOUR FROM trade_time) = {start_hour} AND EXTRACT(MINUTE FROM trade_time) >= 0)
+              EXTRACT(HOUR FROM trading_date_time) > {start_hour}
+              OR (EXTRACT(HOUR FROM trading_date_time) = {start_hour} AND EXTRACT(MINUTE FROM trading_date_time) >= 0)
           )
           AND (
-              EXTRACT(HOUR FROM trade_time) < {end_hour}
-              OR (EXTRACT(HOUR FROM trade_time) = {end_hour} AND EXTRACT(MINUTE FROM trade_time) <= {end_minute})
+              EXTRACT(HOUR FROM trading_date_time) < {end_hour}
+              OR (EXTRACT(HOUR FROM trading_date_time) = {end_hour} AND EXTRACT(MINUTE FROM trading_date_time) <= {end_minute})
           )
-        GROUP BY time_bucket(INTERVAL '{interval_map[interval]}', trade_time)
+        GROUP BY time_bucket(INTERVAL '{interval_map[interval]}', trading_date_time)
         ORDER BY time
     """
     
@@ -1183,18 +1183,18 @@ class OHLCVAggregator:
         """
         import pytz
         
-        # 1. Read raw trades (UTC timestamps, columns: trade_time, price, volume)
+        # 1. Read raw trades (UTC timestamps, columns: trading_date_time, price, quantity)
         df = pd.read_parquet(file_path)
         
         if df.empty:
             return pd.DataFrame(columns=['open', 'high', 'low', 'close', 'volume', 'trades', 'vwap'])
         
         # 2. Parse timestamps as UTC
-        df['trade_time'] = pd.to_datetime(df['trade_time'], utc=True)
+        df['trading_date_time'] = pd.to_datetime(df['trading_date_time'], utc=True)
         
         # 3. EFFICIENT: Convert filter boundaries once (not all timestamps)
         #    Determine UTC bounds for trading hours on this date
-        date = df['trade_time'].iloc[0].date()
+        date = df['trading_date_time'].iloc[0].date()
         tz = pytz.timezone(market_tz)
         
         # Localize naive datetime to market timezone (handles DST automatically)
@@ -1206,26 +1206,26 @@ class OHLCVAggregator:
         end_utc = end_local.astimezone(pytz.UTC)
         
         # 4. Filter to trading hours (on UTC timestamps, no per-row conversion)
-        df = df[(df['trade_time'] >= start_utc) & (df['trade_time'] <= end_utc)]
+        df = df[(df['trading_date_time'] >= start_utc) & (df['trading_date_time'] <= end_utc)]
         
         if df.empty:
             return pd.DataFrame(columns=['open', 'high', 'low', 'close', 'volume', 'trades', 'vwap'])
         
         # 5. Set index for resampling (still in UTC, resample works on any timezone)
-        df = df.set_index('trade_time')
+        df = df.set_index('trading_date_time')
         
         # 6. Resample to target interval with OHLC aggregation
         ohlcv = df.resample(target_interval).agg({
             'price': ['first', 'max', 'min', 'last'],  # OHLC
-            'volume': 'sum'
+            'quantity': 'sum'
         })
         
         # Flatten multi-index columns
         ohlcv.columns = ['open', 'high', 'low', 'close', 'volume']
         
         # 7. Calculate VWAP (volume-weighted average price)
-        df['pv'] = df['price'] * df['volume']
-        vwap = df.resample(target_interval)['pv'].sum() / df.resample(target_interval)['volume'].sum()
+        df['pv'] = df['price'] * df['quantity']
+        vwap = df.resample(target_interval)['pv'].sum() / df.resample(target_interval)['quantity'].sum()
         ohlcv['vwap'] = vwap
         
         # 8. Add trade count
@@ -1233,9 +1233,7 @@ class OHLCVAggregator:
         ohlcv['trades'] = trade_count
         
         # 9. Remove zero-volume bars
-        ohlcv = ohlcv[ohlcv['volume'] > 0].copy()
-
-        # Add provenance and metadata columns
+        ohlcv = ohlcv[ohlcv['volume'] > 0].copy()        # Add provenance and metadata columns
         ohlcv['aggregated_at'] = datetime.now(pytz.UTC)
         ohlcv['aggregated_by'] = 'OHLCVAggregator'
         ohlcv['aggregation_version'] = '1.0'

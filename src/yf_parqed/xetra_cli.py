@@ -264,6 +264,12 @@ def fetch_trades(
                         typer.echo(f"  - {date}")
                     typer.echo("\nRemove --no-store to fetch and store this data")
             else:
+                # Prune raw cache before fetching (best-effort, non-fatal)
+                try:
+                    service.cleanup_raw_cache(venue, market=market, source=source)
+                except Exception as e:
+                    logger.warning(f"Raw cache cleanup failed (non-fatal): {e}")
+
                 # Actually fetch and store (using incremental mode for interrupt safety)
                 summary = service.fetch_and_store_missing_trades_incremental(
                     venue, market, source
@@ -850,6 +856,91 @@ def update_isin_mapping(
         if pid_file and pid_file.exists():
             pid_file.unlink()
             logger.info(f"PID file removed: {pid_file}")
+
+
+@app.command()
+def cleanup_raw_cache(
+    ctx: typer.Context,
+    venue: Annotated[str, typer.Argument(help="Venue code (e.g. DETR)")],
+    max_age_days: Annotated[int, typer.Option(help="Delete files older than this many days")] = 7,
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Show what would be deleted without deleting")] = False,
+    market: Annotated[str, typer.Option(help="Market code")] = "de",
+    source: Annotated[str, typer.Option(help="Source code")] = "xetra",
+):
+    """
+    Delete aged raw .json.gz cache files once their data is confirmed in a Parquet file.
+
+    Files younger than --max-age-days are always kept. Older files are removed only
+    when a readable daily or monthly Parquet confirms the data has been persisted.
+    Files with no readable Parquet are kept and logged as warnings.
+
+    Orphaned .json.gz.tmp files are removed unconditionally.
+
+    Examples:
+        xetra-parqed cleanup-raw-cache DETR
+        xetra-parqed cleanup-raw-cache DETR --max-age-days 14 --dry-run
+    """
+    wrk_dir: Path = ctx.obj.get("wrk_dir", Path.cwd())
+    root_path = wrk_dir / "data"
+
+    with XetraService(root_path=root_path) as service:
+        result = service.cleanup_raw_cache(
+            venue, max_age_days=max_age_days, market=market, source=source, dry_run=dry_run
+        )
+
+    prefix = "[DRY RUN] " if dry_run else ""
+    typer.echo(
+        f"{prefix}Raw cache cleanup for {venue}: "
+        f"deleted={result['deleted']}, kept_recent={result['kept_recent']}, "
+        f"kept_no_parquet={result['kept_no_parquet']}, errors={result['errors']}"
+    )
+
+
+@app.command()
+def reprocess_raw_cache(
+    ctx: typer.Context,
+    venue: Annotated[str, typer.Argument(help="Venue code (e.g. DETR)")],
+    date: Annotated[str, typer.Argument(help="Trade date (YYYY-MM-DD)")],
+    force: Annotated[bool, typer.Option("--force", help="Reprocess even if a readable Parquet exists")] = False,
+    market: Annotated[str, typer.Option(help="Market code")] = "de",
+    source: Annotated[str, typer.Option(help="Source code")] = "xetra",
+):
+    """
+    Rebuild a daily Parquet from raw .json.gz cache files.
+
+    Use this to recover from a corrupted or missing daily Parquet without
+    re-downloading from the API, as long as the raw cache files still exist.
+
+    Skips reprocessing if a readable Parquet already exists, unless --force is passed.
+    Unknown-schema files are logged as errors but do not abort the run.
+
+    Examples:
+        xetra-parqed reprocess-raw-cache DETR 2026-04-30
+        xetra-parqed reprocess-raw-cache DETR 2026-04-30 --force
+    """
+    wrk_dir: Path = ctx.obj.get("wrk_dir", Path.cwd())
+    root_path = wrk_dir / "data"
+
+    with XetraService(root_path=root_path) as service:
+        try:
+            result = service.reprocess_from_raw_cache(
+                venue, date, market=market, source=source, force=force
+            )
+        except FileNotFoundError as e:
+            typer.echo(f"Error: {e}", err=True)
+            raise typer.Exit(1)
+
+    if result["processed"] == 0 and result["errors"] == 0:
+        typer.echo(f"✓ Parquet already exists for {venue} {date} — use --force to reprocess")
+    else:
+        typer.echo(
+            f"✓ Reprocessed {venue} {date}: "
+            f"{result['processed']} files, {result['trades']} trades"
+        )
+        if result["skipped_unknown_schema"]:
+            typer.echo(f"  ⚠ {result['skipped_unknown_schema']} file(s) had unknown schema — check logs")
+        if result["errors"]:
+            typer.echo(f"  ✗ {result['errors']} error(s) — check logs", err=True)
 
 
 @app.command()

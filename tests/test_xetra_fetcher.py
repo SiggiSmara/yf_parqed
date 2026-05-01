@@ -707,3 +707,66 @@ def test_http_error_during_list_files_logs_and_continues():
         assert files == []
 
     fetcher.close()
+
+
+def test_download_retries_on_remote_protocol_error():
+    """RemoteProtocolError triggers client rotation and retry."""
+    fetcher = XetraFetcher(inter_request_delay=0.0, burst_size=1000)
+
+    good_response = Mock()
+    good_response.status_code = 200
+    good_response.content = b"data"
+    good_response.raise_for_status = Mock()
+
+    call_count = 0
+
+    def side_effect(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise httpx.RemoteProtocolError("peer closed", request=Mock())
+        return good_response
+
+    with patch("httpx.Client.get", side_effect=side_effect):
+        data = fetcher.download_file("DETR", "2025-11-04", "DETR-posttrade-2025-11-04T09_00.json.gz")
+
+    assert data == b"data"
+    assert call_count == 2
+    fetcher.close()
+
+
+def test_download_retries_on_connect_error():
+    """ConnectError triggers client rotation and retry."""
+    fetcher = XetraFetcher(inter_request_delay=0.0, burst_size=1000)
+
+    good_response = Mock()
+    good_response.status_code = 200
+    good_response.content = b"data"
+    good_response.raise_for_status = Mock()
+
+    call_count = 0
+
+    def side_effect(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise httpx.ConnectError("connection refused", request=Mock())
+        return good_response
+
+    with patch("httpx.Client.get", side_effect=side_effect):
+        data = fetcher.download_file("DETR", "2025-11-04", "DETR-posttrade-2025-11-04T09_00.json.gz")
+
+    assert data == b"data"
+    assert call_count == 2
+    fetcher.close()
+
+
+def test_download_raises_after_max_retries_on_connect_error():
+    """ConnectError is re-raised after exhausting retries."""
+    fetcher = XetraFetcher(inter_request_delay=0.0, burst_size=1000)
+
+    with patch("httpx.Client.get", side_effect=httpx.ConnectError("refused", request=Mock())):
+        with pytest.raises(httpx.ConnectError):
+            fetcher.download_file("DETR", "2025-11-04", "DETR-posttrade-2025-11-04T09_00.json.gz")
+
+    fetcher.close()

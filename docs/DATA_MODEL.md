@@ -94,6 +94,7 @@ data/
 │   └── xetra/
 │       ├── trades/             Raw per-trade tick data (venue × day partitions) [CURRENT]
 │       ├── trades_monthly/     Consolidated monthly trade data (venue × month)  [CURRENT]
+│       ├── raw/                Downloaded .json.gz files, 7-day TTL             [CURRENT]
 │       ├── trades_by_isin/     Normalized trades (venue × ISIN × month)         [PHASE 2a]
 │       ├── stocks_1m/          Xetra aggregated 1-minute OHLCV                  [PHASE 2b]
 │       ├── stocks_1h/          Xetra aggregated 1-hour OHLCV                    [PHASE 2b]
@@ -187,32 +188,59 @@ data/de/xetra/trades/venue=<VENUE>/year=<YYYY>/month=<MM>/day=<DD>/trades.parque
 | `DFRA`     | Frankfurt floor exchange |
 | `DGAT`     | Xetra BEST (retail execution) |
 
+### Schema Versions
+
+Deutsche Börse renamed all posttrade JSON fields in March 2026 (MiFID-style API update). The parser detects the schema from the first record and tags every row. All stored files now use a common column naming convention — 2025-legacy files were migrated in May 2026.
+
+| Schema version | Date range | Sentinel field in source JSON |
+|---|---|---|
+| `2025-legacy` | Oct 2025 – Feb 2026 | `isin` present at JSON root |
+| `2026-mifid` | Mar 2026 – present | `instrumentIdentificationCode` present at JSON root |
+
+> **Cross-era queries**: use `union_by_name=True` in DuckDB when scanning both eras. Schema-specific columns will appear as `NULL` for files from the other era.
+
 ### Parquet Schema
 
-| Column              | Type              | Notes |
-|---------------------|-------------------|-------|
-| `message_id`        | `string`          | Unique message identifier |
-| `source_name`       | `string`          | Source system name |
-| `isin`              | `string`          | 12-character ISIN (e.g. `DE0007100000`) |
-| `instrument_id`     | `string`          | Exchange instrument identifier |
-| `trans_id`          | `string`          | Transaction ID |
-| `tick_id`           | `int64` (nullable)| Tick sequence number |
-| `price`             | `float64`         | Trade price in EUR |
-| `volume`            | `float64`         | Number of shares (stored as float; cast to int for analysis) |
-| `currency`          | `string`          | Always `EUR` for Xetra |
-| `quote_type`        | `string`          | Quotation type |
-| `trade_time`        | `datetime64[ns]`  | Trade execution timestamp, **timezone-naive UTC** |
-| `distribution_time` | `datetime64[ns]`  | Data publication timestamp, **timezone-naive UTC** |
-| `venue`             | `string`          | Trading venue code (redundant with partition but present in data) |
-| `tick_action`       | `string`          | MiFID II tick action indicator |
-| `instrument_code`   | `string`          | MiFID II instrument code |
-| `market_mechanism`  | `string`          | MiFID II market mechanism |
-| `trading_mode`      | `string`          | MiFID II trading mode |
-| `negotiated_flag`   | `string`          | MiFID II negotiated transaction flag |
-| `modification_flag` | `string`          | MiFID II modification indicator |
-| `benchmark_flag`    | `string`          | MiFID II benchmark reference flag |
-| `pub_deferral`      | `string`          | MiFID II publication deferral reason |
-| `algo_indicator`    | `bool`            | `True` if trade was executed by an algorithm (`H` in source) |
+**Core columns (both schemas)**:
+
+| Column | Type | Notes |
+|---|---|---|
+| `isin` | `string` | 12-character ISIN (e.g. `DE0007100000`) |
+| `price` | `float64` | Trade price in EUR |
+| `quantity` | `float64` | Number of shares (stored as float; cast to int for counts) |
+| `price_currency` | `string` | Always `EUR` for Xetra |
+| `trading_date_time` | `datetime64[ns]` | Trade execution timestamp, **timezone-naive UTC** |
+| `execution_venue` | `string` | Trading venue code (redundant with partition but present in row) |
+| `transaction_id` | `string` | Unique transaction identifier |
+| `distribution_time` | `datetime64[ns]` | Data publication timestamp, **timezone-naive UTC** |
+| `trading_mode` | `string` | MiFID II trading mode |
+| `modification_flag` | `string` | MiFID II modification indicator |
+| `benchmark_flag` | `string` | MiFID II benchmark reference flag |
+| `pub_deferral` | `string` | MiFID II publication deferral reason |
+| `algo_indicator` | `bool` | `True` if trade was executed by an algorithm |
+| `schema_version` | `string` | `"2025-legacy"` or `"2026-mifid"` |
+
+**2025-legacy only** (null/absent in 2026-mifid files):
+
+| Column | Type | Notes |
+|---|---|---|
+| `message_id` | `string` | Source message identifier |
+| `source_name` | `string` | Source system name |
+| `instrument_id` | `string` | Exchange instrument identifier |
+| `tick_id` | `float64` | Tick sequence number |
+| `quote_type` | `string` | Quotation type |
+| `tick_action` | `string` | Tick action indicator |
+| `instrument_code` | `string` | MiFID II instrument code |
+| `market_mechanism` | `string` | MiFID II market mechanism |
+| `negotiated_flag` | `string` | MiFID II negotiated transaction flag |
+
+**2026-mifid only** (absent in 2025-legacy files):
+
+| Column | Type | Notes |
+|---|---|---|
+| `trading_system` | `string` | Trading system identifier |
+| `price_notation` | `string` | Price notation type |
+| `venue_publication` | `string` | Venue of publication |
 
 ### Partition Keys Available to DuckDB
 
@@ -240,8 +268,9 @@ The 600-minute window is used as the **theoretical maximum** when computing capt
 - **~535,000 trades/day** across all ISINs for DETR (single venue), with ~4,200 distinct ISINs active per month.
 - Trade distribution is **highly skewed**: top 1% of ISINs (~42 of 4,200) account for ~60% of trade volume and file sizes.
 - Files are ~23 MB/day uncompressed; ~50 MB/day raw Parquet at venue level.
-- The `venue` column inside the file is redundant with the `venue=` partition directory but is present in every row.
-- Optional MiFID II fields (`negotiated_flag`, `modification_flag`, etc.) may be `null` in some records — the schema is padded with `None` to keep it stable across files.
+- The `execution_venue` column inside the file is redundant with the `venue=` partition directory but is present in every row.
+- Optional MiFID II fields (`modification_flag`, `benchmark_flag`, etc.) may be `null` in some records — the schema is padded with `None` to keep it stable across files.
+- **Schema versions**: `schema_version="2025-legacy"` for Oct 2025 – Feb 2026 data; `schema_version="2026-mifid"` for Mar 2026 onward. All files use identical column names on disk (migration applied May 2026). Schema-specific columns are `NULL` for the other era.
 - **Do not query this dataset for single-ISIN analytics** — each file contains all ISINs mixed, so DuckDB must scan the full file (~50 MB) even for one ISIN. Use `trades_by_isin/` once Phase 2a is complete.
 
 ### Monthly Consolidation
@@ -346,11 +375,11 @@ DuckDB does not automatically apply DST-aware timezone conversion. Use explicit 
 
 ```sql
 -- Winter (CET = UTC+1): add 1 hour
-SELECT trade_time + INTERVAL '1 hour' AS trade_time_cet, ...
+SELECT trading_date_time + INTERVAL '1 hour' AS trading_date_time_cet, ...
 FROM read_parquet('data/de/xetra/trades/venue=DETR/year=2025/month=12/day=05/trades.parquet');
 
 -- Or use AT TIME ZONE (DuckDB 0.10+):
-SELECT trade_time AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Berlin' AS trade_time_berlin, ...
+SELECT trading_date_time AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Berlin' AS trading_date_time_berlin, ...
 ```
 
 ### Converting UTC → CET/CEST in Python
@@ -361,9 +390,9 @@ import pandas as pd
 
 berlin = pytz.timezone('Europe/Berlin')
 
-df['trade_time_utc'] = df['trade_time']  # already UTC
-df['trade_time_berlin'] = (
-    df['trade_time']
+df['trading_date_time_utc'] = df['trading_date_time']  # already UTC
+df['trading_date_time_berlin'] = (
+    df['trading_date_time']
     .dt.tz_localize('UTC')
     .dt.tz_convert('Europe/Berlin')
 )
@@ -385,8 +414,8 @@ def xetra_utc_bounds(trading_date: date):
     return start.astimezone(pytz.UTC), end.astimezone(pytz.UTC)
 
 start_utc, end_utc = xetra_utc_bounds(date(2025, 12, 5))
-df_session = df[(df['trade_time'] >= start_utc.replace(tzinfo=None)) &
-               (df['trade_time'] <= end_utc.replace(tzinfo=None))]
+df_session = df[(df['trading_date_time'] >= start_utc.replace(tzinfo=None)) &
+               (df['trading_date_time'] <= end_utc.replace(tzinfo=None))]
 ```
 
 ### DST Transition Dates (relevant years)
@@ -441,12 +470,13 @@ Yahoo Finance and Xetra use different identifier systems. For cross-source analy
 
 | Caveat | Detail |
 |--------|--------|
-| 24h expiry | Raw tick data expires within 24 hours if not collected |
+| 24h expiry | Raw tick data expires within 24 hours if not collected; raw `.json.gz` files are preserved 7 days in `raw/` as a recovery buffer |
 | 15-minute delay | Published data is delayed 15 minutes from execution time |
-| MiFID II fields | Optional fields (`negotiated_flag` etc.) may be null — schema is padded with None for stability |
-| Volume as float | `volume` is stored as `float64` (source format); cast to `int64` for share counts |
+| MiFID II fields | Optional fields (`modification_flag` etc.) may be null — schema is padded with None for stability |
+| Quantity as float | `quantity` is stored as `float64` (source format); cast to `int64` for share counts |
 | Post-trade filings | Trades timestamped 18:00–22:00 CET are post-trade transparency reports, not live executions |
-| Venue in row | The `venue` column inside the file is redundant with the `venue=` partition key |
+| Execution venue in row | The `execution_venue` column inside the file is redundant with the `venue=` partition key |
+| Schema versions | `schema_version` identifies the API era; use `union_by_name=True` for cross-era DuckDB queries |
 
 ### Xetra OHLCV (once implemented)
 
@@ -497,13 +527,13 @@ Thresholds: **Complete** ≥ 370 minutes (95%), **Partial** ≥ 300 minutes (77%
 -- Minutes captured per day vs. 600-minute active window (08:00–18:00 CET)
 WITH daily_stats AS (
   SELECT
-    CAST(trade_time AS DATE) AS trade_date,
+    CAST(trading_date_time AS DATE) AS trade_date,
     COUNT(*) AS trades_captured,
     COUNT(DISTINCT isin) AS unique_isins,
-    COUNT(DISTINCT strftime('%Y-%m-%d %H:%M', trade_time)) AS minutes_captured,
-    ROUND(SUM(price * volume) / 1000000, 2) AS turnover_m_eur,
-    MIN(trade_time) AS first_trade,
-    MAX(trade_time) AS last_trade
+    COUNT(DISTINCT strftime('%Y-%m-%d %H:%M', trading_date_time)) AS minutes_captured,
+    ROUND(SUM(price * quantity) / 1000000, 2) AS turnover_m_eur,
+    MIN(trading_date_time) AS first_trade,
+    MAX(trading_date_time) AS last_trade
   FROM read_parquet('/var/lib/yf_parqed/data/de/xetra/trades/venue=DETR/year=*/month=*/day=*/*.parquet',
                     hive_partitioning=1)
   GROUP BY trade_date
@@ -615,7 +645,7 @@ ORDER BY minute;
 -- Daily trade count and turnover by venue
 SELECT venue, year, month, day,
        COUNT(*)                                AS trades,
-       ROUND(SUM(price * volume) / 1e6, 2)    AS turnover_m_eur
+       ROUND(SUM(price * quantity) / 1e6, 2)  AS turnover_m_eur
 FROM read_parquet(
     '/var/lib/yf_parqed/data/de/xetra/trades/venue=*/year=*/month=*/day=*/*.parquet',
     hive_partitioning=1
@@ -624,7 +654,7 @@ GROUP BY venue, year, month, day
 ORDER BY year DESC, month DESC, day DESC;
 
 -- Top 20 ISINs by trade count for a specific month
-SELECT isin, COUNT(*) AS trades, ROUND(SUM(price * volume) / 1e6, 2) AS turnover_m_eur
+SELECT isin, COUNT(*) AS trades, ROUND(SUM(price * quantity) / 1e6, 2) AS turnover_m_eur
 FROM read_parquet(
     '/var/lib/yf_parqed/data/de/xetra/trades/venue=DETR/year=2025/month=12/day=*/*.parquet',
     hive_partitioning=1
@@ -634,7 +664,7 @@ ORDER BY trades DESC
 LIMIT 20;
 
 -- Intraday trade distribution by hour (UTC — add 1h for CET, 2h for CEST)
-SELECT EXTRACT(HOUR FROM trade_time) AS hour_utc,
+SELECT EXTRACT(HOUR FROM trading_date_time) AS hour_utc,
        COUNT(*) AS trades
 FROM read_parquet(
     '/var/lib/yf_parqed/data/de/xetra/trades/venue=DETR/year=2025/month=12/day=05/*.parquet',
@@ -645,9 +675,9 @@ ORDER BY hour_utc;
 
 -- Minute-level aggregation (strftime for tick data)
 SELECT
-    strftime('%Y-%m-%d %H:%M', trade_time) AS minute_utc,
+    strftime('%Y-%m-%d %H:%M', trading_date_time) AS minute_utc,
     COUNT(*) AS trades,
-    ROUND(SUM(price * volume) / 1e6, 4) AS turnover_m_eur
+    ROUND(SUM(price * quantity) / 1e6, 4) AS turnover_m_eur
 FROM read_parquet(
     '/var/lib/yf_parqed/data/de/xetra/trades/venue=DETR/year=2025/month=12/day=05/*.parquet',
     hive_partitioning=1
@@ -740,4 +770,4 @@ ORDER BY y."date";
 | Data safety rules | `.github/DATA_SAFETY_STRATEGY.md` |
 | Release history | `docs/release-notes.md` |
 
-**Last updated**: 2026-04-26
+**Last updated**: 2026-05-01

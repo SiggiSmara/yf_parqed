@@ -38,6 +38,8 @@ docs/adr/               # Architecture Decision Records
 | `xetra-parqed list-files DETR` | List available files from Deutsche Börse API |
 | `xetra-parqed check-status DETR` | API availability vs local storage |
 | `xetra-parqed update-isin-mapping` | Refresh ISIN→ticker reference data |
+| `xetra-parqed cleanup-raw-cache DETR` | Delete aged raw cache files once data is in Parquet |
+| `xetra-parqed reprocess-raw-cache DETR DATE` | Rebuild a daily Parquet from raw cache after data loss |
 | `yf-parqed` | Yahoo Finance data collector |
 | `uv run pytest` | Run full test suite |
 
@@ -57,6 +59,7 @@ The daemon runs as a systemd service under user `yfparqed`. **Do not confuse the
 Production data path pattern:
 - Xetra trades: `/var/lib/yf_parqed/data/de/xetra/trades/venue=DETR/year=YYYY/month=MM/day=DD/trades.parquet`
 - Xetra monthly: `/var/lib/yf_parqed/data/de/xetra/trades_monthly/venue=DETR/year=YYYY/month=MM/trades.parquet`
+- Xetra raw cache: `/var/lib/yf_parqed/data/de/xetra/raw/DETR/year=YYYY/month=MM/day=DD/{filename}.json.gz` (7-day TTL)
 - Yahoo Finance: `/var/lib/yf_parqed/data/us/yahoo/stocks_<interval>/ticker=<TICKER>/...`
 
 When the CLI is invoked via systemd it uses `--wrk-dir /var/lib/yf_parqed`. In dev, the default root is a relative `data/` from the working directory.
@@ -70,11 +73,9 @@ The parser supports two schemas:
 | `2025-legacy` | `isin` present in JSON | Oct 2025 – Feb 2026 |
 | `2026-mifid` | `instrumentIdentificationCode` present in JSON | Mar 2026 onward |
 
-Both schemas produce a DataFrame with MiFIR column names: `isin`, `price`, `quantity`, `price_currency`, `trading_date_time`, `execution_venue`, `transaction_id`, plus `schema_version`.
+Both schemas produce a DataFrame with MiFIR column names: `isin`, `price`, `quantity`, `price_currency`, `trading_date_time`, `execution_venue`, `transaction_id`, plus `schema_version`. All on-disk Parquet files use these column names — legacy files were migrated in May 2026.
 
-Stored data from 2025–early 2026 uses the **old column names** (`volume`, `currency`, `trade_time`, `venue`, `trans_id`). A migration to the new names is pending before consistent cross-era querying works.
-
-If the parser encounters an unknown schema it raises `XetraSchemaUnknownError` and the service writes the raw `.json.gz` file to `{wrk_dir}/data/de/xetra/quarantine/{venue}/` before re-raising.
+If the parser encounters an unknown schema it raises `XetraSchemaUnknownError`. The raw `.json.gz` bytes are already in the raw cache before parsing is attempted, so no data is lost.
 
 ## ADR process
 
