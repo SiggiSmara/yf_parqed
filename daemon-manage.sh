@@ -521,15 +521,57 @@ do_install() {
     echo
 }
 
+check_pending_migrations() {
+    local XETRA_BIN="$INSTALL_DIR/.venv/bin/xetra-parqed"
+
+    [ -f "$XETRA_BIN" ] || return 0
+
+    # Detect enabled xetra venues from systemd
+    local enabled_venues
+    enabled_venues=$(systemctl list-unit-files 'xetra@*.service' --state=enabled,enabled-runtime --no-legend 2>/dev/null | \
+        awk '{print $1}' | sed 's/xetra@//;s/.service$//')
+    if [ -z "$enabled_venues" ]; then
+        enabled_venues=$(ls /etc/systemd/system/multi-user.target.wants/xetra@*.service 2>/dev/null | \
+            xargs -r -n1 basename | sed 's/xetra@//;s/.service$//')
+    fi
+
+    [ -z "$enabled_venues" ] && return 0
+
+    for venue in $enabled_venues; do
+        local result
+        result=$(sudo -u "$DAEMON_USER" "$XETRA_BIN" \
+            --wrk-dir "$DATA_DIR" migrate-legacy-columns "$venue" --dry-run 2>&1) || true
+
+        if echo "$result" | grep -q "file(s) to migrate"; then
+            log_warn "Unmigrated legacy Parquet files detected for $venue!"
+            echo "$result"
+            echo
+            read -p "Run migration for $venue before restarting? [Y/n]: " run_migrate
+            case "$run_migrate" in
+                [nN])
+                    log_warn "Skipping — xetra@$venue will refuse to start until migration is run"
+                    ;;
+                *)
+                    log_info "Migrating $venue..."
+                    sudo -u "$DAEMON_USER" "$XETRA_BIN" \
+                        --wrk-dir "$DATA_DIR" migrate-legacy-columns "$venue"
+                    ;;
+            esac
+        else
+            log_info "No unmigrated files for $venue"
+        fi
+    done
+}
+
 do_update() {
     log_info "Updating YF Parqed daemons..."
-    
+
     check_root
-    
+
     # Stop services
     log_info "Stopping daemons..."
     systemctl stop yf-parqed 'xetra@*' 2>/dev/null || true
-    
+
     # Update code
     clone_or_update_repo
     install_dependencies
@@ -544,7 +586,10 @@ do_update() {
             log_info "Keeping existing systemd service files"
             ;;
     esac
-    
+
+    # Check for Parquet files that need column migration before starting services
+    check_pending_migrations
+
     # Restart services
     log_info "Restarting daemons..."
     systemctl start yf-parqed 2>/dev/null || log_warn "yf-parqed not enabled"
