@@ -1,9 +1,11 @@
 from datetime import datetime
 from typing import List, Optional
 from pathlib import Path
+import gc
 import os
 
 import pandas as pd
+import pyarrow as pa
 import pyarrow.parquet as pq
 from loguru import logger
 
@@ -1090,20 +1092,29 @@ class XetraService:
 
         for path in unmigrated:
             try:
-                df = pd.read_parquet(path)
-
-                df = df.rename(columns=self.LEGACY_COLUMN_RENAMES)
-                df["schema_version"] = "2025-legacy"
-
                 if dry_run:
                     logger.info(f"[DRY RUN] Would migrate: {path}")
                     summary["migrated"] += 1
                     summary["paths_migrated"].append(str(path))
                     continue
 
+                table = pq.read_table(path)
+                new_names = [
+                    self.LEGACY_COLUMN_RENAMES.get(name, name)
+                    for name in table.schema.names
+                ]
+                table = table.rename_columns(new_names)
+                table = table.append_column(
+                    "schema_version",
+                    pa.array(["2025-legacy"] * len(table), type=pa.string()),
+                )
+
                 tmp_path = path.with_suffix(".parquet.tmp")
-                df.to_parquet(tmp_path, index=False)
+                pq.write_table(table, tmp_path)
                 os.replace(tmp_path, path)
+
+                del table
+                gc.collect()
 
                 logger.info(f"Migrated: {path}")
                 summary["migrated"] += 1
