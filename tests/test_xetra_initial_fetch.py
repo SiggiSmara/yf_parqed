@@ -23,6 +23,9 @@ class StubXetraService:
         self.has_any_data_calls.append((venue, market, source))
         return self.has_data
 
+    def find_unmigrated_files(self, venue, market="de", source="xetra"):
+        return []
+
     def fetch_and_store_missing_trades_incremental(self, venue, market, source):
         self.fetch_calls += 1
         return {

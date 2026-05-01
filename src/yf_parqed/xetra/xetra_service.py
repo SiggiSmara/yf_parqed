@@ -1,8 +1,10 @@
 from datetime import datetime
 from typing import List, Optional
 from pathlib import Path
+import os
 
 import pandas as pd
+import pyarrow.parquet as pq
 from loguru import logger
 
 from ..common.partitioned_storage_backend import PartitionedStorageBackend
@@ -1015,6 +1017,108 @@ class XetraService:
             f"Stored {len(df)} trades for {venue} on {trade_date.date()} "
             f"({len(df['isin'].unique())} unique ISINs)"
         )
+
+    # ------------------------------------------------------------------
+    # Schema migration helpers
+    # ------------------------------------------------------------------
+
+    #: Column renames required to upgrade 2025-legacy Parquet files to the
+    #: MiFIR column names used by the current parser.
+    LEGACY_COLUMN_RENAMES: dict[str, str] = {
+        "trans_id": "transaction_id",
+        "volume": "quantity",
+        "currency": "price_currency",
+        "trade_time": "trading_date_time",
+        "venue": "execution_venue",
+    }
+
+    def find_unmigrated_files(
+        self,
+        venue: str,
+        market: str = "de",
+        source: str = "xetra",
+    ) -> list[Path]:
+        """
+        Return paths of Parquet files that still use the 2025-legacy column names.
+
+        Detection is fast: reads only Parquet file metadata (no row data).
+        A file is considered unmigrated if it lacks a 'schema_version' column.
+        """
+        base = self.root_path / market / source
+        patterns = [
+            f"trades/venue={venue}/year=*/month=*/day=*/trades.parquet",
+            f"trades_monthly/venue={venue}/year=*/month=*/trades.parquet",
+        ]
+        unmigrated = []
+        for pattern in patterns:
+            for path in sorted(base.glob(pattern)):
+                try:
+                    schema = pq.read_schema(path)
+                    if "schema_version" not in schema.names:
+                        unmigrated.append(path)
+                except Exception as e:
+                    logger.warning(f"Could not read schema of {path}: {e}")
+        return unmigrated
+
+    def migrate_legacy_columns(
+        self,
+        venue: str,
+        market: str = "de",
+        source: str = "xetra",
+        dry_run: bool = False,
+    ) -> dict:
+        """
+        Rename 2025-legacy columns to MiFIR names and add schema_version column.
+
+        Writes atomically (temp file → os.replace). Idempotent: files that
+        already have 'schema_version' are skipped without modification.
+
+        Returns a summary dict with keys: migrated, skipped, failed, paths_migrated.
+        """
+        unmigrated = self.find_unmigrated_files(venue, market, source)
+
+        summary = {"migrated": 0, "skipped": 0, "failed": 0, "paths_migrated": []}
+
+        if not unmigrated:
+            logger.info(f"No unmigrated files found for {venue} — already up to date.")
+            return summary
+
+        logger.info(
+            f"{'[DRY RUN] ' if dry_run else ''}Found {len(unmigrated)} unmigrated "
+            f"file(s) for {venue}."
+        )
+
+        for path in unmigrated:
+            try:
+                df = pd.read_parquet(path)
+
+                df = df.rename(columns=self.LEGACY_COLUMN_RENAMES)
+                df["schema_version"] = "2025-legacy"
+
+                if dry_run:
+                    logger.info(f"[DRY RUN] Would migrate: {path}")
+                    summary["migrated"] += 1
+                    summary["paths_migrated"].append(str(path))
+                    continue
+
+                tmp_path = path.with_suffix(".parquet.tmp")
+                df.to_parquet(tmp_path, index=False)
+                os.replace(tmp_path, path)
+
+                logger.info(f"Migrated: {path}")
+                summary["migrated"] += 1
+                summary["paths_migrated"].append(str(path))
+
+            except Exception as e:
+                logger.error(f"Failed to migrate {path}: {e}")
+                summary["failed"] += 1
+
+        logger.info(
+            f"{'[DRY RUN] ' if dry_run else ''}Migration complete — "
+            f"{summary['migrated']} migrated, {summary['skipped']} skipped, "
+            f"{summary['failed']} failed."
+        )
+        return summary
 
     def close(self) -> None:
         """Close HTTP client resources."""

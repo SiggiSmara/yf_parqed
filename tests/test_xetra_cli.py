@@ -36,6 +36,9 @@ def test_fetch_trades_uses_wrk_dir(tmp_path):
         def __exit__(self, exc_type, exc, tb):
             return False
 
+        def find_unmigrated_files(self, venue, market="de", source="xetra"):
+            return []
+
         def fetch_and_store_missing_trades_incremental(self, *_args):
             return {
                 "dates_checked": ["2025-11-04"],
@@ -52,8 +55,10 @@ def test_fetch_trades_uses_wrk_dir(tmp_path):
         result = runner.invoke(app, ["--wrk-dir", str(tmp_path), "fetch-trades", "DETR"])
 
     assert result.exit_code == 0
-    assert config_inits == [tmp_path]
-    assert service_inits == [(tmp_path, tmp_path / "data")]
+    # preflight check + run_fetch_once each create a ConfigService with wrk_dir
+    assert all(p == tmp_path for p in config_inits)
+    assert len(config_inits) >= 1
+    assert all(init == (tmp_path, tmp_path / "data") for init in service_inits)
     assert "Total trades: 123" in result.output
 
 

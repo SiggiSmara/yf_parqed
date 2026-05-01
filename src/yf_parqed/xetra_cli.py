@@ -287,6 +287,25 @@ def fetch_trades(
 
                 return summary
 
+    # Preflight: refuse to start if legacy-schema files need migration.
+    # Mixed old/new column names silently break cross-era analytics queries.
+    _wrk_dir: Path = ctx.obj.get("wrk_dir", Path.cwd())
+    _root_path = _wrk_dir / "data"
+    _config = ConfigService(base_path=_wrk_dir)
+    with XetraService(config=_config, root_path=_root_path) as _svc:
+        _unmigrated = _svc.find_unmigrated_files(venue)
+    if _unmigrated:
+        typer.echo(
+            f"\n[ERROR] {len(_unmigrated)} Parquet file(s) use the old 2025-legacy column "
+            f"names and must be migrated before the service can start.\n\n"
+            f"Run the migration first:\n\n"
+            f"  xetra-parqed --wrk-dir {_wrk_dir} migrate-legacy-columns {venue} --dry-run\n"
+            f"  xetra-parqed --wrk-dir {_wrk_dir} migrate-legacy-columns {venue}\n\n"
+            f"Then restart the service.",
+            err=True,
+        )
+        raise typer.Exit(1)
+
     try:
         if daemon:
             logger.info(
@@ -831,3 +850,64 @@ def update_isin_mapping(
         if pid_file and pid_file.exists():
             pid_file.unlink()
             logger.info(f"PID file removed: {pid_file}")
+
+
+@app.command()
+def migrate_legacy_columns(
+    ctx: typer.Context,
+    venue: Annotated[str, typer.Argument(help="Venue code (e.g. DETR)")],
+    dry_run: Annotated[
+        bool,
+        typer.Option("--dry-run", help="Show what would be migrated without writing anything"),
+    ] = False,
+    market: Annotated[str, typer.Option(help="Market code")] = "de",
+    source: Annotated[str, typer.Option(help="Source code")] = "xetra",
+):
+    """
+    Migrate 2025-legacy Parquet files to current MiFIR column names.
+
+    Renames five columns (trans_id→transaction_id, volume→quantity,
+    currency→price_currency, trade_time→trading_date_time, venue→execution_venue)
+    and adds schema_version='2025-legacy' to each file.
+
+    Covers both daily (trades/) and monthly (trades_monthly/) partitions.
+    Writes atomically — an interrupted run cannot corrupt files.
+    Idempotent — already-migrated files are skipped.
+
+    Always run with --dry-run first to preview changes:
+
+      xetra-parqed migrate-legacy-columns DETR --dry-run
+      xetra-parqed migrate-legacy-columns DETR
+    """
+    wrk_dir: Path = ctx.obj.get("wrk_dir", Path.cwd())
+    root_path = wrk_dir / "data"
+
+    with XetraService(root_path=root_path) as service:
+        unmigrated = service.find_unmigrated_files(venue, market, source)
+
+    if not unmigrated:
+        typer.echo(f"✓ No unmigrated files found for {venue} — already up to date.")
+        return
+
+    typer.echo(
+        f"{'[DRY RUN] ' if dry_run else ''}Found {len(unmigrated)} file(s) to migrate:"
+    )
+    for path in unmigrated:
+        typer.echo(f"  {path}")
+
+    if not dry_run:
+        typer.echo("")
+        with XetraService(root_path=root_path) as service:
+            summary = service.migrate_legacy_columns(venue, market, source, dry_run=False)
+
+        if summary["failed"]:
+            typer.echo(
+                f"\n[WARNING] {summary['failed']} file(s) failed — check logs above.",
+                err=True,
+            )
+            raise typer.Exit(1)
+
+        typer.echo(
+            f"\n✓ Migration complete: {summary['migrated']} file(s) migrated, "
+            f"{summary['skipped']} already up to date."
+        )

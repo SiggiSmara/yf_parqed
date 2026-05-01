@@ -24,6 +24,7 @@ def mock_xetra_service():
     mock_service.__enter__ = Mock(return_value=mock_service)
     mock_service.__exit__ = Mock(return_value=False)
     mock_service.has_any_data.return_value = True  # Default: data exists (skip initial fetch)
+    mock_service.find_unmigrated_files.return_value = []  # Preflight: no migration needed
     mock_service.fetch_and_store_missing_trades_incremental.return_value = {
         "dates_fetched": ["2025-12-04"],
         "total_trades": 1000,
