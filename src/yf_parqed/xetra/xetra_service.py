@@ -5,6 +5,7 @@ import gc
 import os
 
 import pandas as pd
+import polars as pl
 import pyarrow as pa
 import pyarrow.parquet as pq
 from loguru import logger
@@ -1098,22 +1099,19 @@ class XetraService:
                     summary["paths_migrated"].append(str(path))
                     continue
 
-                table = pq.read_table(path)
-                new_names = [
-                    self.LEGACY_COLUMN_RENAMES.get(name, name)
-                    for name in table.schema.names
-                ]
-                table = table.rename_columns(new_names)
-                table = table.append_column(
-                    "schema_version",
-                    pa.array(["2025-legacy"] * len(table), type=pa.string()),
-                )
+                # Polars handles dict-encoded columns transparently, avoiding
+                # the PyArrow "unable to merge" error on files with inconsistent
+                # row-group encodings (string vs dictionary<string>).
+                df = pl.read_parquet(path)
+                rename_map = {k: v for k, v in self.LEGACY_COLUMN_RENAMES.items() if k in df.columns}
+                df = df.rename(rename_map)
+                df = df.with_columns(pl.lit("2025-legacy").alias("schema_version"))
 
                 tmp_path = path.with_suffix(".parquet.tmp")
-                pq.write_table(table, tmp_path)
+                df.write_parquet(tmp_path)
                 os.replace(tmp_path, path)
 
-                del table
+                del df
                 gc.collect()
 
                 logger.info(f"Migrated: {path}")
