@@ -258,6 +258,7 @@ class PartitionedStorageBackend(StorageInterface):
                             str(temp_path),
                             compression=self._pyarrow_compression,
                             row_group_size=self._row_group_size,
+                            use_dictionary=False,
                         )
                     except Exception:
                         # Fallback to pandas method if pyarrow write fails for any reason

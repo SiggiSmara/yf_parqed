@@ -1107,6 +1107,12 @@ class XetraService:
                 df = df.rename(rename_map)
                 df = df.with_columns(pl.lit("2025-legacy").alias("schema_version"))
 
+                # Normalize dict-encoded columns to plain String so the output
+                # file has consistent types across all row groups.
+                df = df.with_columns(
+                    [pl.col(c).cast(pl.String) for c in df.columns if df[c].dtype == pl.Categorical]
+                )
+
                 tmp_path = path.with_suffix(".parquet.tmp")
                 df.write_parquet(tmp_path)
                 os.replace(tmp_path, path)
