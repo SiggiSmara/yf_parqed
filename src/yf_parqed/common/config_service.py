@@ -79,7 +79,9 @@ class ConfigService:
         return {}
 
     def save_tickers(self, tickers: dict) -> None:
-        self.tickers_path.write_text(json.dumps(tickers, indent=4))
+        tmp = self.tickers_path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(tickers, indent=4))
+        tmp.rename(self.tickers_path)
 
     def load_storage_config(self) -> dict:
         default = self._default_storage_config()

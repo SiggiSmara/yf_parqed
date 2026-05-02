@@ -131,8 +131,8 @@ class TestTickerOperations:
         assert yf_parqed.tickers["NEWTICKER"]["status"] == "active"
         assert "intervals" in yf_parqed.tickers["NEWTICKER"]
 
-    def test_update_current_list_of_stocks_reactivate_not_found(self):
-        """Test reactivating previously not found tickers."""
+    def test_update_current_list_of_stocks_does_not_reactivate_not_found(self):
+        """CSV updates no longer reactivate not_found tickers — death cycle controls fate."""
         yf_parqed = self.create_yf_parqed_instance()
         yf_parqed.tickers = self.sample_tickers.copy()
 
@@ -152,8 +152,8 @@ class TestTickerOperations:
         ):
             yf_parqed.update_current_list_of_stocks()
 
-        # Should reactivate the ticker and preserve interval data
-        assert yf_parqed.tickers["INVALID"]["status"] == "active"
+        # INVALID should remain not_found — NOT reactivated by CSV update
+        assert yf_parqed.tickers["INVALID"]["status"] == "not_found"
         assert "intervals" in yf_parqed.tickers["INVALID"]
 
     def test_is_ticker_active_for_interval(self):
@@ -184,10 +184,11 @@ class TestTickerOperations:
             assert not yf_parqed.is_ticker_active_for_interval("INVALID", "1d")
 
     def test_is_ticker_active_for_interval_respects_cooldown_window(self):
-        """Tickers should remain skipped if recent interval failure is within cooldown."""
+        """Tickers in cooling window (cooling_since set, < 7 workdays) are skipped."""
         yf_parqed = self.create_yf_parqed_instance()
         current_date = datetime(2024, 2, 1)
-        last_failure = (current_date - timedelta(days=10)).strftime("%Y-%m-%d")
+        # cooling_since 3 days ago — well within 7-workday window
+        cooling_date = (current_date - timedelta(days=3)).strftime("%Y-%m-%d")
         yf_parqed.tickers = {
             "COOLDOWN": {
                 "ticker": "COOLDOWN",
@@ -197,54 +198,49 @@ class TestTickerOperations:
                 "intervals": {
                     "1d": {
                         "status": "not_found",
-                        "last_not_found_date": last_failure,
-                        "last_checked": last_failure,
+                        "not_found_streak_days": 3,
+                        "cooling_since": cooling_date,
+                        "last_not_found_date": cooling_date,
+                        "last_checked": cooling_date,
                     }
                 },
             }
         }
 
-        with (
-            patch("yf_parqed.yahoo.ticker_registry.datetime") as mock_datetime,
-            patch(
-                "yf_parqed.common.config_service.ConfigService.get_now",
-                return_value=current_date,
-            ),
+        with patch(
+            "yf_parqed.common.config_service.ConfigService.get_now",
+            return_value=current_date,
         ):
-            mock_datetime.now.return_value = current_date
-            mock_datetime.strptime = datetime.strptime
             assert yf_parqed.is_ticker_active_for_interval("COOLDOWN", "1d") is False
 
     def test_is_ticker_active_for_interval_allows_retry_after_cooldown(self):
-        """Ticker should become eligible once cooldown window has elapsed."""
+        """Ticker should become eligible once 7-workday cooling window has elapsed."""
         yf_parqed = self.create_yf_parqed_instance()
         current_date = datetime(2024, 3, 1)
-        last_failure = (current_date - timedelta(days=45)).strftime("%Y-%m-%d")
+        # cooling_since 14 calendar days ago (≥ 7 workdays)
+        cooling_since = (current_date - timedelta(days=14)).strftime("%Y-%m-%d")
         yf_parqed.tickers = {
             "RETRY": {
                 "ticker": "RETRY",
                 "added_date": "2023-12-01",
                 "status": "active",
-                "last_checked": last_failure,
+                "last_checked": cooling_since,
                 "intervals": {
                     "1d": {
                         "status": "not_found",
-                        "last_not_found_date": last_failure,
-                        "last_checked": last_failure,
+                        "not_found_streak_days": 3,
+                        "cooling_since": cooling_since,
+                        "last_not_found_date": cooling_since,
+                        "last_checked": cooling_since,
                     }
                 },
             }
         }
 
-        with (
-            patch("yf_parqed.yahoo.ticker_registry.datetime") as mock_datetime,
-            patch(
-                "yf_parqed.common.config_service.ConfigService.get_now",
-                return_value=current_date,
-            ),
+        with patch(
+            "yf_parqed.common.config_service.ConfigService.get_now",
+            return_value=current_date,
         ):
-            mock_datetime.now.return_value = current_date
-            mock_datetime.strptime = datetime.strptime
             assert yf_parqed.is_ticker_active_for_interval("RETRY", "1d") is True
 
     def test_update_ticker_interval_status_found_data(self):
@@ -299,7 +295,7 @@ class TestTickerOperations:
             )
 
     def test_update_ticker_interval_status_all_intervals_not_found(self):
-        """Test global status change when all intervals are not found."""
+        """Per-interval statuses become not_found; global ticker status stays active."""
         yf_parqed = self.create_yf_parqed_instance()
         test_date = datetime(2024, 1, 15)
 
@@ -317,10 +313,12 @@ class TestTickerOperations:
             yf_parqed.update_ticker_interval_status("TESTTICKER", "1d", False)
             yf_parqed.update_ticker_interval_status("TESTTICKER", "1h", False)
 
-            # Global status should be not_found when all intervals fail
             ticker_data = yf_parqed.tickers["TESTTICKER"]
-            assert ticker_data["status"] == "not_found"
+            # Global status stays active — per-interval permanently_dead is authoritative
+            assert ticker_data["status"] == "active"
             assert ticker_data["last_checked"] == self.test_date
+            assert ticker_data["intervals"]["1d"]["status"] == "not_found"
+            assert ticker_data["intervals"]["1h"]["status"] == "not_found"
 
     def test_data_structure_integrity(self):
         """Test that data structure maintains integrity across operations."""
@@ -446,7 +444,7 @@ class TestTickerOperations:
             assert ticker_data["intervals"]["1h"]["status"] == "not_found"
 
     def test_not_found_lifecycle_global_transition_after_repeated_failures(self):
-        """Multiple interval failures should demote ticker to global not_found."""
+        """Multiple interval failures mark per-interval as not_found; global stays active."""
         yf_parqed = self.create_yf_parqed_instance()
         yf_parqed.tickers = {
             "LIFE": {
@@ -491,7 +489,8 @@ class TestTickerOperations:
             yf_parqed.save_single_stock_data("LIFE", interval="1h")
 
         ticker_data = yf_parqed.tickers["LIFE"]
-        assert ticker_data["status"] == "not_found"
+        # Global status stays active — per-interval permanently_dead is authoritative
+        assert ticker_data["status"] == "active"
         assert all(
             interval_info["status"] == "not_found"
             for interval_info in ticker_data["intervals"].values()
@@ -846,7 +845,7 @@ def run_tests():
         "test_load_tickers_empty_file",
         "test_save_and_load_tickers",
         "test_update_current_list_of_stocks_new_tickers",
-        "test_update_current_list_of_stocks_reactivate_not_found",
+        "test_update_current_list_of_stocks_does_not_reactivate_not_found",
         "test_is_ticker_active_for_interval",
         "test_is_ticker_active_for_interval_respects_cooldown_window",
         "test_is_ticker_active_for_interval_allows_retry_after_cooldown",

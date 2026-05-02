@@ -41,6 +41,8 @@ docs/adr/               # Architecture Decision Records
 | `xetra-parqed cleanup-raw-cache DETR` | Delete aged raw cache files once data is in Parquet |
 | `xetra-parqed reprocess-raw-cache DETR DATE` | Rebuild a daily Parquet from raw cache after data loss |
 | `yf-parqed` | Yahoo Finance data collector |
+| `yf-parqed add-ticker TICKER` | Add or resurrect a ticker as manually managed (exempt from auto-pruning) |
+| `yf-parqed remove-ticker TICKER` | Permanently deactivate a ticker; not reactivated by CSV updates |
 | `uv run pytest` | Run full test suite |
 
 ## Production environment

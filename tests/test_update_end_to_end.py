@@ -98,9 +98,9 @@ def test_update_stock_data_end_to_end(monkeypatch, seeded_workspace: Path):
     assert aaa_1h["status"] == "not_found"
     assert aaa_1h["last_checked"] is not None
 
-    # BBB should transition to globally not_found with no parquet artifacts
+    # BBB should have all intervals not_found; global status stays active
     bbb_meta = instance.tickers["BBB"]
-    assert bbb_meta["status"] == "not_found"
+    assert bbb_meta["status"] == "active"
     assert all(
         interval_info["status"] == "not_found"
         for interval_info in bbb_meta["intervals"].values()

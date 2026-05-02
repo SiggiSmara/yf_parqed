@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Callable, Iterable
 from urllib.error import HTTPError
 
@@ -46,22 +46,47 @@ class TickerRegistry:
         return self._tickers
 
     def update_current_list(self, new_tickers: dict) -> None:
+        new_symbols = set(new_tickers.keys())
+
         for ticker, metadata in new_tickers.items():
             if ticker not in self._tickers:
                 self._tickers[ticker] = metadata
                 self._tickers[ticker].setdefault("intervals", {})
-                continue
+                self._tickers[ticker]["source"] = "csv"
+            # Existing tickers are NOT reactivated — they work through the death cycle
 
-            existing = self._tickers[ticker]
-            if existing.get("status") == "not_found":
-                existing["status"] = "active"
-                existing.setdefault("intervals", {})
+        # Prune permanently dead CSV tickers no longer in CSV
+        # Collect keys first (never modify dict while iterating)
+        to_remove = [
+            t for t, data in self._tickers.items()
+            if data.get("source") != "manual"
+            and not data.get("manually_removed")
+            and t not in new_symbols
+            and data.get("intervals")
+            and all(
+                iv.get("permanently_dead", False)
+                for iv in data["intervals"].values()
+            )
+        ]
+        for t in to_remove:
+            del self._tickers[t]
+        if to_remove:
+            logger.info(f"Pruned {len(to_remove)} permanently dead tickers no longer in CSV")
 
     def is_active_for_interval(self, ticker: str, interval: str) -> bool:
         ticker_data = self._tickers.get(ticker)
         if ticker_data is None:
             return True
 
+        # Manually removed tickers are never active
+        if ticker_data.get("manually_removed"):
+            return False
+
+        # Manual tickers are always active — exempt from death cycle
+        if ticker_data.get("source") == "manual":
+            return True
+
+        # Legacy global not_found (old schema compatibility)
         if ticker_data.get("status") == "not_found":
             return False
 
@@ -69,20 +94,21 @@ class TickerRegistry:
         if interval_data is None:
             return True
 
+        if interval_data.get("permanently_dead"):
+            return False
+
         if interval_data.get("status") != "not_found":
             return True
 
-        last_not_found = interval_data.get("last_not_found_date")
-        if not last_not_found:
-            return True
+        # In cooling window?
+        cooling_since = interval_data.get("cooling_since")
+        if cooling_since:
+            now = self._config.get_now()
+            # True when cooling expired → allow single retry
+            return self._business_days_since(cooling_since, now) >= 7
 
-        try:
-            last_date = datetime.strptime(last_not_found, "%Y-%m-%d")
-        except ValueError:
-            return True
-
-        now = self._config.get_now()
-        return (now - last_date).days >= 30
+        # Still in streak phase — always allow retries
+        return True
 
     def get_interval_metadata(self, ticker: str, interval: str) -> dict | None:
         ticker_data = self._tickers.get(ticker)
@@ -139,27 +165,114 @@ class TickerRegistry:
             interval_entry["status"] = "active"
             interval_entry["last_found_date"] = current_date
             interval_entry["last_checked"] = current_date
+            interval_entry.pop("not_found_streak_days", None)
+            interval_entry.pop("cooling_since", None)
+            # permanently_dead is intentionally NOT cleared — only add_ticker() does that
             if last_date is not None:
                 interval_entry["last_data_date"] = self._config.format_date(last_date)
-            
-            # Store storage backend information if provided
+
             if storage_info is not None:
                 interval_entry["storage"] = storage_info
 
             ticker_entry["status"] = "active"
             ticker_entry["last_checked"] = current_date
         else:
-            interval_entry["status"] = "not_found"
-            interval_entry["last_not_found_date"] = current_date
-            interval_entry["last_checked"] = current_date
-            ticker_entry["last_checked"] = current_date
+            today_str = current_date
 
-            if intervals and self._all_intervals_not_found(intervals.values()):
-                ticker_entry["status"] = "not_found"
+            # Permanently dead intervals are never updated
+            if interval_entry.get("permanently_dead"):
+                return
+
+            cooling_since = interval_entry.get("cooling_since")
+            if cooling_since:
+                now = self._config.get_now()
+                if self._business_days_since(cooling_since, now) >= 7:
+                    # Post-cooldown retry just failed → permanently dead
+                    interval_entry["permanently_dead"] = True
+                    interval_entry.pop("cooling_since", None)
+                interval_entry["status"] = "not_found"
+                interval_entry["last_not_found_date"] = today_str
+                interval_entry["last_checked"] = today_str
+                ticker_entry["last_checked"] = today_str
+                return
+
+            # Day-based streak: only increment once per calendar day
+            if interval_entry.get("last_not_found_date") != today_str:
+                streak = interval_entry.get("not_found_streak_days", 0) + 1
+                interval_entry["not_found_streak_days"] = streak
+                if streak >= 3:
+                    interval_entry["cooling_since"] = today_str
+
+            interval_entry["status"] = "not_found"
+            interval_entry["last_not_found_date"] = today_str
+            interval_entry["last_checked"] = today_str
+            ticker_entry["last_checked"] = today_str
+            # Do NOT set global not_found — per-interval permanently_dead is authoritative
+
+    def add_ticker(self, ticker: str) -> None:
+        """Add or resurrect a ticker as manually managed (exempt from auto-death)."""
+        today = self._config.format_date()
+        if ticker not in self._tickers:
+            self._tickers[ticker] = {
+                "ticker": ticker,
+                "added_date": today,
+                "status": "active",
+                "last_checked": today,
+                "source": "manual",
+                "intervals": {},
+            }
+            logger.info(f"Added new manual ticker: {ticker}")
+        else:
+            data = self._tickers[ticker]
+            was_dead = data.get("manually_removed") or any(
+                iv.get("permanently_dead") for iv in data.get("intervals", {}).values()
+            )
+            data["source"] = "manual"
+            data.pop("manually_removed", None)
+            data["status"] = "active"
+            for iv in data.get("intervals", {}).values():
+                iv.pop("permanently_dead", None)
+                iv.pop("not_found_streak_days", None)
+                iv.pop("cooling_since", None)
+                if iv.get("status") == "not_found":
+                    iv["status"] = "active"
+            if was_dead:
+                logger.warning(f"Resurrecting previously dead ticker: {ticker}")
+            else:
+                logger.info(f"Marked existing ticker as manual: {ticker}")
+        self.save()
+
+    def remove_ticker(self, ticker: str) -> None:
+        """Permanently deactivate a ticker. Not reactivated by CSV updates."""
+        if ticker not in self._tickers:
+            logger.warning(f"Ticker {ticker} not in registry")
+            return
+        data = self._tickers[ticker]
+        data["source"] = "manual"
+        data["manually_removed"] = True
+        for iv in data.get("intervals", {}).values():
+            iv["permanently_dead"] = True
+        logger.info(f"Manually deactivated ticker: {ticker}")
+        self.save()
 
     @staticmethod
     def _all_intervals_not_found(intervals: Iterable[dict]) -> bool:
         return all(interval.get("status") == "not_found" for interval in intervals)
+
+    @staticmethod
+    def _business_days_since(start_str: str, now: datetime) -> int:
+        """Count weekdays between start_str date and now (exclusive of start, inclusive of end)."""
+        try:
+            start = datetime.strptime(start_str, "%Y-%m-%d").date()
+        except ValueError:
+            return 0
+        end = now.date()
+        count, current = 0, start
+        while current < end:
+            current += timedelta(days=1)
+            if current.weekday() < 5:
+                count += 1
+        return count
 
     def confirm_not_founds(self) -> None:
         """Re-check globally not-found tickers using the 1d interval."""

@@ -197,6 +197,7 @@ class TestUpdateLoopHarness:
     def test_cooldown_interval_skips_fetch_calls(self, monkeypatch):
         instance = YFParqed(my_path=self.temp_dir, my_intervals=["1d"])
         today_str = datetime.now().strftime("%Y-%m-%d")
+        # Ticker in cooling window: cooling_since set to today, < 7 workdays elapsed
         instance.tickers = {
             "COOLDOWN": {
                 "ticker": "COOLDOWN",
@@ -205,6 +206,8 @@ class TestUpdateLoopHarness:
                 "intervals": {
                     "1d": {
                         "status": "not_found",
+                        "not_found_streak_days": 3,
+                        "cooling_since": today_str,
                         "last_not_found_date": today_str,
                         "last_checked": today_str,
                     }
@@ -234,16 +237,16 @@ class TestUpdateLoopHarness:
     @pytest.mark.parametrize(
         "days_since, expected_invocations",
         [
-            (29, 0),  # still inside cooldown window
-            (30, 1),  # threshold day should allow retry
-            (45, 1),  # comfortably outside window
+            (3, 0),   # still inside 7-workday cooling window
+            (14, 1),  # past 7 workdays (2 full weeks = 10 workdays)
+            (20, 1),  # comfortably outside window
         ],
     )
     def test_cooldown_boundary_behavior(
         self, monkeypatch, days_since, expected_invocations
     ):
         instance = YFParqed(my_path=self.temp_dir, my_intervals=["1d"])
-        last_not_found = (datetime.now() - timedelta(days=days_since)).strftime(
+        cooling_since = (datetime.now() - timedelta(days=days_since)).strftime(
             "%Y-%m-%d"
         )
         instance.tickers = {
@@ -254,8 +257,10 @@ class TestUpdateLoopHarness:
                 "intervals": {
                     "1d": {
                         "status": "not_found",
-                        "last_not_found_date": last_not_found,
-                        "last_checked": last_not_found,
+                        "not_found_streak_days": 3,
+                        "cooling_since": cooling_since,
+                        "last_not_found_date": cooling_since,
+                        "last_checked": cooling_since,
                     }
                 },
             }

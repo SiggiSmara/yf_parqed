@@ -598,6 +598,26 @@ def update_tickers():
     logger.info("Ticker list updated.")
 
 
+@app.command("add-ticker")
+def add_ticker(
+    ticker: Annotated[str, typer.Argument(help="Ticker symbol to add or resurrect")],
+):
+    """Add a ticker as manually managed (exempt from auto-pruning)."""
+    global yf_parqed
+
+    yf_parqed.registry.add_ticker(ticker.upper())
+
+
+@app.command("remove-ticker")
+def remove_ticker(
+    ticker: Annotated[str, typer.Argument(help="Ticker symbol to permanently deactivate")],
+):
+    """Permanently deactivate a ticker. Not reactivated by CSV updates."""
+    global yf_parqed
+
+    yf_parqed.registry.remove_ticker(ticker.upper())
+
+
 @app.command()
 def confirm_not_founds():
     """Update the not found list."""

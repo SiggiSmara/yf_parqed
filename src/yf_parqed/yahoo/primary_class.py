@@ -1,3 +1,5 @@
+import csv
+import re
 from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Sequence
@@ -294,6 +296,47 @@ class YFParqed:
         self.download_file(url, local_path_nyse)
         return local_path_nasdaq, local_path_nyse
 
+    # Conservative dead-instrument name patterns:
+    # dash-suffix derivatives (warrants, units, rights) and depositary instruments
+    _DEAD_NAME_PATTERN = re.compile(
+        r"(?i)"
+        r"\s+-\s+warrants?\b"
+        r"|\s+-\s+units?\b"
+        r"|\s+-\s+rights?\b"
+        r"|\bdepositary\s+(?:shares?|receipts?)\b"
+        r"|\bamerican\s+depositary\b"
+    )
+
+    @classmethod
+    def _is_dead_instrument(cls, symbol: str, name: str) -> bool:
+        """Return True if the instrument is a derivative that will never trade as a stock."""
+        # Known derivative symbol suffixes: .WS .WT .WI .W (warrants), .RT .R (rights), .U (units)
+        if re.search(r'\.(?:W[STI]?|R[T]?|U)$', symbol, re.IGNORECASE):
+            return True
+        return bool(cls._DEAD_NAME_PATTERN.search(name))
+
+    def _parse_csv_tickers(self, path: Path, symbol_col: str, name_col: str) -> list[str]:
+        """Parse a ticker CSV and return live symbols, filtering dead instruments."""
+        symbols: list[str] = []
+        filtered = 0
+        try:
+            with path.open(newline="", encoding="utf-8") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    symbol = (row.get(symbol_col) or "").strip()
+                    name = (row.get(name_col) or "").strip()
+                    if not symbol:
+                        continue
+                    if self._is_dead_instrument(symbol, name):
+                        filtered += 1
+                        continue
+                    symbols.append(symbol)
+        except Exception as e:
+            logger.warning(f"Failed to parse {path}: {e}")
+        if filtered:
+            logger.debug(f"Filtered {filtered} dead instruments from {path.name}")
+        return symbols
+
     def get_new_list_of_stocks(self, download_tickers: bool = True) -> dict:
         if download_tickers:
             nasdaq_path, nyse_path = self.get_tickers()
@@ -304,35 +347,19 @@ class YFParqed:
             logger.debug("Nasdaq and/or Nyse file not found.  Nothing to do")
             return {}
 
-        nasdaq = [
-            x
-            for x in [
-                y.split(",")[0]
-                for y in nasdaq_path.read_text().split("\n")
-                if len(y.strip()) > 0
-            ]
-            if x is not None and x != "" and not x.startswith("File")
-        ]
+        nasdaq = self._parse_csv_tickers(nasdaq_path, "Symbol", "Security Name")
+        nyse = self._parse_csv_tickers(nyse_path, "ACT Symbol", "Company Name")
 
-        nyse = [
-            x
-            for x in [
-                y.split(",")[0]
-                for y in nyse_path.read_text().split("\n")
-                if len(y.strip()) > 0
-            ]
-            if x is not None and x != ""
-        ]
-        stocks = list(set(nasdaq[1:] + nyse[1:]))
+        today = datetime.now().strftime("%Y-%m-%d")
         stocks = {
             x: {
                 "ticker": x,
-                "added_date": datetime.now().strftime("%Y-%m-%d"),
+                "added_date": today,
                 "status": "active",
                 "last_checked": None,
                 "intervals": {},
             }
-            for x in stocks
+            for x in set(nasdaq + nyse)
         }
         return stocks
 
