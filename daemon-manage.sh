@@ -525,8 +525,14 @@ check_pending_registry_pruning() {
     local PRUNE_SCRIPT="$INSTALL_DIR/tools/prune_registry.py"
     local PYTHON="$INSTALL_DIR/.venv/bin/python"
 
-    [ -f "$PRUNE_SCRIPT" ] || return 0
-    [ -f "$PYTHON" ] || return 0
+    if [ ! -f "$PRUNE_SCRIPT" ]; then
+        log_warn "prune_registry.py not found at $PRUNE_SCRIPT — skipping"
+        return 0
+    fi
+    if [ ! -f "$PYTHON" ]; then
+        log_warn "Python not found at $PYTHON — skipping registry pruning"
+        return 0
+    fi
 
     local result
     result=$(sudo -u "$DAEMON_USER" "$PYTHON" "$PRUNE_SCRIPT" --wrk-dir "$DATA_DIR" 2>&1) || true
