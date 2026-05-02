@@ -66,6 +66,14 @@ Production data path pattern:
 
 When the CLI is invoked via systemd it uses `--wrk-dir /var/lib/yf_parqed`. In dev, the default root is a relative `data/` from the working directory.
 
+**Deployment:** Use `sudo ./daemon-manage.sh update` — it pulls code, syncs dependencies, clears bytecache, runs any pending Parquet column migrations, runs any pending ticker registry pruning, then restarts all enabled services. Do not deploy manually.
+
+**Operational tools** (`tools/` directory):
+
+| Script | Purpose |
+|---|---|
+| `tools/prune_registry.py` | Mark old-schema globally-not-found and dead-instrument-suffix tickers as `permanently_dead` so the normal pruning cycle can remove them. Dry-run by default; `--apply` to write. Invoked automatically by `daemon-manage.sh update`. |
+
 ## Xetra parser — current state (as of 2026-05-01)
 
 The parser supports two schemas:

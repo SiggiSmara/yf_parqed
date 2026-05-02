@@ -521,6 +521,37 @@ do_install() {
     echo
 }
 
+check_pending_registry_pruning() {
+    local PRUNE_SCRIPT="$INSTALL_DIR/tools/prune_registry.py"
+    local PYTHON="$INSTALL_DIR/.venv/bin/python"
+
+    [ -f "$PRUNE_SCRIPT" ] || return 0
+    [ -f "$PYTHON" ] || return 0
+
+    local result
+    result=$(sudo -u "$DAEMON_USER" "$PYTHON" "$PRUNE_SCRIPT" --wrk-dir "$DATA_DIR" 2>&1) || true
+
+    # Skip if nothing to do (total intervals updated is 0)
+    if ! echo "$result" | grep -q "Total intervals updated:.*[1-9]"; then
+        log_info "No registry pruning needed"
+        return 0
+    fi
+
+    log_warn "Registry entries eligible for pruning:"
+    echo "$result"
+    echo
+    read -p "Apply registry pruning now? [Y/n]: " run_prune
+    case "$run_prune" in
+        [nN])
+            log_warn "Skipping — dead tickers will remain in registry until next manual prune"
+            ;;
+        *)
+            log_info "Pruning registry..."
+            sudo -u "$DAEMON_USER" "$PYTHON" "$PRUNE_SCRIPT" --wrk-dir "$DATA_DIR" --apply
+            ;;
+    esac
+}
+
 check_pending_migrations() {
     local XETRA_BIN="$INSTALL_DIR/.venv/bin/xetra-parqed"
 
@@ -596,6 +627,9 @@ do_update() {
 
     # Check for Parquet files that need column migration before starting services
     check_pending_migrations
+
+    # Check for ticker registry entries that need pruning
+    check_pending_registry_pruning
 
     # Restart services
     log_info "Restarting daemons..."
