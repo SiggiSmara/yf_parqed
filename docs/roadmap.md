@@ -20,6 +20,10 @@ This roadmap captures planned and in-flight changes that do not yet live in the 
 
 - **Xetra Phase 3+** — Split tracking, multi-venue support (Tradegate), ISIN→ticker mapping via Deutsche Börse CSV, production hardening.
 
+## Under Consideration
+
+- **LinkedIn Integration** — Social/professional networking data collection and automation. See [LinkedIn Integration Plan](LINKEDIN_INTEGRATION_PLAN.md) for detailed requirements analysis, technical considerations, and implementation phases. Status: Planning phase - requires stakeholder review and go/no-go decision.
+
 ## Process Notes
 
 - Keep entries ordered by likely delivery sequence.
