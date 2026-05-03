@@ -1,6 +1,6 @@
 [project]
 name = "yf-parqed"
-version = "0.5.0rc4"
+version = "0.5.0rc5"
 description = "Persistent storage of yfinance ticker data in parquet"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -24,11 +24,6 @@ classifiers = [
     "Topic :: Office/Business :: Financial",
     "Topic :: Database",
 ]
-
-[project.urls]
-Repository = "https://github.com/SiggiSmara/yf_parqed"
-Issues = "https://github.com/SiggiSmara/yf_parqed/issues"
-
 dependencies = [
     "beautifulsoup4>=4.14.2",
     "httpx>=0.28.1",
@@ -40,6 +35,10 @@ dependencies = [
     "typer>=0.15.1",
     "yfinance>=0.2.66",
 ]
+
+[project.urls]
+Repository = "https://github.com/SiggiSmara/yf_parqed"
+Issues = "https://github.com/SiggiSmara/yf_parqed/issues"
 
 [project.scripts]
 yf-parqed = "yf_parqed.yfinance_cli:app"
