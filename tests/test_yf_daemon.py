@@ -14,9 +14,10 @@ from yf_parqed import yfinance_cli as main
 
 class StubConfig:
     """Minimal config stub for daemon tests."""
+
     def load_storage_config(self):
         return {"partitioned": True, "markets": {}, "sources": {}}
-    
+
     def save_storage_config(self, config):
         pass
 
@@ -86,7 +87,7 @@ class TestDaemonCLIFlags:
         # Create intervals.json to allow CLI initialization
         intervals_file = tmp_path / "intervals.json"
         intervals_file.write_text('["1d"]')
-        
+
         # Mock time.sleep to avoid actual waiting
         sleep_calls = []
 

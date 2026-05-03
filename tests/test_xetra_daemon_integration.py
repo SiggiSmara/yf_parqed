@@ -23,7 +23,9 @@ def mock_xetra_service():
     mock_service = MagicMock()
     mock_service.__enter__ = Mock(return_value=mock_service)
     mock_service.__exit__ = Mock(return_value=False)
-    mock_service.has_any_data.return_value = True  # Default: data exists (skip initial fetch)
+    mock_service.has_any_data.return_value = (
+        True  # Default: data exists (skip initial fetch)
+    )
     mock_service.find_unmigrated_files.return_value = []  # Preflight: no migration needed
     mock_service.fetch_and_store_missing_trades_incremental.return_value = {
         "dates_fetched": ["2025-12-04"],
@@ -37,13 +39,13 @@ def mock_xetra_service():
 def fast_sleep(monkeypatch):
     """Mock time.sleep to make tests run instantly by raising SystemExit."""
     sleep_calls = []
-    
+
     def mock_sleep(seconds):
         sleep_calls.append(seconds)
         # After first sleep in the post-fetch interval loop, exit
         if len(sleep_calls) >= 1:
             raise SystemExit(0)
-    
+
     monkeypatch.setattr("yf_parqed.xetra_cli.time.sleep", mock_sleep)
     return sleep_calls
 
@@ -55,15 +57,15 @@ def daemon_test_context(mock_xetra_service, monkeypatch):
     with patch("yf_parqed.xetra_cli.XetraService", return_value=mock_xetra_service):
         # Mock sleep to exit fast
         sleep_calls = []
-        
+
         def mock_sleep(seconds):
             sleep_calls.append(seconds)
             # After first sleep, exit the daemon
             if len(sleep_calls) >= 1:
                 raise SystemExit(0)
-        
+
         monkeypatch.setattr("yf_parqed.xetra_cli.time.sleep", mock_sleep)
-        
+
         yield {
             "service": mock_xetra_service,
             "sleep_calls": sleep_calls,
@@ -174,7 +176,7 @@ class TestDaemonLoopExecution:
     def test_daemon_continues_after_fetch_error(self, daemon_test_context):
         """Daemon continues running after fetch errors."""
         ctx = daemon_test_context
-        
+
         # Make first call fail, then succeed
         call_count = {"count": 0}
 
@@ -191,7 +193,9 @@ class TestDaemonLoopExecution:
                 "consolidated": False,
             }
 
-        ctx["service"].fetch_and_store_missing_trades_incremental.side_effect = fetch_side_effect
+        ctx[
+            "service"
+        ].fetch_and_store_missing_trades_incremental.side_effect = fetch_side_effect
 
         # Run daemon
         runner.invoke(
@@ -276,7 +280,9 @@ class TestFileLogging:
         assert len(log_content) > 0
 
     @patch("yf_parqed.xetra_cli.XetraService")
-    def test_log_file_contains_structured_logs(self, mock_service_class, tmp_path, mock_xetra_service):
+    def test_log_file_contains_structured_logs(
+        self, mock_service_class, tmp_path, mock_xetra_service
+    ):
         """Log file contains properly formatted log entries."""
         log_file = tmp_path / "test.log"
 
@@ -306,7 +312,9 @@ class TestFileLogging:
         )
 
     @patch("yf_parqed.xetra_cli.XetraService")
-    def test_log_file_parent_dirs_created(self, mock_service_class, tmp_path, mock_xetra_service):
+    def test_log_file_parent_dirs_created(
+        self, mock_service_class, tmp_path, mock_xetra_service
+    ):
         """Log file parent directories are created automatically."""
         log_file = tmp_path / "nested" / "dirs" / "test.log"
 
@@ -427,13 +435,15 @@ class TestDaemonTradingHoursIntegration:
                 "total_files": 0,
                 "consolidated": False,
             }
-            
+
             # Custom sleep mock that exits after 2 calls
             sleep_calls = []
+
             def mock_sleep(seconds):
                 sleep_calls.append(seconds)
                 if len(sleep_calls) >= 2:
                     raise SystemExit(0)
+
             monkeypatch.setattr("yf_parqed.xetra_cli.time.sleep", mock_sleep)
 
             # Setup mock trading hours checker
@@ -446,7 +456,9 @@ class TestDaemonTradingHoursIntegration:
 
             def is_within_side_effect():
                 result = within_checks[check_index["index"]]
-                check_index["index"] = min(check_index["index"] + 1, len(within_checks) - 1)
+                check_index["index"] = min(
+                    check_index["index"] + 1, len(within_checks) - 1
+                )
                 return result
 
             mock_checker.is_within_hours.side_effect = is_within_side_effect
@@ -478,7 +490,10 @@ class TestDaemonTradingHoursIntegration:
             )
 
             # Should have called fetch once (after entering active hours)
-            assert mock_xetra_service.fetch_and_store_missing_trades_incremental.call_count >= 1
+            assert (
+                mock_xetra_service.fetch_and_store_missing_trades_incremental.call_count
+                >= 1
+            )
 
 
 class TestDaemonPIDIntegration:
@@ -488,7 +503,7 @@ class TestDaemonPIDIntegration:
         """Daemon creates PID file when --pid-file is specified."""
         pid_file = tmp_path / "daemon.pid"
         ctx = daemon_test_context
-        
+
         ctx["service"].fetch_and_store_missing_trades_incremental.return_value = {
             "dates_checked": [],
             "dates_fetched": [],

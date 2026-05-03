@@ -49,10 +49,13 @@ def test_fetch_trades_uses_wrk_dir(tmp_path):
                 "consolidated": False,
             }
 
-    with patch("yf_parqed.xetra_cli.ConfigService", ConfigStub), patch(
-        "yf_parqed.xetra_cli.XetraService", ServiceStub
+    with (
+        patch("yf_parqed.xetra_cli.ConfigService", ConfigStub),
+        patch("yf_parqed.xetra_cli.XetraService", ServiceStub),
     ):
-        result = runner.invoke(app, ["--wrk-dir", str(tmp_path), "fetch-trades", "DETR"])
+        result = runner.invoke(
+            app, ["--wrk-dir", str(tmp_path), "fetch-trades", "DETR"]
+        )
 
     assert result.exit_code == 0
     # preflight check + run_fetch_once each create a ConfigService with wrk_dir
@@ -172,6 +175,7 @@ def test_fetch_trades_with_skipped_dates(mock_fetch_incremental):
 def test_check_status_command(mock_list_files):
     """Test check-status command."""
     from datetime import datetime
+
     today = datetime.now()
     mock_list_files.return_value = [
         f"DETR-posttrade-{today.strftime('%Y-%m-%d')}T10_00.json.gz",

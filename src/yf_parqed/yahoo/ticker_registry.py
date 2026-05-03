@@ -58,20 +58,22 @@ class TickerRegistry:
         # Prune permanently dead CSV tickers no longer in CSV
         # Collect keys first (never modify dict while iterating)
         to_remove = [
-            t for t, data in self._tickers.items()
+            t
+            for t, data in self._tickers.items()
             if data.get("source") != "manual"
             and not data.get("manually_removed")
             and t not in new_symbols
             and data.get("intervals")
             and all(
-                iv.get("permanently_dead", False)
-                for iv in data["intervals"].values()
+                iv.get("permanently_dead", False) for iv in data["intervals"].values()
             )
         ]
         for t in to_remove:
             del self._tickers[t]
         if to_remove:
-            logger.info(f"Pruned {len(to_remove)} permanently dead tickers no longer in CSV")
+            logger.info(
+                f"Pruned {len(to_remove)} permanently dead tickers no longer in CSV"
+            )
 
     def is_active_for_interval(self, ticker: str, interval: str) -> bool:
         ticker_data = self._tickers.get(ticker)

@@ -68,7 +68,9 @@ class XetraService:
         else:
             self.backend = backend
 
-    def has_any_data(self, venue: str, market: str = "de", source: str = "xetra") -> bool:
+    def has_any_data(
+        self, venue: str, market: str = "de", source: str = "xetra"
+    ) -> bool:
         """
         Check if any data exists for the specified venue.
 
@@ -88,10 +90,10 @@ class XetraService:
             / "trades"
             / f"venue={venue}"
         )
-        
+
         if not venue_dir.exists():
             return False
-        
+
         # Check if any parquet files exist in the venue directory tree
         parquet_files = list(venue_dir.rglob("*.parquet"))
         return len(parquet_files) > 0
@@ -200,7 +202,9 @@ class XetraService:
                 day_part = next((p for p in parts if p.startswith("day=")), None)
 
                 if not (year_part and month_part and day_part):
-                    logger.warning(f"Cannot parse date from raw cache path {cache_file}")
+                    logger.warning(
+                        f"Cannot parse date from raw cache path {cache_file}"
+                    )
                     kept_no_parquet += 1
                     continue
 
@@ -209,17 +213,30 @@ class XetraService:
                 day = day_part.split("=")[1]
 
                 daily_path = (
-                    self.root_path / market / source / "trades"
-                    / f"venue={venue}" / f"year={year}" / f"month={month}" / f"day={day}"
+                    self.root_path
+                    / market
+                    / source
+                    / "trades"
+                    / f"venue={venue}"
+                    / f"year={year}"
+                    / f"month={month}"
+                    / f"day={day}"
                     / "trades.parquet"
                 )
                 monthly_path = (
-                    self.root_path / market / source / "trades_monthly"
-                    / f"venue={venue}" / f"year={year}" / f"month={month}"
+                    self.root_path
+                    / market
+                    / source
+                    / "trades_monthly"
+                    / f"venue={venue}"
+                    / f"year={year}"
+                    / f"month={month}"
                     / "trades.parquet"
                 )
 
-                if self._is_parquet_readable(daily_path) or self._is_parquet_readable(monthly_path):
+                if self._is_parquet_readable(daily_path) or self._is_parquet_readable(
+                    monthly_path
+                ):
                     if not dry_run:
                         cache_file.unlink(missing_ok=True)
                     deleted += 1
@@ -265,18 +282,30 @@ class XetraService:
         """
         trade_date = datetime.strptime(date_str, "%Y-%m-%d")
         cache_dir = (
-            self.root_path / market / source / "raw" / venue
-            / f"year={trade_date.year}" / f"month={trade_date.month:02d}"
+            self.root_path
+            / market
+            / source
+            / "raw"
+            / venue
+            / f"year={trade_date.year}"
+            / f"month={trade_date.month:02d}"
             / f"day={trade_date.day:02d}"
         )
         if not cache_dir.exists():
-            raise FileNotFoundError(f"No raw cache for {venue} {date_str} at {cache_dir}")
+            raise FileNotFoundError(
+                f"No raw cache for {venue} {date_str} at {cache_dir}"
+            )
 
         if not force:
             daily_path = (
-                self.root_path / market / source / "trades"
-                / f"venue={venue}" / f"year={trade_date.year}"
-                / f"month={trade_date.month:02d}" / f"day={trade_date.day:02d}"
+                self.root_path
+                / market
+                / source
+                / "trades"
+                / f"venue={venue}"
+                / f"year={trade_date.year}"
+                / f"month={trade_date.month:02d}"
+                / f"day={trade_date.day:02d}"
                 / "trades.parquet"
             )
             if self._is_parquet_readable(daily_path):
@@ -284,11 +313,18 @@ class XetraService:
                     f"Readable Parquet already exists for {venue} {date_str}; "
                     f"use force=True to reprocess anyway"
                 )
-                return {"processed": 0, "trades": 0, "skipped_unknown_schema": 0, "errors": 0}
+                return {
+                    "processed": 0,
+                    "trades": 0,
+                    "skipped_unknown_schema": 0,
+                    "errors": 0,
+                }
 
         raw_files = sorted(cache_dir.glob("*.json.gz"))
         if not raw_files:
-            raise FileNotFoundError(f"Raw cache directory exists but is empty: {cache_dir}")
+            raise FileNotFoundError(
+                f"Raw cache directory exists but is empty: {cache_dir}"
+            )
 
         processed = trades = skipped_unknown_schema = errors = 0
 
@@ -318,7 +354,9 @@ class XetraService:
         try:
             self._consolidate_daily_files(venue, date_str, market, source)
         except Exception as e:
-            logger.error(f"Failed to consolidate daily files for {venue} {date_str}: {e}")
+            logger.error(
+                f"Failed to consolidate daily files for {venue} {date_str}: {e}"
+            )
 
         return {
             "processed": processed,
@@ -624,7 +662,11 @@ class XetraService:
                 this_month = (trade_date.year, trade_date.month)
 
                 # H: consolidate previous month when month rolls over
-                if consolidate and last_processed_month is not None and this_month != last_processed_month:
+                if (
+                    consolidate
+                    and last_processed_month is not None
+                    and this_month != last_processed_month
+                ):
                     py, pm = last_processed_month
                     try:
                         logger.info(
@@ -636,7 +678,9 @@ class XetraService:
                         logger.error(f"Failed to consolidate {py}-{pm:02d}: {e}")
 
                 files_to_fetch = [
-                    f for f in files if not self._is_cached(venue, date_str, f, market, source)
+                    f
+                    for f in files
+                    if not self._is_cached(venue, date_str, f, market, source)
                 ]
 
                 if not files_to_fetch:
@@ -694,7 +738,9 @@ class XetraService:
                     try:
                         self._consolidate_daily_files(venue, date_str, market, source)
                     except Exception as e:
-                        logger.error(f"Failed to consolidate daily files for {date_str}: {e}")
+                        logger.error(
+                            f"Failed to consolidate daily files for {date_str}: {e}"
+                        )
 
                 elif date_files > 0:
                     dates_partial.append(date_str)
@@ -755,7 +801,10 @@ class XetraService:
         """
         d = datetime.strptime(date_str, "%Y-%m-%d")
         daily_dir = (
-            self.root_path / market / source / "trades"
+            self.root_path
+            / market
+            / source
+            / "trades"
             / f"venue={venue}"
             / f"year={d.year}"
             / f"month={d.month:02d}"
@@ -773,7 +822,9 @@ class XetraService:
         if final_path.exists():
             for mini in mini_files:
                 mini.unlink(missing_ok=True)
-            logger.debug(f"Cleaned {len(mini_files)} stale mini-files for {venue} {date_str}")
+            logger.debug(
+                f"Cleaned {len(mini_files)} stale mini-files for {venue} {date_str}"
+            )
             return
 
         tables = []
@@ -790,7 +841,9 @@ class XetraService:
         tmp_path = final_path.with_name("trades.parquet.tmp")
         tmp_path.unlink(missing_ok=True)
         try:
-            pq.write_table(combined, str(tmp_path), use_dictionary=False, compression="gzip")
+            pq.write_table(
+                combined, str(tmp_path), use_dictionary=False, compression="gzip"
+            )
             with open(tmp_path, "rb") as fd:
                 os.fsync(fd.fileno())
             tmp_path.replace(final_path)
@@ -1129,9 +1182,16 @@ class XetraService:
             logger.warning("No trades to store (empty DataFrame)")
             return
 
-        d = trade_date if isinstance(trade_date, datetime) else datetime.strptime(str(trade_date), "%Y-%m-%d")
+        d = (
+            trade_date
+            if isinstance(trade_date, datetime)
+            else datetime.strptime(str(trade_date), "%Y-%m-%d")
+        )
         daily_dir = (
-            self.root_path / market / source / "trades"
+            self.root_path
+            / market
+            / source
+            / "trades"
             / f"venue={venue}"
             / f"year={d.year}"
             / f"month={d.month:02d}"
@@ -1144,7 +1204,9 @@ class XetraService:
         tmp_path = mini_path.with_suffix(".tmp")
         try:
             table = pa.Table.from_pandas(df, preserve_index=False)
-            pq.write_table(table, str(tmp_path), use_dictionary=False, compression="gzip")
+            pq.write_table(
+                table, str(tmp_path), use_dictionary=False, compression="gzip"
+            )
             with open(tmp_path, "rb") as fd:
                 os.fsync(fd.fileno())
             tmp_path.replace(mini_path)
@@ -1171,7 +1233,14 @@ class XetraService:
     def _migration_sentinel_path(
         self, venue: str, market: str = "de", source: str = "xetra"
     ) -> Path:
-        return self.root_path / market / source / "trades" / f"venue={venue}" / ".migration_complete"
+        return (
+            self.root_path
+            / market
+            / source
+            / "trades"
+            / f"venue={venue}"
+            / ".migration_complete"
+        )
 
     def find_unmigrated_files(
         self,
@@ -1213,7 +1282,9 @@ class XetraService:
             if not sentinel.exists():
                 sentinel.parent.mkdir(parents=True, exist_ok=True)
                 sentinel.touch()
-                logger.info(f"All files migrated for {venue} — wrote sentinel {sentinel}")
+                logger.info(
+                    f"All files migrated for {venue} — wrote sentinel {sentinel}"
+                )
 
         return unmigrated
 

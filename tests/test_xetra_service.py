@@ -221,8 +221,14 @@ class TestXetraService:
         service.store_trades(df, "DETR", trade_date, market="de", source="xetra")
 
         daily_dir = (
-            tmp_path / "de" / "xetra" / "trades"
-            / "venue=DETR" / "year=2025" / "month=10" / "day=31"
+            tmp_path
+            / "de"
+            / "xetra"
+            / "trades"
+            / "venue=DETR"
+            / "year=2025"
+            / "month=10"
+            / "day=31"
         )
         mini_files = list(daily_dir.glob("trades-*.parquet"))
         assert len(mini_files) == 1
@@ -237,8 +243,14 @@ class TestXetraService:
         service.store_trades(df, "DETR", trade_date)
 
         daily_dir = (
-            tmp_path / "de" / "xetra" / "trades"
-            / "venue=DETR" / "year=2025" / "month=10" / "day=31"
+            tmp_path
+            / "de"
+            / "xetra"
+            / "trades"
+            / "venue=DETR"
+            / "year=2025"
+            / "month=10"
+            / "day=31"
         )
         assert not daily_dir.exists()
 
@@ -292,8 +304,14 @@ class TestXetraService:
 
         # Should write to default de/xetra path
         daily_dir = (
-            tmp_path / "de" / "xetra" / "trades"
-            / "venue=DETR" / "year=2025" / "month=10" / "day=31"
+            tmp_path
+            / "de"
+            / "xetra"
+            / "trades"
+            / "venue=DETR"
+            / "year=2025"
+            / "month=10"
+            / "day=31"
         )
         assert any(daily_dir.glob("trades-*.parquet"))
 
@@ -475,7 +493,9 @@ class TestRawCacheTracking:
     def _make_service(self, tmp_path, mock_fetcher, mock_parser):
         from yf_parqed.xetra.xetra_service import XetraService
         from yf_parqed.common.partition_path_builder import PartitionPathBuilder
-        from yf_parqed.common.partitioned_storage_backend import PartitionedStorageBackend
+        from yf_parqed.common.partitioned_storage_backend import (
+            PartitionedStorageBackend,
+        )
 
         path_builder = PartitionPathBuilder(tmp_path)
         backend = PartitionedStorageBackend(
@@ -521,16 +541,26 @@ class TestRawCacheTracking:
             '{"trades":[]}',
         ]
         mock_parser.parse.side_effect = [
-            pd.DataFrame({"isin": ["DE001"], "trading_date_time": [pd.Timestamp("2025-11-28 08:00:00")], "price": [100.0]}),
+            pd.DataFrame(
+                {
+                    "isin": ["DE001"],
+                    "trading_date_time": [pd.Timestamp("2025-11-28 08:00:00")],
+                    "price": [100.0],
+                }
+            ),
             pd.DataFrame(columns=["isin", "trading_date_time", "price"]),
             pd.DataFrame(columns=["isin", "trading_date_time", "price"]),
         ]
 
         service = self._make_service(tmp_path, mock_fetcher, mock_parser)
-        service.fetch_and_store_missing_trades_incremental("DETR", market="de", source="xetra")
+        service.fetch_and_store_missing_trades_incremental(
+            "DETR", market="de", source="xetra"
+        )
 
         for fname in mock_fetcher.list_available_files.return_value:
-            assert self._cache_path(tmp_path, fname).exists(), f"Raw cache missing for {fname}"
+            assert self._cache_path(tmp_path, fname).exists(), (
+                f"Raw cache missing for {fname}"
+            )
 
     def test_raw_cache_resume_skips_cached_files(self, tmp_path):
         """Files already in raw cache are not re-downloaded on resume."""
@@ -559,9 +589,13 @@ class TestRawCacheTracking:
         ] * 3
 
         service = self._make_service(tmp_path, mock_fetcher, mock_parser)
-        summary = service.fetch_and_store_missing_trades_incremental("DETR", market="de", source="xetra")
+        summary = service.fetch_and_store_missing_trades_incremental(
+            "DETR", market="de", source="xetra"
+        )
 
-        assert mock_fetcher.download_file.call_count == 3, "Should only download 3 uncached files"
+        assert mock_fetcher.download_file.call_count == 3, (
+            "Should only download 3 uncached files"
+        )
         assert summary["total_files"] == 3
 
     def test_raw_cache_resume_works_regardless_of_parquet(self, tmp_path):
@@ -585,12 +619,18 @@ class TestRawCacheTracking:
 
         mock_fetcher.download_file.return_value = b"d4"
         mock_fetcher.decompress_gzip.return_value = '{"trades":[]}'
-        mock_parser.parse.return_value = pd.DataFrame(columns=["isin", "trading_date_time", "price"])
+        mock_parser.parse.return_value = pd.DataFrame(
+            columns=["isin", "trading_date_time", "price"]
+        )
 
         service = self._make_service(tmp_path, mock_fetcher, mock_parser)
-        summary = service.fetch_and_store_missing_trades_incremental("DETR", market="de", source="xetra")
+        summary = service.fetch_and_store_missing_trades_incremental(
+            "DETR", market="de", source="xetra"
+        )
 
-        assert mock_fetcher.download_file.call_count == 1, "Should only fetch the 1 uncached file"
+        assert mock_fetcher.download_file.call_count == 1, (
+            "Should only fetch the 1 uncached file"
+        )
         assert summary["total_files"] == 1
 
 
@@ -712,7 +752,7 @@ class TestMigrateLegacyColumns:
         change reintroduces read_table in the migration path, the migration fails
         and this test catches it.
         """
-        path = self._write_legacy_file(tmp_path, dict_encode_venue=True)
+        _path = self._write_legacy_file(tmp_path, dict_encode_venue=True)
 
         def _raise_merge_error(*args, **kwargs):
             raise Exception(
@@ -721,6 +761,7 @@ class TestMigrateLegacyColumns:
             )
 
         import pyarrow.parquet as _pq
+
         monkeypatch.setattr(_pq, "read_table", _raise_merge_error)
 
         service = XetraService(root_path=tmp_path)

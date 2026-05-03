@@ -1,10 +1,11 @@
 """Tests for XetraService raw JSON cache: write, resume, cleanup, reprocess."""
+
 from __future__ import annotations
 
 import os
 import time
 from pathlib import Path
-from unittest.mock import Mock, patch, call
+from unittest.mock import Mock, patch
 
 import pandas as pd
 import pyarrow as pa
@@ -20,6 +21,7 @@ from yf_parqed.common.partitioned_storage_backend import PartitionedStorageBacke
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_service(tmp_path, fetcher=None, parser=None):
     path_builder = PartitionPathBuilder(tmp_path)
@@ -39,26 +41,44 @@ def _make_service(tmp_path, fetcher=None, parser=None):
 
 def _cache_path(tmp_path, venue, date_str, filename, market="de", source="xetra"):
     from datetime import datetime
+
     d = datetime.strptime(date_str, "%Y-%m-%d")
     return (
-        tmp_path / market / source / "raw" / venue
-        / f"year={d.year}" / f"month={d.month:02d}" / f"day={d.day:02d}"
+        tmp_path
+        / market
+        / source
+        / "raw"
+        / venue
+        / f"year={d.year}"
+        / f"month={d.month:02d}"
+        / f"day={d.day:02d}"
         / filename
     )
 
 
 def _daily_parquet(tmp_path, venue, year, month, day, market="de", source="xetra"):
     return (
-        tmp_path / market / source / "trades"
-        / f"venue={venue}" / f"year={year}" / f"month={month:02d}" / f"day={day:02d}"
+        tmp_path
+        / market
+        / source
+        / "trades"
+        / f"venue={venue}"
+        / f"year={year}"
+        / f"month={month:02d}"
+        / f"day={day:02d}"
         / "trades.parquet"
     )
 
 
 def _monthly_parquet(tmp_path, venue, year, month, market="de", source="xetra"):
     return (
-        tmp_path / market / source / "trades_monthly"
-        / f"venue={venue}" / f"year={year}" / f"month={month:02d}"
+        tmp_path
+        / market
+        / source
+        / "trades_monthly"
+        / f"venue={venue}"
+        / f"year={year}"
+        / f"month={month:02d}"
         / "trades.parquet"
     )
 
@@ -73,13 +93,18 @@ def _write_minimal_parquet(path: Path):
 # _save_to_raw_cache: atomic write
 # ---------------------------------------------------------------------------
 
+
 class TestSaveToRawCache:
     def test_atomic_write_no_tmp_left(self, tmp_path):
         svc = _make_service(tmp_path)
         data = b"compressed_bytes"
-        svc._save_to_raw_cache(data, "DETR", "2026-04-30", "DETR-posttrade-2026-04-30T09_00.json.gz")
+        svc._save_to_raw_cache(
+            data, "DETR", "2026-04-30", "DETR-posttrade-2026-04-30T09_00.json.gz"
+        )
 
-        cache = _cache_path(tmp_path, "DETR", "2026-04-30", "DETR-posttrade-2026-04-30T09_00.json.gz")
+        cache = _cache_path(
+            tmp_path, "DETR", "2026-04-30", "DETR-posttrade-2026-04-30T09_00.json.gz"
+        )
         assert cache.exists(), "Final cache file must exist"
         assert cache.read_bytes() == data, "Bytes must match"
 
@@ -111,6 +136,7 @@ class TestSaveToRawCache:
 # fetch_and_parse_trades: save before parse, non-fatal on cache failure
 # ---------------------------------------------------------------------------
 
+
 class TestFetchAndParseSaveOrder:
     def test_cache_saved_before_parse(self, tmp_path):
         call_order = []
@@ -123,11 +149,13 @@ class TestFetchAndParseSaveOrder:
         svc = _make_service(tmp_path, fetcher, parser)
 
         original_save = svc._save_to_raw_cache
+
         def tracking_save(*args, **kwargs):
             call_order.append("save")
             return original_save(*args, **kwargs)
 
         original_parse = parser.parse
+
         def tracking_parse(*args, **kwargs):
             call_order.append("parse")
             return original_parse(*args, **kwargs)
@@ -135,7 +163,9 @@ class TestFetchAndParseSaveOrder:
         svc._save_to_raw_cache = tracking_save
         parser.parse = tracking_parse
 
-        svc.fetch_and_parse_trades("DETR", "2026-04-30", "DETR-posttrade-2026-04-30T09_00.json.gz")
+        svc.fetch_and_parse_trades(
+            "DETR", "2026-04-30", "DETR-posttrade-2026-04-30T09_00.json.gz"
+        )
 
         assert call_order == ["save", "parse"], "Cache write must precede parse"
 
@@ -150,7 +180,9 @@ class TestFetchAndParseSaveOrder:
         svc._save_to_raw_cache = Mock(side_effect=OSError("disk full"))
 
         # Should not raise despite cache failure
-        df = svc.fetch_and_parse_trades("DETR", "2026-04-30", "DETR-posttrade-2026-04-30T09_00.json.gz")
+        df = svc.fetch_and_parse_trades(
+            "DETR", "2026-04-30", "DETR-posttrade-2026-04-30T09_00.json.gz"
+        )
         assert isinstance(df, pd.DataFrame)
 
     def test_unknown_schema_lands_in_raw_cache_not_quarantine(self, tmp_path):
@@ -163,12 +195,25 @@ class TestFetchAndParseSaveOrder:
         svc = _make_service(tmp_path, fetcher, parser)
 
         with pytest.raises(XetraSchemaUnknownError):
-            svc.fetch_and_parse_trades("DETR", "2026-04-30", "DETR-posttrade-2026-04-30T09_00.json.gz")
+            svc.fetch_and_parse_trades(
+                "DETR", "2026-04-30", "DETR-posttrade-2026-04-30T09_00.json.gz"
+            )
 
-        cache = _cache_path(tmp_path, "DETR", "2026-04-30", "DETR-posttrade-2026-04-30T09_00.json.gz")
-        assert cache.exists(), "Raw cache must contain the file even when schema is unknown"
+        cache = _cache_path(
+            tmp_path, "DETR", "2026-04-30", "DETR-posttrade-2026-04-30T09_00.json.gz"
+        )
+        assert cache.exists(), (
+            "Raw cache must contain the file even when schema is unknown"
+        )
 
-        quarantine = tmp_path / "de" / "xetra" / "quarantine" / "DETR" / "DETR-posttrade-2026-04-30T09_00.json.gz"
+        quarantine = (
+            tmp_path
+            / "de"
+            / "xetra"
+            / "quarantine"
+            / "DETR"
+            / "DETR-posttrade-2026-04-30T09_00.json.gz"
+        )
         assert not quarantine.exists(), "Quarantine path must no longer be written"
 
 
@@ -176,10 +221,13 @@ class TestFetchAndParseSaveOrder:
 # _is_cached / resume detection
 # ---------------------------------------------------------------------------
 
+
 class TestIsCached:
     def test_returns_false_when_not_cached(self, tmp_path):
         svc = _make_service(tmp_path)
-        assert not svc._is_cached("DETR", "2026-04-30", "DETR-posttrade-2026-04-30T09_00.json.gz")
+        assert not svc._is_cached(
+            "DETR", "2026-04-30", "DETR-posttrade-2026-04-30T09_00.json.gz"
+        )
 
     def test_returns_true_after_save(self, tmp_path):
         svc = _make_service(tmp_path)
@@ -198,6 +246,7 @@ class TestIsCached:
 # ---------------------------------------------------------------------------
 # cleanup_raw_cache
 # ---------------------------------------------------------------------------
+
 
 class TestCleanupRawCache:
     def _aged_file(self, path: Path, age_seconds: int):
@@ -257,7 +306,12 @@ class TestCleanupRawCache:
 
     def test_removes_orphaned_tmp_files_unconditionally(self, tmp_path):
         svc = _make_service(tmp_path)
-        tmp_file = _cache_path(tmp_path, "DETR", "2026-04-30", "DETR-posttrade-2026-04-30T09_00.json.gz.tmp")
+        tmp_file = _cache_path(
+            tmp_path,
+            "DETR",
+            "2026-04-30",
+            "DETR-posttrade-2026-04-30T09_00.json.gz.tmp",
+        )
         tmp_file.parent.mkdir(parents=True, exist_ok=True)
         tmp_file.write_bytes(b"orphan")
 
@@ -279,12 +333,18 @@ class TestCleanupRawCache:
     def test_no_raw_dir_returns_zeros(self, tmp_path):
         svc = _make_service(tmp_path)
         result = svc.cleanup_raw_cache("DETR")
-        assert result == {"deleted": 0, "kept_recent": 0, "kept_no_parquet": 0, "errors": 0}
+        assert result == {
+            "deleted": 0,
+            "kept_recent": 0,
+            "kept_no_parquet": 0,
+            "errors": 0,
+        }
 
 
 # ---------------------------------------------------------------------------
 # reprocess_from_raw_cache
 # ---------------------------------------------------------------------------
+
 
 class TestReprocessFromRawCache:
     def _populate_cache(self, tmp_path, venue, date_str, files: dict[str, bytes]):
@@ -317,7 +377,12 @@ class TestReprocessFromRawCache:
         _write_minimal_parquet(_daily_parquet(tmp_path, "DETR", 2026, 4, 30))
 
         result = svc.reprocess_from_raw_cache("DETR", "2026-04-30")
-        assert result == {"processed": 0, "trades": 0, "skipped_unknown_schema": 0, "errors": 0}
+        assert result == {
+            "processed": 0,
+            "trades": 0,
+            "skipped_unknown_schema": 0,
+            "errors": 0,
+        }
         parser.parse.assert_not_called()
 
     def test_reprocesses_with_force_even_if_parquet_readable(self, tmp_path):
@@ -340,12 +405,21 @@ class TestReprocessFromRawCache:
         fetcher.decompress_gzip.side_effect = ['{"trades":[]}', '{"trades":[]}']
         parser = Mock()
         parser.parse.side_effect = [
-            pd.DataFrame({"isin": ["DE001"], "trading_date_time": [pd.Timestamp("2026-04-30 09:00:00")], "price": [100.0]}),
+            pd.DataFrame(
+                {
+                    "isin": ["DE001"],
+                    "trading_date_time": [pd.Timestamp("2026-04-30 09:00:00")],
+                    "price": [100.0],
+                }
+            ),
             pd.DataFrame(columns=["isin", "trading_date_time", "price"]),
         ]
         svc = _make_service(tmp_path, fetcher, parser)
 
-        for fname in ["DETR-posttrade-2026-04-30T09_00.json.gz", "DETR-posttrade-2026-04-30T09_01.json.gz"]:
+        for fname in [
+            "DETR-posttrade-2026-04-30T09_00.json.gz",
+            "DETR-posttrade-2026-04-30T09_01.json.gz",
+        ]:
             svc._save_to_raw_cache(b"data", "DETR", "2026-04-30", fname)
 
         result = svc.reprocess_from_raw_cache("DETR", "2026-04-30")
@@ -363,7 +437,10 @@ class TestReprocessFromRawCache:
         ]
         svc = _make_service(tmp_path, fetcher, parser)
 
-        for fname in ["DETR-posttrade-2026-04-30T09_00.json.gz", "DETR-posttrade-2026-04-30T09_01.json.gz"]:
+        for fname in [
+            "DETR-posttrade-2026-04-30T09_00.json.gz",
+            "DETR-posttrade-2026-04-30T09_01.json.gz",
+        ]:
             svc._save_to_raw_cache(b"data", "DETR", "2026-04-30", fname)
 
         result = svc.reprocess_from_raw_cache("DETR", "2026-04-30")

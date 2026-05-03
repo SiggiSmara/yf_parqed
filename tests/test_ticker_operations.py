@@ -584,7 +584,8 @@ class TestTickerOperations:
 
         with (
             patch(
-                "yf_parqed.yahoo.ticker_registry.track", side_effect=lambda it, *_, **__: it
+                "yf_parqed.yahoo.ticker_registry.track",
+                side_effect=lambda it, *_, **__: it,
             ),
             patch("yf_parqed.yahoo.ticker_registry.datetime") as mock_datetime,
             patch(
@@ -629,7 +630,8 @@ class TestTickerOperations:
 
         with (
             patch(
-                "yf_parqed.yahoo.ticker_registry.track", side_effect=lambda it, *_, **__: it
+                "yf_parqed.yahoo.ticker_registry.track",
+                side_effect=lambda it, *_, **__: it,
             ),
             patch(
                 "yf_parqed.yahoo.primary_class.YFParqed._fetch_for_not_found_check"
@@ -739,7 +741,8 @@ class TestTickerOperations:
 
         with (
             patch(
-                "yf_parqed.yahoo.ticker_registry.track", side_effect=lambda it, *_, **__: it
+                "yf_parqed.yahoo.ticker_registry.track",
+                side_effect=lambda it, *_, **__: it,
             ),
             patch("yf_parqed.yahoo.ticker_registry.datetime") as mock_datetime,
             patch(
@@ -781,7 +784,8 @@ class TestTickerOperations:
 
         with (
             patch(
-                "yf_parqed.yahoo.ticker_registry.track", side_effect=lambda it, *_, **__: it
+                "yf_parqed.yahoo.ticker_registry.track",
+                side_effect=lambda it, *_, **__: it,
             ),
             patch("yf_parqed.yahoo.ticker_registry.datetime") as mock_datetime,
             patch(

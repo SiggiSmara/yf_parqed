@@ -127,7 +127,9 @@ def test_schema_completeness_before_storage():
     df = parser.parse(minimal_json)
 
     # Verify all legacy schema columns + schema_version are present
-    expected_columns = set(XetraParser.SCHEMAS["2025-legacy"].values()) | {"schema_version"}
+    expected_columns = set(XetraParser.SCHEMAS["2025-legacy"].values()) | {
+        "schema_version"
+    }
     actual_columns = set(df.columns)
 
     assert actual_columns == expected_columns, (

@@ -5,7 +5,6 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
-import pytest
 from typer.testing import CliRunner
 
 from yf_parqed.xetra_cli import app
@@ -18,17 +17,21 @@ def _make_updater_mock(tmp_path: Path) -> MagicMock:
 
     def fake_run(cache_path: Path) -> None:
         cache_path.parent.mkdir(parents=True, exist_ok=True)
-        pd.DataFrame([{
-            "isin": "DE0005140008",
-            "ticker": "DBK",
-            "name": "DEUTSCHE BANK",
-            "currency": "EUR",
-            "wkn": "514000",
-            "status": "active",
-            "first_seen": date.today(),
-            "last_seen": date.today(),
-            "source": "deutsche_boerse_csv",
-        }]).to_parquet(cache_path, index=False)
+        pd.DataFrame(
+            [
+                {
+                    "isin": "DE0005140008",
+                    "ticker": "DBK",
+                    "name": "DEUTSCHE BANK",
+                    "currency": "EUR",
+                    "wkn": "514000",
+                    "status": "active",
+                    "first_seen": date.today(),
+                    "last_seen": date.today(),
+                    "source": "deutsche_boerse_csv",
+                }
+            ]
+        ).to_parquet(cache_path, index=False)
 
     mock_instance = MagicMock()
     mock_instance.__enter__ = MagicMock(return_value=mock_instance)
@@ -70,17 +73,21 @@ def test_update_isin_mapping_force_bypasses_fresh_cache(tmp_path):
     """--force must run even if the cache was written seconds ago."""
     cache_path = tmp_path / "data" / "reference" / "isin_mapping.parquet"
     cache_path.parent.mkdir(parents=True)
-    pd.DataFrame([{
-        "isin": "DE0005140008",
-        "ticker": "DBK",
-        "name": "DEUTSCHE BANK",
-        "currency": "EUR",
-        "wkn": "514000",
-        "status": "active",
-        "first_seen": date.today(),
-        "last_seen": date.today(),
-        "source": "deutsche_boerse_csv",
-    }]).to_parquet(cache_path, index=False)
+    pd.DataFrame(
+        [
+            {
+                "isin": "DE0005140008",
+                "ticker": "DBK",
+                "name": "DEUTSCHE BANK",
+                "currency": "EUR",
+                "wkn": "514000",
+                "status": "active",
+                "first_seen": date.today(),
+                "last_seen": date.today(),
+                "source": "deutsche_boerse_csv",
+            }
+        ]
+    ).to_parquet(cache_path, index=False)
 
     mock_instance = _make_updater_mock(tmp_path)
 
@@ -102,24 +109,26 @@ def test_update_isin_mapping_skips_fresh_cache(tmp_path):
     """Without --force, a cache written <24h ago should be skipped."""
     cache_path = tmp_path / "data" / "reference" / "isin_mapping.parquet"
     cache_path.parent.mkdir(parents=True)
-    pd.DataFrame([{
-        "isin": "DE0005140008",
-        "ticker": "DBK",
-        "name": "DEUTSCHE BANK",
-        "currency": "EUR",
-        "wkn": "514000",
-        "status": "active",
-        "first_seen": date.today(),
-        "last_seen": date.today(),
-        "source": "deutsche_boerse_csv",
-    }]).to_parquet(cache_path, index=False)
+    pd.DataFrame(
+        [
+            {
+                "isin": "DE0005140008",
+                "ticker": "DBK",
+                "name": "DEUTSCHE BANK",
+                "currency": "EUR",
+                "wkn": "514000",
+                "status": "active",
+                "first_seen": date.today(),
+                "last_seen": date.today(),
+                "source": "deutsche_boerse_csv",
+            }
+        ]
+    ).to_parquet(cache_path, index=False)
 
     mock_instance = _make_updater_mock(tmp_path)
 
     with patch("yf_parqed.xetra_cli.ISINMappingUpdater", return_value=mock_instance):
-        result = runner.invoke(
-            app, ["--wrk-dir", str(tmp_path), "update-isin-mapping"]
-        )
+        result = runner.invoke(app, ["--wrk-dir", str(tmp_path), "update-isin-mapping"])
 
     assert result.exit_code == 0
     assert "fresh" in result.output.lower() or "skip" in result.output.lower()
@@ -138,27 +147,35 @@ def test_update_isin_mapping_dry_run_does_not_write(tmp_path):
     mock_instance.__enter__ = MagicMock(return_value=mock_instance)
     mock_instance.__exit__ = MagicMock(return_value=False)
     mock_instance.get_csv_url.return_value = csv_url
-    mock_instance.download_and_parse.return_value = pd.DataFrame([{
-        "isin": "DE0005140008",
-        "ticker": "DBK",
-        "name": "DEUTSCHE BANK",
-        "currency": "EUR",
-        "wkn": "514000",
-        "status": "active",
-        "last_seen": date.today(),
-        "source": "deutsche_boerse_csv",
-    }])
-    mock_instance.merge_with_cache.return_value = pd.DataFrame([{
-        "isin": "DE0005140008",
-        "ticker": "DBK",
-        "name": "DEUTSCHE BANK",
-        "currency": "EUR",
-        "wkn": "514000",
-        "status": "active",
-        "first_seen": date.today(),
-        "last_seen": date.today(),
-        "source": "deutsche_boerse_csv",
-    }])
+    mock_instance.download_and_parse.return_value = pd.DataFrame(
+        [
+            {
+                "isin": "DE0005140008",
+                "ticker": "DBK",
+                "name": "DEUTSCHE BANK",
+                "currency": "EUR",
+                "wkn": "514000",
+                "status": "active",
+                "last_seen": date.today(),
+                "source": "deutsche_boerse_csv",
+            }
+        ]
+    )
+    mock_instance.merge_with_cache.return_value = pd.DataFrame(
+        [
+            {
+                "isin": "DE0005140008",
+                "ticker": "DBK",
+                "name": "DEUTSCHE BANK",
+                "currency": "EUR",
+                "wkn": "514000",
+                "status": "active",
+                "first_seen": date.today(),
+                "last_seen": date.today(),
+                "source": "deutsche_boerse_csv",
+            }
+        ]
+    )
 
     with patch("yf_parqed.xetra_cli.ISINMappingUpdater", return_value=mock_instance):
         result = runner.invoke(
@@ -184,10 +201,19 @@ def test_update_isin_mapping_uses_wrk_dir(tmp_path):
     def fake_run(cache_path: Path) -> None:
         captured_paths.append(cache_path)
         cache_path.parent.mkdir(parents=True, exist_ok=True)
-        pd.DataFrame(columns=[
-            "isin", "ticker", "name", "currency", "wkn",
-            "status", "first_seen", "last_seen", "source",
-        ]).to_parquet(cache_path, index=False)
+        pd.DataFrame(
+            columns=[
+                "isin",
+                "ticker",
+                "name",
+                "currency",
+                "wkn",
+                "status",
+                "first_seen",
+                "last_seen",
+                "source",
+            ]
+        ).to_parquet(cache_path, index=False)
 
     mock_instance = MagicMock()
     mock_instance.__enter__ = MagicMock(return_value=mock_instance)
@@ -195,9 +221,7 @@ def test_update_isin_mapping_uses_wrk_dir(tmp_path):
     mock_instance.run.side_effect = fake_run
 
     with patch("yf_parqed.xetra_cli.ISINMappingUpdater", return_value=mock_instance):
-        result = runner.invoke(
-            app, ["--wrk-dir", str(tmp_path), "update-isin-mapping"]
-        )
+        result = runner.invoke(app, ["--wrk-dir", str(tmp_path), "update-isin-mapping"])
 
     assert result.exit_code == 0
     assert len(captured_paths) == 1

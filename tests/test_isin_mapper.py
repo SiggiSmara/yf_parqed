@@ -4,7 +4,6 @@ from datetime import date
 from pathlib import Path
 
 import pandas as pd
-import pytest
 
 from yf_parqed.xetra.isin_mapper import ISINMapper
 
@@ -30,10 +29,13 @@ def _cache_row(isin: str, ticker: str, status: str = "active") -> dict:
 
 def test_get_ticker_hit(tmp_path):
     cache_path = tmp_path / "isin_mapping.parquet"
-    _write_cache(cache_path, [
-        _cache_row("DE0005140008", "DBK"),
-        _cache_row("DE0007236101", "SIE"),
-    ])
+    _write_cache(
+        cache_path,
+        [
+            _cache_row("DE0005140008", "DBK"),
+            _cache_row("DE0007236101", "SIE"),
+        ],
+    )
 
     mapper = ISINMapper(cache_path)
     assert mapper.get_ticker("DE0005140008") == "DBK"
@@ -51,10 +53,13 @@ def test_get_ticker_miss(tmp_path):
 def test_get_ticker_inactive_not_returned(tmp_path):
     """Inactive ISINs must not be returned by get_ticker."""
     cache_path = tmp_path / "isin_mapping.parquet"
-    _write_cache(cache_path, [
-        _cache_row("DE0005140008", "DBK", status="active"),
-        _cache_row("DE9999999999", "OLD", status="inactive"),
-    ])
+    _write_cache(
+        cache_path,
+        [
+            _cache_row("DE0005140008", "DBK", status="active"),
+            _cache_row("DE9999999999", "OLD", status="inactive"),
+        ],
+    )
 
     mapper = ISINMapper(cache_path)
     assert mapper.get_ticker("DE0005140008") == "DBK"
@@ -76,10 +81,13 @@ def test_reload_picks_up_new_mapping(tmp_path):
     assert mapper.get_ticker("DE0007236101") is None
 
     # Now add SIE to the cache
-    _write_cache(cache_path, [
-        _cache_row("DE0005140008", "DBK"),
-        _cache_row("DE0007236101", "SIE"),
-    ])
+    _write_cache(
+        cache_path,
+        [
+            _cache_row("DE0005140008", "DBK"),
+            _cache_row("DE0007236101", "SIE"),
+        ],
+    )
     mapper.reload()
     assert mapper.get_ticker("DE0007236101") == "SIE"
 

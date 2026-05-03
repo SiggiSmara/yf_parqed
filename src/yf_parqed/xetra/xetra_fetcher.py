@@ -82,6 +82,7 @@ class XetraFetcher:
 
         # Trading hours filtering is disabled for downloads; daemon scheduling may still use hours
         self.filter_empty_files = False
+
     def enforce_limits(self):
         """
         Enforce empirically validated rate limiting.
@@ -372,7 +373,9 @@ class XetraFetcher:
                     )
                     self.rotate_client()
                     continue
-                logger.error(f"Connection error downloading {filename} after {max_retries} attempts: {e}")
+                logger.error(
+                    f"Connection error downloading {filename} after {max_retries} attempts: {e}"
+                )
                 raise
             except httpx.RequestError as e:
                 logger.error(f"Network error downloading {filename}: {e}")

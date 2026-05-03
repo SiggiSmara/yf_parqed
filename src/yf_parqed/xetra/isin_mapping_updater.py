@@ -20,8 +20,15 @@ _REQUIRED_COLUMNS = {
 }
 
 _CACHE_COLUMNS = [
-    "isin", "ticker", "name", "currency", "wkn",
-    "status", "first_seen", "last_seen", "source",
+    "isin",
+    "ticker",
+    "name",
+    "currency",
+    "wkn",
+    "status",
+    "first_seen",
+    "last_seen",
+    "source",
 ]
 
 
@@ -61,19 +68,23 @@ class ISINMappingUpdater:
 
         content = response.content.decode("utf-8", errors="replace")
         # First 2 rows are metadata ("Market: XETR", "Date Last Update: …")
-        df = pd.read_csv(io.StringIO(content), sep=";", skiprows=2, dtype=str).fillna("")
+        df = pd.read_csv(io.StringIO(content), sep=";", skiprows=2, dtype=str).fillna(
+            ""
+        )
 
         missing = _REQUIRED_COLUMNS - set(df.columns)
         if missing:
             raise ValueError(f"CSV missing expected columns: {missing}")
 
-        df = df.rename(columns={
-            "ISIN": "isin",
-            "Mnemonic": "ticker",
-            "Instrument": "name",
-            "Currency": "currency",
-            "WKN": "wkn",
-        })
+        df = df.rename(
+            columns={
+                "ISIN": "isin",
+                "Mnemonic": "ticker",
+                "Instrument": "name",
+                "Currency": "currency",
+                "WKN": "wkn",
+            }
+        )
         for col in ["isin", "ticker", "name", "currency", "wkn"]:
             df[col] = df[col].str.strip()
 
@@ -95,7 +106,9 @@ class ISINMappingUpdater:
     # Step 3: merge with the existing Parquet cache
     # ------------------------------------------------------------------
 
-    def merge_with_cache(self, new_data: pd.DataFrame, cache_path: Path) -> pd.DataFrame:
+    def merge_with_cache(
+        self, new_data: pd.DataFrame, cache_path: Path
+    ) -> pd.DataFrame:
         today = date.today()
 
         if cache_path.exists():
@@ -119,7 +132,9 @@ class ISINMappingUpdater:
 
         # Check for ticker changes and log warnings
         if len(existing) > 0 and len(cache) > 0:
-            cache_tickers = cache[cache["isin"].isin(cached_isins)].set_index("isin")["ticker"]
+            cache_tickers = cache[cache["isin"].isin(cached_isins)].set_index("isin")[
+                "ticker"
+            ]
             for _, row in existing.iterrows():
                 old_ticker = cache_tickers.get(row["isin"])
                 if old_ticker is not None and old_ticker != row["ticker"]:

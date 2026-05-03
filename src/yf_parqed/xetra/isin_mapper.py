@@ -20,7 +20,9 @@ class ISINMapper:
         df = pd.read_parquet(self.cache_path)
         active = df[df["status"] == "active"]
         self._mapping = dict(zip(active["isin"], active["ticker"]))
-        logger.debug(f"Loaded {len(self._mapping)} active ISIN mappings from {self.cache_path}")
+        logger.debug(
+            f"Loaded {len(self._mapping)} active ISIN mappings from {self.cache_path}"
+        )
 
     def get_ticker(self, isin: str) -> str | None:
         """Return the Xetra mnemonic for an ISIN, or None if unmapped."""
