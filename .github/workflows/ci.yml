@@ -32,6 +32,8 @@ jobs:
         run: uv sync --all-groups
 
       - name: Run tests
+        env:
+          NO_COLOR: "1"
         run: uv run pytest -m "not live"
 
   lint:
