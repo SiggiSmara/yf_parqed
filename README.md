@@ -137,6 +137,43 @@ The current list of tickers from Nasdaq and Nyse  (> 9000 tickers in total) with
 
 As the Yahoo finance APIs are rate limited (and not volume) it makes less sense (to me at least) to use an API cache mechanism, although that is easy to set up as well (see the above link to the yfinance documentation).
 
+## Contributing
+
+### Git workflow
+
+**Day-to-day development**
+
+```bash
+git checkout develop
+git checkout -b feature/my-thing
+# ... work ...
+git push origin feature/my-thing
+# open PR → develop on GitHub; CI runs, merge when green
+```
+
+**Cutting a release**
+
+```bash
+# 1. PR from develop → main (all CI checks must pass)
+# 2. After merge:
+git checkout main && git pull
+# 3. Bump version in pyproject.toml
+git commit -am "release v0.5.0"
+git tag v0.5.0
+git push origin main && git push origin v0.5.0
+# → CI builds, publishes to TestPyPI, then (after manual approval) to PyPI
+```
+
+**Hotfix to a released version**
+
+```bash
+git checkout main && git pull
+git checkout -b fix/critical-bug
+# ... fix, PR → main ...
+# After merge: bump patch version, tag, push tag
+git checkout develop && git merge main   # keep develop in sync
+```
+
 ## About the package
 
 The repo uses [uv](https://docs.astral.sh/uv/) and [pre-commit-uv](https://pypi.org/project/pre-commit-uv/).  
