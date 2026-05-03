@@ -1,9 +1,34 @@
 [project]
 name = "yf-parqed"
-version = "0.4.2"
+version = "0.5.0"
 description = "Persistent storage of yfinance ticker data in parquet"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [
+    { name = "Sigurður Smárason", email = "smarason.sigurdur@gmail.com" },
+]
+keywords = ["yfinance", "parquet", "finance", "stocks", "xetra", "time-series"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Financial and Insurance Industry",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Office/Business :: Financial",
+    "Topic :: Database",
+]
+
+[project.urls]
+Repository = "https://github.com/SiggiSmara/yf_parqed"
+Issues = "https://github.com/SiggiSmara/yf_parqed/issues"
+
 dependencies = [
     "beautifulsoup4>=4.14.2",
     "httpx>=0.28.1",
@@ -12,17 +37,11 @@ dependencies = [
     "pandas>=2.2.3",
     "pyarrow>=18.1.0",
     "rich>=13.0.0",
-    "scipy>=1.16.3",
     "typer>=0.15.1",
     "yfinance>=0.2.66",
 ]
 
 [project.scripts]
-yf-parqed = "yf_parqed.yfinance_cli:app"
-xetra-parqed = "yf_parqed.xetra_cli:app"
-yf-parqed-migrate = "yf_parqed.tools.partition_migrate:app"
-
-[project.entry-points."pipx.run"]
 yf-parqed = "yf_parqed.yfinance_cli:app"
 xetra-parqed = "yf_parqed.xetra_cli:app"
 yf-parqed-migrate = "yf_parqed.tools.partition_migrate:app"
