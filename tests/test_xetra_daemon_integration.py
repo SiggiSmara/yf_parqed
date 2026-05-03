@@ -14,7 +14,7 @@ from yf_parqed.xetra_cli import (
     app,
 )
 
-runner = CliRunner()
+runner = CliRunner(env={"NO_COLOR": "1"})
 
 
 @pytest.fixture

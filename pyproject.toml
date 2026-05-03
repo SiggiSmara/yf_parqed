@@ -1,6 +1,6 @@
 [project]
 name = "yf-parqed"
-version = "0.5.0rc7"
+version = "0.5.0rc8"
 description = "Persistent storage of yfinance ticker data in parquet"
 readme = "README.md"
 requires-python = ">=3.10"

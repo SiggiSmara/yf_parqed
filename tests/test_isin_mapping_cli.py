@@ -7,9 +7,11 @@ from unittest.mock import MagicMock, patch
 import pandas as pd
 from typer.testing import CliRunner
 
+from tests.conftest import strip_ansi
+
 from yf_parqed.xetra_cli import app
 
-runner = CliRunner()
+runner = CliRunner(env={"NO_COLOR": "1"})
 
 
 def _make_updater_mock(tmp_path: Path) -> MagicMock:
@@ -59,9 +61,10 @@ def test_update_isin_mapping_one_shot(tmp_path):
 def test_update_isin_mapping_help():
     result = runner.invoke(app, ["update-isin-mapping", "--help"])
     assert result.exit_code == 0
-    assert "--force" in result.output
-    assert "--dry-run" in result.output
-    assert "--daemon" in result.output
+    clean = strip_ansi(result.output)
+    assert "--force" in clean
+    assert "--dry-run" in clean
+    assert "--daemon" in clean
 
 
 # ---------------------------------------------------------------------------

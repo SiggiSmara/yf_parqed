@@ -53,7 +53,7 @@ def test_daemon_performs_initial_fetch_when_no_data_within_hours():
         with freeze_time(
             "2025-12-04 14:00:00+01:00"
         ):  # 14:00 CET (within trading hours)
-            runner = CliRunner()
+            runner = CliRunner(env={"NO_COLOR": "1"})
 
             # Mock sleep to exit after initial fetch
             sleep_count = [0]
@@ -86,7 +86,7 @@ def test_daemon_skips_initial_fetch_when_data_exists():
 
     with patch("yf_parqed.xetra_cli.XetraService", return_value=stub):
         with freeze_time("2025-12-04 14:00:00+01:00"):  # 14:00 CET
-            runner = CliRunner()
+            runner = CliRunner(env={"NO_COLOR": "1"})
 
             sleep_count = [0]
             original_sleep = time.sleep
@@ -122,7 +122,7 @@ def test_daemon_defers_initial_fetch_when_outside_hours():
         with freeze_time(
             "2025-12-04 06:00:00+01:00"
         ):  # 06:00 CET (outside trading hours 08:30-18:00)
-            runner = CliRunner()
+            runner = CliRunner(env={"NO_COLOR": "1"})
 
             sleep_count = [0]
 

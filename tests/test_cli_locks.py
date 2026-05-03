@@ -7,7 +7,7 @@ from yf_parqed.tools.partition_migrate import app as migrate_app
 from yf_parqed.common.run_lock import GlobalRunLock
 
 
-runner = CliRunner()
+runner = CliRunner(env={"NO_COLOR": "1"})
 
 
 def test_update_data_non_interactive_auto_cleanup(tmp_path: Path):

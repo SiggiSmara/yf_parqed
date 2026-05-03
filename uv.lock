@@ -1212,7 +1212,7 @@ wheels = [
 
 [[package]]
 name = "yf-parqed"
-version = "0.5.0rc5"
+version = "0.5.0rc8"
 source = { editable = "." }
 dependencies = [
     { name = "beautifulsoup4" },

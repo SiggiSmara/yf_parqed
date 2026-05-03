@@ -119,7 +119,7 @@ class StubMigrationService:
         return self.migrate_return
 
 
-runner = CliRunner()
+runner = CliRunner(env={"NO_COLOR": "1"})
 
 
 def _single_interval_plan() -> MigrationPlan:

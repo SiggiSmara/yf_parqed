@@ -16,7 +16,7 @@ def cli_environment(monkeypatch):
     temp_dir = tempfile.TemporaryDirectory()
     tmp_path = Path(temp_dir.name)
 
-    runner = CliRunner()
+    runner = CliRunner(env={"NO_COLOR": "1"})
 
     original_instance = main.yf_parqed
     original_intervals = main.all_intervals

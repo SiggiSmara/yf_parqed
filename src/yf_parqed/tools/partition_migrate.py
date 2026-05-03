@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Callable, Optional, Sequence, Tuple
 
@@ -14,7 +15,7 @@ from ..partition_migration_service import PartitionMigrationService
 from ..common.run_lock import GlobalRunLock
 
 app = typer.Typer(help="Partition storage migration utilities")
-console = Console()
+console = Console(no_color=bool(os.environ.get("NO_COLOR")))
 _FILE_SINK_ID: int | None = None
 
 

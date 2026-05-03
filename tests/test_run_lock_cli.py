@@ -5,7 +5,7 @@ from yf_parqed.yfinance_cli import app as cli_app
 
 from yf_parqed.common.run_lock import GlobalRunLock
 
-runner = CliRunner()
+runner = CliRunner(env={"NO_COLOR": "1"})
 
 
 def test_run_lock_status_and_cleanup(tmp_path: Path):
