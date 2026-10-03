@@ -532,6 +532,40 @@ class TestSignalHandling:
         # Should exit cleanly (130 is normal for KeyboardInterrupt/SIGINT)
         assert result.exit_code in (0, 130)
 
+    @freeze_time("2025-12-04 14:00:00-05:00")
+    def test_stop_request_removes_pid_file_then_ends_process(
+        self, runner, stub, tmp_path, stop_on_first_sleep, monkeypatch
+    ):
+        """After a stop request the PID file is removed first, then the process ends with code 0."""
+        pid_file = tmp_path / "daemon.pid"
+        exits = []
+        monkeypatch.setattr(
+            "yf_parqed.common.process_exit._terminate",
+            lambda code: exits.append((code, pid_file.exists())),
+        )
+
+        with patch("yf_parqed.yfinance_cli.GlobalRunLock") as mock_lock:
+            mock_lock_instance = MagicMock()
+            mock_lock_instance.try_acquire.return_value = True
+            mock_lock.return_value = mock_lock_instance
+
+            result = runner.invoke(
+                main.app,
+                [
+                    "--wrk-dir",
+                    str(tmp_path),
+                    "update-data",
+                    "--daemon",
+                    "--pid-file",
+                    str(pid_file),
+                ],
+                catch_exceptions=False,
+            )
+
+        assert result.exit_code == 0
+        assert stub.update_data_calls == 1
+        assert exits == [(0, False)]
+
 
 class TestDaemonLoop:
     """Test daemon loop behavior."""

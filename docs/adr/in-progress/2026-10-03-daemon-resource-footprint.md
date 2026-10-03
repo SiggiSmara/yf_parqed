@@ -2,7 +2,7 @@
 
 ## Status: In Progress
 
-**Batch 1 is deployed (2026-10-03), ahead of its 2026-11-01 deadline.** The first real test is the month change on 2026-11-01 to 11-04; see "Checking a deploy". Next is Batch 2.
+**Batch 1 is deployed (2026-10-03), ahead of its 2026-11-01 deadline.** The first real test is the month change on 2026-11-01 to 11-04; see "Checking a deploy". Batch 2 is under way: Step F is implemented and waiting for deploy; Steps E and G are open.
 
 **Picking this up in a new session?** Read "Work Plan and Handoff" below first. It says which batch is next, what is already done, and how to check a deploy.
 
@@ -50,10 +50,44 @@ A side effect: the not-found bookkeeping (streak, cooling-off, `permanently_dead
 Logrotate's `postrotate` runs `systemctl reload-or-restart yf-parqed 'xetra@*'` at 00:00 each day. Neither unit has a reload action, so both are restarted.
 
 - **Yahoo:** the SIGTERM handler sets a flag that the loop checks only between cycles. A cycle lasts about four hours, `TimeoutStopSec` is 60 seconds, so systemd kills the process (seen Oct 2 and Oct 3; on Oct 1 it happened to be between cycles and stopped cleanly). The next start finds a stale run lock and scans for leftover temp files before working; on Oct 3 that scan took 13 minutes.
-- **Xetra:** when idle it notices the signal within 10 seconds and logs `Daemon shutting down gracefully`, but the process then does not exit and is killed at `TimeoutStopSec=30` (seen Oct 1 and Oct 3). `PID file removed` is never logged. **The cause of this hang has not been identified.** When a cycle is running, the flag is not checked until the cycle ends (Oct 2: the stop arrived during a consolidation and the process was killed).
+- **Xetra:** when idle it notices the signal within 10 seconds and logs `Daemon shutting down gracefully`, but the process then does not exit and is killed at `TimeoutStopSec=30` (seen Oct 1 and Oct 3). `PID file removed` is never logged. The cause was found on 2026-10-03 and is described under "What the exit hang turned out to be" below. When a cycle is running, the flag is not checked until the cycle ends (Oct 2: the stop arrived during a consolidation and the process was killed).
 - The Yahoo daemon logs only to the journal. The rotated files are all Xetra's, so restarting the Yahoo service serves no purpose.
 
 Writes are atomic (temp file, fsync, rename), which is why the nightly kill has not corrupted data. It still costs a restart, a recovery scan, and an immediate extra cycle.
+
+#### What the exit hang turned out to be (Step F, 2026-10-03)
+
+It is not a deadlock. The process is exiting the whole time; it is slow because its memory is in swap.
+
+The journal and the Xetra log together cover 37 stops between 2026-09-04 and 2026-10-03:
+
+| What happened | Stops | Belongs to |
+|---|---|---|
+| Exited 0 to 5 seconds after `Daemon shutting down gracefully` | 20 | nothing to fix |
+| Killed because the stop arrived during a cycle (no graceful line) | 14 | Step E |
+| Slow after the graceful line: killed at 20 s (Oct 3 00:00) and 25 s (Oct 1 00:00), exited by itself after 21 s (Oct 3 08:09) | 3 | Step F |
+
+A fourth slow exit, a restart on Sep 30 at 06:38, took 13 seconds. So the "hang" is an exit that takes anywhere from 13 to more than 25 seconds, and the 30-second stop timeout (of which the idle loop uses up to 10) is sometimes not enough.
+
+- **Every slow exit coincides with swap traffic.** The 10-minute `sar` sample containing each slow exit shows pages being read back from swap and major page faults: 13 to 17 pages per second for three of them, 930 for Oct 1, whose sample also contains the start of the first consolidation. The samples containing the fast exits show none.
+- **The mechanism.** While the Xetra daemon sleeps between cycles, the Yahoo cycle or a consolidation fills RAM and the kernel moves the idle daemon's memory to swap. When the daemon then exits, Python's interpreter teardown frees every object one by one, and to free an object it has to read it back from the hard disk first.
+- **Reproduced in dev.** A harness ran the real `fetch-trades --daemon` entry point with the network and storage calls replaced, inside its own cgroup. Writing to the cgroup's `memory.reclaim` pushed the process's 159 MB to swap, as memory pressure does in production; then it was sent SIGTERM. Two runs each:
+
+  | | Loop ended → process gone | Major page faults |
+  |---|---|---|
+  | Not swapped, old exit | 0.2 s | 0 |
+  | Swapped, old exit | 15.2 s and 16.2 s | 11,004 and 11,890 |
+  | Swapped, new exit (see Decision 3) | 1.0 s and 0.9 s | 945 and 919 |
+
+  The disk was otherwise idle during these runs. In production the Yahoo cycle uses the same disk, which is why the same exit took longer there.
+- **The Yahoo daemon has the same lag.** On Oct 1 it logged `PID file removed` at 00:00:11.4 and the process ended at 00:00:18.9.
+
+**The missing `PID file removed` line has a different cause.** Both unit files declare `RuntimeDirectory=yf_parqed`, and systemd deletes that directory whenever either service stops. On a typical night the Yahoo service was killed at its 60-second timeout, after Xetra had already restarted and written its PID file, so the PID file was deleted with the directory. At the next stop the Xetra daemon found no PID file and logged nothing. The line does appear on the 8 of 37 stops where the Yahoo service had not stopped since the Xetra daemon wrote its PID file. The same deletion made both services fail at start on Oct 1 at 00:00:34 with `Read-only file system: '/run/yf_parqed'`; `Restart=on-failure` brought them back 30 seconds later.
+
+Two more things were seen and belong to Step E:
+
+- Most nightly kills (14 of the 16 in this period) are stops that arrive during a cycle. The hourly cycle drifts until it runs at midnight, and at 00:00 it is usually in the fetcher's 35-second burst cooldown (`XetraFetcher.enforce_limits`), a single `time.sleep` that cannot be interrupted.
+- Both daemons log from inside their signal handlers. Loguru's handlers are not re-entrant, so when the signal arrives while the main thread is writing a log line, loguru prints `Could not acquire internal lock ... (deadlock avoided)` to the journal and drops the message (seen Oct 3 at 08:28 and 09:54). It is noise, not the hang.
 
 ## Decision
 
@@ -83,7 +117,9 @@ The order matters. The first two changes cut the disk load without changing what
 ### 3. Make shutdown prompt and stop the nightly restart
 
 - **Check the flag inside the loops.** The Yahoo per-ticker loop and the Xetra per-date and per-file loops check the shutdown flag between items. An atomic write in progress is always allowed to finish.
-- **Find and fix the Xetra exit hang.** Establish why the process does not exit after the daemon loop ends.
+- **End the daemon process without interpreter teardown.** When a daemon loop has ended and its own cleanup is done (HTTP client closed, run lock released, PID file removed), the process writes out its queued log messages, closes its log files and ends with `os._exit`. The kernel then frees the memory without reading it back from swap. The helper is `exit_daemon_process` in `common/process_exit.py`; the Xetra trade daemon, the ISIN mapping daemon and the Yahoo daemon all use it. One-shot commands and error exits are unchanged.
+- **Keep the shared runtime directory.** Both unit templates set `RuntimeDirectoryPreserve=yes`, so stopping one service no longer deletes `/run/yf_parqed` and the other service's PID file with it.
+- **Check for a stop request every 10 seconds while idle.** A signal does not cut `time.sleep` short, so a daemon notices a stop only when its current sleep ends. All idle waits (between cycles, outside active hours, the ISIN daemon's wait until 00:05) now sleep in 10-second pieces. The outside-hours waits and the ISIN daemon used 60-second pieces before.
 - **Stop restarting from logrotate.** Use `copytruncate` for the Xetra log file and remove the `postrotate` restart. The templates live in `daemon-manage.sh` and `docs/daemon/INSTALLATION.md`.
 
 ### 4. Add systemd memory limits
@@ -101,8 +137,8 @@ Steps are grouped into batches. A batch is one working session, one commit serie
 
 **Batch 2 — Shutdown and logrotate**
 
-- [ ] **Step E** — In-loop shutdown checks for both daemons. Tests: a flag set mid-cycle ends the cycle after the current item.
-- [ ] **Step F** — Diagnose and fix the Xetra exit hang.
+- [ ] **Step E** — In-loop shutdown checks for both daemons. Tests: a flag set mid-cycle ends the cycle after the current item. Step F found two things to include here: the Xetra fetcher's 35-second burst cooldown must be interruptible (it is where most midnight stops land), and the signal handlers should only set the flag and leave the logging to the main loop.
+- [x] **Step F** — *(implemented 2026-10-03, not yet deployed)* Diagnosed: interpreter teardown reading the swapped-out process back from disk; see "What the exit hang turned out to be". Fixed with `exit_daemon_process` (`common/process_exit.py`) at the end of all three daemon loops, and `RuntimeDirectoryPreserve=yes` in the unit templates (`daemon-manage.sh`, `docs/daemon/INSTALLATION.md`). Tests in `tests/test_process_exit.py` and one stop-request test per daemon. After a code review the same day: every idle wait in the three daemon loops now checks for a stop request every 10 seconds (some checked every 60, which is longer than the Xetra units' 30-second stop timeout).
 - [ ] **Step G** — Logrotate: `copytruncate`, no restart. Update `daemon-manage.sh`, `docs/daemon/INSTALLATION.md` and `docs/DAEMON_MODE.md`.
 
 **Batch 3 — Yahoo disk load and registry** (two deploys: B and C together, then D alone)
@@ -145,6 +181,8 @@ Run `uv run pytest` after each step; all tests must pass before moving on.
 
 The agent cannot deploy. Production (`/opt/yf_parqed`) is a checkout of `main`, and `sudo ./daemon-manage.sh update` runs `git pull origin main` before restarting the services. A commit on `develop` therefore reaches production only after it has been pushed **and merged into `main`**. Each batch ends with commits on `develop`; the owner pushes, merges to `main` and runs the update. Record the deploy date in the Progress Log.
 
+**Batch 2 changes the unit templates.** When the update asks "Reinstall systemd service templates ...? [y/N]", answer **y** for this batch. Otherwise the installed units keep deleting the shared runtime directory.
+
 Before relying on a deploy, confirm that production has the code. For Step A:
 
 ```bash
@@ -155,6 +193,14 @@ grep -c '_DAYS_INCLUDED_KEY' /opt/yf_parqed/src/yf_parqed/xetra/xetra_service.py
 
 - **Batch 1.** The proof arrives at the next month change (2026-11-01 to 11-04). In `/var/log/yf_parqed/xetra-DETR.log*`, `Consolidated to monthly` should appear once for October, and `sar -S` should show swap staying near its baseline. Before that, the dev validation in the Progress Log is the evidence. For the repair (Step A2), compare the row counts with the table under "Repairing the monthly files".
 - **Batch 2.** After the next midnight, `journalctl -u yf-parqed -u 'xetra@DETR' | grep -E 'timed out|SIGKILL'` should show nothing new, and neither service should have restarted at 00:00.
+- **Step F on its own** (if it is deployed before E and G). First confirm the code and the units:
+
+  ```bash
+  grep -c 'exit_daemon_process' /opt/yf_parqed/src/yf_parqed/xetra_cli.py      # must print 3
+  systemctl show 'xetra@DETR' yf-parqed -p RuntimeDirectoryPreserve           # must print "yes" twice
+  ```
+
+  Then, for every stop of an idle Xetra daemon: `PID file removed` is the last line that process writes to `/var/log/yf_parqed/xetra-DETR.log`, and the journal shows `Deactivated successfully` within about 12 seconds of `Stopping` (up to 10 for the idle loop to notice, 1 to 2 to exit). Until Step E is deployed, a stop that arrives during a cycle is still killed at the timeout; that is expected and is not a Step F failure.
 - **Batch 3, after B and C.** Pick a ticker and list its partition files: only the current month's file should have a fresh modification time after a cycle. Cycle duration (from `Processing ... tickers` to `All tickers were processed.` in `journalctl -u yf-parqed`) should fall well below the 4h08m baseline.
 - **Batch 3, after D.** For a week, repeat the gap check below and compare with the baseline. Also confirm that `tickers.json` now carries `last_data_date` values and that the list of tickers going `permanently_dead` looks reasonable.
 
@@ -274,6 +320,8 @@ After Step D, any liquid ticker with a missing business day or a day well short 
 - **2026-10-03** — The owner asked for the data contract to be enforced on that column instead of absorbed, so the point above is now addressed. `price_notation` is under an integer contract (`XetraParser.INTEGER_FIELDS`): the parser always produces a nullable integer; a missing value is a null; a value that is not a whole number is rounded (not a number at all: null), logged as an error, and the original file is copied to `contract_violations/`, which no cleanup touches. The daily merge applies the same rule to mini-files staged before the contract existed. Checked against stored data first: all 47.6 million stored values are the integer `1` (April to October 2026); the text value in the old parser test fixture was invented and is now `1`. 40 real raw files (86,243 trades) parse with no violation; the June 10 rehearsal still gives 562,600 rows, `int64`, 7 nulls, nothing copied to `contract_violations/`. Full suite 561 passed, 1 skipped. Documented in `.github/STORAGE_STRUCTURE.md` and `docs/DATA_MODEL.md`. **Left open:** in the working tree, not committed, not deployed; Step A2 for June still to be run after the deploy.
 - **2026-10-03** — Contract checked against the regulation before committing. MiFIR RTS 1, Annex I, Table 3 defines "Price notation" as one of four codes (`MONE` monetary value, `PERC` percentage, `YIEL` yield, `BAPO` basis points; `MONE` for shares and ETFs). Deutsche Börse's delayed JSON sends a number instead; that `1` means `MONE` is inferred, because their public pages carry no field mapping (data.services@deutsche-boerse.com is the contact). Since the field is a category, the rule for values that are not whole numbers was changed from rounding to storing null; logging and keeping the original are unchanged. Accepted risk, agreed with the owner: if Deutsche Börse switches to the text codes, every value becomes null and every file is kept under `contract_violations/` until the parser is updated and the files are re-parsed. Full suite 562 passed, 1 skipped.
 - **2026-10-03** — Batch 1 complete. All of the above is committed on `develop`, merged to `main` and installed in `/opt/yf_parqed` (both runbook checks print `2`). Step A2 was run again and finished without errors. Verified afterwards: all ten monthly files match the expected row counts and carry the fingerprint and day list; June is at 11,190,760 trades with 2026-06-10 included (562,600 rows, `price_notation` as `int64` with 7 nulls); no mini-files or temp files are left anywhere; `contract_violations/` does not exist, so nothing broke the contract. **Left open:** (1) both services were still stopped when this was checked (`yf-parqed`, `xetra@DETR`); they must be started before Monday's trading. (2) The backup `trades_monthly.bak-2026-10` (2.0 GB) is still on disk; the owner deletes it when satisfied. (3) The proof under real conditions is the November rollover. (4) Next session: Batch 2 (Steps E, F, G).
+- **2026-10-03** — Batch 2, Step F done (Steps E and G not started). Cause: the idle daemon's memory is in swap when the host is short of RAM, and Python's exit reads it all back from the hard disk in order to free it; see "What the exit hang turned out to be" in the Context. Reproduced in dev (15 to 16 seconds from the end of the loop to the end of the process, about 11,000 major page faults) and fixed (about 1 second, about 900 faults) by ending the process with `os._exit` after cleanup, in all three daemon loops. The missing `PID file removed` line was a second defect: the shared `RuntimeDirectory` is deleted when either service stops; both templates now set `RuntimeDirectoryPreserve=yes`. Full suite 569 passed, 1 skipped. **Left open:** (1) in the working tree on `develop`, not committed, not deployed; when deploying, answer **y** to the template question. (2) Steps E and G. Step E has two additions from this diagnosis, noted in its step text. (3) Both services were stopped when this session ended (`yf-parqed` shows `failed` from the last manual stop, `xetra@DETR` is inactive); they must be started before Monday's trading.
+- **2026-10-03** — Code review of Step F and follow-up. Fixed: idle waits that checked for a stop only every 60 seconds (now 10 everywhere); the test fixtures (later tests keep a log sink; the stop fixture no longer fails when a sleep comes before the handler is registered). Not changed, on purpose: the template prompt in `daemon-manage.sh update` stays manual; the `atexit` PID cleanup stays, because it is what removes the PID file when the Xetra preflight check refuses to start; the wrapper alternative is recorded under Alternatives Considered. Full suite 569 passed, 1 skipped. **Found on the side:** the ISIN mapping daemon is not installed in production and cannot be installed as it is. The Deutsche Börse page it reads the CSV link from now redirects to an address that answers 404, so `update-isin-mapping` fails on its first request. `docs/daemon/INSTALLATION.md` now says so. It is outside this ADR.
 
 ## Risk Controls
 
@@ -283,9 +331,13 @@ After Step D, any liquid ticker with a missing business day or a day well short 
 - **Step D activates a code path production has effectively never run.** Once `last_data_date` is saved, the fetch decision becomes `business_days_between(last_data_date, today) > 0`, which works in whole days. For 1-minute data on a 2-hour cycle this must be reviewed and covered by tests before deploying, so that saving the registry does not leave gaps. Yahoo serves only the last 7 days of 1-minute bars, so a ticker that goes unfetched for longer loses data permanently.
 - **Step D also lets the not-found cycle advance.** Tickers will start reaching `permanently_dead` for the first time in the daemon. Check the first week's registry changes against expectations before trusting the pruning that follows.
 - **Scoped writes must not drop rows.** A test must show that rows merged into a touched month are complete and that deduplication within that month still works.
+- **The daemon exit skips Python's own cleanup.** After `exit_daemon_process`, no `atexit` handler and no `finally` block further up the stack runs. It is called only as the last statement of a daemon command, after the loop's own cleanup. Anything a daemon must do on shutdown has to happen before that call, not in an `atexit` handler. Tests replace the final `os._exit` (autouse fixture `daemon_exit_calls` in `tests/conftest.py`); without that, a daemon test that runs to a normal stop would end the test run.
+- **A killed daemon now leaves its PID file behind.** Before, the directory was deleted on every stop, which also removed the PID file of a daemon that had been killed. Now the file stays, and the next start removes it after checking that no process has that PID. If the PID has meanwhile been given to another process of user `yfparqed`, the start is refused until the file is deleted by hand. PIDs are reused only after the counter wraps at about four million, so this is accepted.
 - **Memory limits before Step A would do harm.** With the current code a limit makes the monthly consolidation fail every month. Step H depends on Step A.
 
 ## Alternatives Considered
+
+**End the process from a wrapper around the CLI instead of from inside the daemon commands.** Raised in the code review of Step F and not done. Today `exit_daemon_process` is the last statement of each daemon command, so anything that runs a daemon command in-process (a test, a script) and lets it stop normally is ended by `os._exit(0)` unless the call is replaced, as the test suite does. The alternative is a small `main()` per console script that runs the Typer app and then calls `exit_daemon_process`; the commands would return normally, and the test fixture and the three `if daemon:` blocks would go away. It was left because it changes the entry points in `pyproject.toml` and has to carry "this was a daemon run that stopped normally" out of the command. Worth doing if a second in-process caller of the daemon commands ever appears.
 
 **Add RAM or move to an SSD.** Rejected as the fix: it hides the waste without removing it, and the work grows with every month of data and every ticker. Still worthwhile later for other reasons.
 

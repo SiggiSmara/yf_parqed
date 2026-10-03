@@ -461,6 +461,47 @@ tail -f /var/log/yf-parqed/update.log
 
 ---
 
+### Problem: Daemon Killed on Stop (`stop-sigterm` timed out)
+
+**Symptoms:**
+- `journalctl -u 'xetra@DETR'` or `-u yf-parqed` shows `State 'stop-sigterm' timed out. Killing.`
+- The service ends with `Failed with result 'timeout'`
+
+**Causes and solutions:**
+
+```bash
+# 1. Was the daemon in the middle of a cycle? Look at the last log lines before the stop.
+#    A stop during a cycle waits for the cycle to end and is killed at TimeoutStopSec.
+#    No data is lost (writes are atomic). In-cycle checks are planned: ADR 2026-10-03, Step E.
+tail -n 20 /var/log/yf_parqed/xetra-DETR.log
+
+# 2. Was the daemon idle and did it log "Daemon shutting down gracefully" before the kill?
+#    Then the installed code predates the fast exit (ADR 2026-10-03, Step F). This must print 3:
+grep -c 'exit_daemon_process' /opt/yf_parqed/src/yf_parqed/xetra_cli.py
+```
+
+---
+
+### Problem: `Read-only file system: '/run/yf_parqed'` at Start
+
+**Symptoms:**
+- A service fails right after start with `OSError: [Errno 30] Read-only file system: '/run/yf_parqed'`
+- It comes back by itself after `RestartSec`
+
+**Cause:** all yf_parqed services share the runtime directory `/run/yf_parqed`. Without `RuntimeDirectoryPreserve=yes`, systemd deletes it when any one of them stops, which removes the PID files of the others and breaks a service that is starting at that moment.
+
+**Solution:**
+
+```bash
+# Must print "yes" for every service
+systemctl show yf-parqed 'xetra@DETR' -p RuntimeDirectoryPreserve
+
+# If not: reinstall the unit templates (answer y to the template question)
+sudo ./daemon-manage.sh update
+```
+
+---
+
 ### Problem: Daemon Not Respecting Trading Hours
 
 **Symptoms:**

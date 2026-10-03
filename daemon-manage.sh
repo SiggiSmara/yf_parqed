@@ -188,8 +188,10 @@ ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=/var/lib/yf_parqed /var/log/yf_parqed
 
+# Shared by all yf_parqed services: must not be removed when one of them stops
 RuntimeDirectory=yf_parqed
 RuntimeDirectoryMode=0755
+RuntimeDirectoryPreserve=yes
 
 StandardOutput=journal
 StandardError=journal
@@ -237,8 +239,10 @@ ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=/var/lib/yf_parqed /var/log/yf_parqed
 
+# Shared by all yf_parqed services: must not be removed when one of them stops
 RuntimeDirectory=yf_parqed
 RuntimeDirectoryMode=0755
+RuntimeDirectoryPreserve=yes
 
 StandardOutput=journal
 StandardError=journal

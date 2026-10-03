@@ -476,7 +476,7 @@ Log format includes timestamp, level, location, and message:
 ### 2. Scheduling with Trading Hours Awareness
 - **Interval-based**: Run every N hours (default: 1 hour)
 - **Trading hours**: Default is 24/7; provide `--active-hours` to narrow the window
-- **Smart sleeping**: If an active-hours window is set, sleeps outside it and checks for shutdown every minute
+- **Smart sleeping**: If an active-hours window is set, sleeps outside it and checks for shutdown every 10 seconds
 - **Error recovery**: Continues running even if individual fetches fail
 - **Timezone aware**: Handles CET/CEST transitions automatically
 
@@ -510,8 +510,9 @@ xetra-parqed --log-file logs/xetra.log fetch-trades DETR \
 - **Signal handling**: Responds to SIGTERM and SIGINT (Ctrl+C)
 - **Clean exit**: Finishes the current fetch cycle before shutting down; while waiting between cycles it reacts within 10 seconds
 - **Resource cleanup**: Closes HTTP connections, removes PID file
+- **Fast exit**: Once cleanup is done the process ends immediately, without Python's interpreter teardown. On a host short of RAM the idle daemon's memory is in swap, and a normal exit reads it all back from disk before freeing it, which used to take longer than `TimeoutStopSec`. The Yahoo and ISIN mapping daemons exit the same way.
 
-> **Known limitation:** under systemd the process currently does not exit after logging `Daemon shutting down gracefully` and is killed at `TimeoutStopSec`. The cause is not yet known. A stop during a cycle also waits for the whole cycle. Both are tracked in [ADR 2026-10-03](adr/in-progress/2026-10-03-daemon-resource-footprint.md), Steps E and F.
+> **Known limitation:** a stop during a cycle waits for the whole cycle and can run into `TimeoutStopSec`. Tracked in [ADR 2026-10-03](adr/in-progress/2026-10-03-daemon-resource-footprint.md), Step E.
 
 ```bash
 # Graceful shutdown

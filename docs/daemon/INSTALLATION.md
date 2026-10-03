@@ -174,8 +174,10 @@ ProtectHome=true
 ReadWritePaths=/var/lib/yf_parqed /var/log/yf_parqed
 
 # Create PID directory at startup
+# (shared by all yf_parqed services, so it must not be removed when one of them stops)
 RuntimeDirectory=yf_parqed
 RuntimeDirectoryMode=0755
+RuntimeDirectoryPreserve=yes
 
 # Logging
 StandardOutput=journal
@@ -188,6 +190,8 @@ EOF
 ```
 
 #### Xetra ISIN Mapping Service
+
+> **Not ready to install (checked 2026-10-03).** The Deutsche Börse page this service reads the CSV link from has moved: the old address redirects to one that answers 404, so `xetra-parqed update-isin-mapping` fails on its first request. The page address in `src/yf_parqed/xetra/isin_mapping_updater.py` has to be found again first. The service has never run in production, nothing reads the mapping file yet, and `daemon-manage.sh` neither installs nor restarts this unit, so it would have to be kept up to date by hand.
 
 Create `/etc/systemd/system/xetra-isin-mapping.service`:
 
@@ -229,6 +233,7 @@ ReadWritePaths=/var/lib/yf_parqed /var/log/yf_parqed
 
 RuntimeDirectory=yf_parqed
 RuntimeDirectoryMode=0755
+RuntimeDirectoryPreserve=yes
 
 StandardOutput=journal
 StandardError=journal
@@ -299,8 +304,10 @@ ProtectHome=true
 ReadWritePaths=/var/lib/yf_parqed /var/log/yf_parqed
 
 # Use shared PID directory
+# (shared by all yf_parqed services, so it must not be removed when one of them stops)
 RuntimeDirectory=yf_parqed
 RuntimeDirectoryMode=0755
+RuntimeDirectoryPreserve=yes
 
 # Logging
 StandardOutput=journal

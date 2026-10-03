@@ -11,12 +11,18 @@ from zoneinfo import ZoneInfo
 from typing_extensions import Annotated
 
 from .common.config_service import ConfigService
+from .common.process_exit import exit_daemon_process
 from .xetra.trading_hours_checker import TradingHoursChecker
 from .xetra.xetra_service import XetraService
 from .xetra.isin_mapping_updater import ISINMappingUpdater
 
 _BERLIN = ZoneInfo("Europe/Berlin")
 _ISIN_DAEMON_TARGET_TIME = dtime(0, 5)  # run at 00:05 CET/CEST each night
+
+# Longest a sleeping daemon waits before it notices a stop request. A signal
+# does not cut time.sleep short, so this must stay well below the units'
+# TimeoutStopSec (30 seconds).
+_SHUTDOWN_CHECK_SECONDS = 10
 
 
 def _seconds_until_isin_next_run() -> int:
@@ -71,7 +77,9 @@ def _check_and_write_pid_file(pid_file: Path) -> None:
 
     logger.info(f"PID file created: {pid_file} (PID: {os.getpid()})")
 
-    # Register cleanup
+    # Covers exits before the daemon loop's own cleanup is reached (for example
+    # the preflight check). A normal daemon stop removes the file itself and
+    # then ends the process without running atexit handlers.
     def cleanup_pid():
         if pid_file.exists():
             pid_file.unlink()
@@ -235,12 +243,12 @@ def fetch_trades(
         signal.signal(signal.SIGTERM, signal_handler)
         signal.signal(signal.SIGINT, signal_handler)
 
-    def _sleep_with_shutdown(total_seconds: int, check_interval: int = 60) -> None:
+    def _sleep_with_shutdown(total_seconds: int) -> None:
         """Sleep in small increments while honoring shutdown requests."""
 
         remaining = total_seconds
         while remaining > 0 and not shutdown_requested["flag"]:
-            sleep_chunk = min(check_interval, remaining)
+            sleep_chunk = min(_SHUTDOWN_CHECK_SECONDS, remaining)
             time.sleep(sleep_chunk)
             remaining -= sleep_chunk
 
@@ -367,7 +375,7 @@ def fetch_trades(
                     logger.info(
                         f"Outside active hours. Waiting until {next_active.strftime('%Y-%m-%d %H:%M:%S %Z')}"
                     )
-                    _sleep_with_shutdown(int(wait_seconds), check_interval=60)
+                    _sleep_with_shutdown(int(wait_seconds))
                     if shutdown_requested["flag"]:
                         break
                     logger.info("Entering active hours, starting fetch cycle")
@@ -400,7 +408,7 @@ def fetch_trades(
                     f"Next scheduled: {next_run_local.strftime('%Y-%m-%d %H:%M:%S %Z')} ==="
                 )
 
-                _sleep_with_shutdown(int(base_sleep_seconds), check_interval=10)
+                _sleep_with_shutdown(int(base_sleep_seconds))
 
             logger.info("Daemon shutting down gracefully")
         else:
@@ -432,6 +440,9 @@ def fetch_trades(
         if pid_file and pid_file.exists():
             pid_file.unlink()
             logger.info(f"PID file removed: {pid_file}")
+
+    if daemon:
+        exit_daemon_process()
 
 
 @app.command()
@@ -805,7 +816,7 @@ def update_isin_mapping(
     def _sleep_chunks(total_seconds: int) -> None:
         remaining = total_seconds
         while remaining > 0 and not shutdown_requested["flag"]:
-            chunk = min(60, remaining)
+            chunk = min(_SHUTDOWN_CHECK_SECONDS, remaining)
             time.sleep(chunk)
             remaining -= chunk
 
@@ -868,6 +879,9 @@ def update_isin_mapping(
         if pid_file and pid_file.exists():
             pid_file.unlink()
             logger.info(f"PID file removed: {pid_file}")
+
+    if daemon:
+        exit_daemon_process()
 
 
 @app.command()

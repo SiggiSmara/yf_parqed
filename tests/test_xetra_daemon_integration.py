@@ -557,6 +557,55 @@ class TestDaemonPIDIntegration:
         assert result.exit_code != 0
 
 
+class TestDaemonExit:
+    """The daemon ends the process itself once its cleanup is done (ADR 2026-10-03, Step F)."""
+
+    def test_stop_request_removes_pid_file_then_ends_process(
+        self, mock_xetra_service, stop_on_first_sleep, tmp_path, monkeypatch
+    ):
+        """After a stop request the PID file is removed first, then the process ends with code 0."""
+        pid_file = tmp_path / "daemon.pid"
+        exits = []
+        monkeypatch.setattr(
+            "yf_parqed.common.process_exit._terminate",
+            lambda code: exits.append((code, pid_file.exists())),
+        )
+
+        with patch("yf_parqed.xetra_cli.XetraService", return_value=mock_xetra_service):
+            result = runner.invoke(
+                app,
+                ["fetch-trades", "DETR", "--daemon", "--pid-file", str(pid_file)],
+                catch_exceptions=False,
+            )
+
+        assert result.exit_code == 0
+        assert (
+            mock_xetra_service.fetch_and_store_missing_trades_incremental.call_count
+            == 1
+        )
+        assert exits == [(0, False)]
+
+    def test_single_run_exits_the_normal_way(
+        self, mock_xetra_service, daemon_exit_calls
+    ):
+        """Without --daemon the command returns normally; the daemon exit is not used."""
+        mock_xetra_service.fetch_and_store_missing_trades_incremental.return_value = {
+            "dates_fetched": [],
+            "dates_partial": [],
+            "total_trades": 0,
+            "total_files": 0,
+            "consolidated": False,
+        }
+
+        with patch("yf_parqed.xetra_cli.XetraService", return_value=mock_xetra_service):
+            result = runner.invoke(
+                app, ["fetch-trades", "DETR"], catch_exceptions=False
+            )
+
+        assert result.exit_code == 0
+        assert daemon_exit_calls == []
+
+
 class TestDaemonNoStore:
     """Test daemon mode interaction with --no-store flag."""
 

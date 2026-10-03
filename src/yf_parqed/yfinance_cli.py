@@ -13,6 +13,7 @@ import time
 from yf_parqed.yahoo.primary_class import all_intervals as default_all_intervals
 
 from yf_parqed.yahoo.primary_class import YFParqed
+from .common.process_exit import exit_daemon_process
 from .common.run_lock import GlobalRunLock
 from .xetra.trading_hours_checker import TradingHoursChecker
 
@@ -117,7 +118,9 @@ def _check_and_write_pid_file(pid_file: Path) -> None:
 
     logger.info(f"PID file created: {pid_file} (PID: {os.getpid()})")
 
-    # Register cleanup
+    # Covers exits before the daemon loop's own cleanup is reached. A normal
+    # daemon stop removes the file itself and then ends the process without
+    # running atexit handlers.
     def cleanup_pid():
         if pid_file.exists():
             pid_file.unlink()
@@ -516,7 +519,7 @@ def update_data(
                     )
 
                     # Sleep in small intervals to check for shutdown
-                    sleep_interval = 60  # Check every minute
+                    sleep_interval = 10  # Check every 10 seconds
                     for _ in range(int(wait_seconds / sleep_interval)):
                         if shutdown_requested["flag"]:
                             break
@@ -587,6 +590,9 @@ def update_data(
         if daemon and pid_file and pid_file.exists():
             pid_file.unlink()
             logger.info(f"PID file removed: {pid_file}")
+
+    if daemon:
+        exit_daemon_process()
 
 
 @app.command()
