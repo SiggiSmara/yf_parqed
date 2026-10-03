@@ -8,7 +8,11 @@ Tests cover:
 4. Auto-detection of years/months from stored data
 """
 
+import json
+import shutil
+
 import pandas as pd
+import pyarrow.parquet as pq
 import pytest
 from datetime import datetime
 from unittest.mock import Mock, patch
@@ -60,6 +64,43 @@ def sample_trades_df():
             "price": [12.50, 105.30, 12.51],
             "volume": [100, 50, 200],
         }
+    )
+
+
+def _store_day(service, df, year, month, day, venue="DETR"):
+    """Write one consolidated daily trades.parquet for the given date."""
+    service.store_trades(df, venue, datetime(year, month, day))
+    service._consolidate_daily_files(venue, f"{year}-{month:02d}-{day:02d}")
+
+
+def _daily_dir(temp_root, year, month, day, venue="DETR"):
+    return (
+        temp_root
+        / "de"
+        / "xetra"
+        / "trades"
+        / f"venue={venue}"
+        / f"year={year}"
+        / f"month={month:02d}"
+        / f"day={day:02d}"
+    )
+
+
+def _days_included(monthly_path):
+    metadata = pq.read_metadata(monthly_path).metadata
+    return json.loads(metadata[XetraService._DAYS_INCLUDED_KEY])
+
+
+def _monthly_path(temp_root, year, month, venue="DETR"):
+    return (
+        temp_root
+        / "de"
+        / "xetra"
+        / "trades_monthly"
+        / f"venue={venue}"
+        / f"year={year}"
+        / f"month={month:02d}"
+        / "trades.parquet"
     )
 
 
@@ -198,8 +239,8 @@ class TestMonthlyConsolidation:
         monthly_df = pd.read_parquet(monthly_path)
         assert len(monthly_df) == 9  # 3 trades × 3 days
 
-    def test_consolidate_sorts_by_time(self, service, temp_root, sample_trades_df):
-        """Test that consolidated data is sorted by time."""
+    def test_consolidate_orders_by_day(self, service, temp_root, sample_trades_df):
+        """Test that consolidated data follows day order regardless of write order."""
         venue = "DETR"
         year = 2025
         month = 11
@@ -215,7 +256,7 @@ class TestMonthlyConsolidation:
         # Consolidate
         service._consolidate_to_monthly(venue, year, month)
 
-        # Check sorting
+        # Check ordering
         monthly_path = (
             temp_root
             / "de"
@@ -228,7 +269,7 @@ class TestMonthlyConsolidation:
         )
         monthly_df = pd.read_parquet(monthly_path)
 
-        # Times should be in ascending order
+        # Days are streamed in order, so times ascend across days
         assert monthly_df["time"].is_monotonic_increasing
 
     def test_consolidate_empty_month_logs_warning(self, service, temp_root):
@@ -283,6 +324,207 @@ class TestMonthlyConsolidation:
 
         # Daily file should still exist
         assert daily_path.exists()
+
+    def test_consolidate_skips_when_monthly_is_current(
+        self, service, temp_root, sample_trades_df
+    ):
+        """Test that a repeat call does not rewrite an up-to-date monthly file."""
+        _store_day(service, sample_trades_df, 2025, 11, 4)
+        service._consolidate_to_monthly("DETR", 2025, 11)
+        monthly_path = _monthly_path(temp_root, 2025, 11)
+        before = monthly_path.stat()
+
+        service._consolidate_to_monthly("DETR", 2025, 11)
+
+        after = monthly_path.stat()
+        assert after.st_ino == before.st_ino
+        assert after.st_mtime_ns == before.st_mtime_ns
+
+    def test_consolidate_reruns_when_daily_file_added(
+        self, service, temp_root, sample_trades_df
+    ):
+        """Test that a new daily file makes the monthly file stale."""
+        _store_day(service, sample_trades_df, 2025, 11, 4)
+        service._consolidate_to_monthly("DETR", 2025, 11)
+        monthly_path = _monthly_path(temp_root, 2025, 11)
+        assert len(pd.read_parquet(monthly_path)) == 3
+
+        _store_day(service, sample_trades_df, 2025, 11, 5)
+        service._consolidate_to_monthly("DETR", 2025, 11)
+
+        assert len(pd.read_parquet(monthly_path)) == 6
+
+    def test_consolidate_matches_daily_inputs(
+        self, service, temp_root, sample_trades_df
+    ):
+        """Test that the streamed monthly file equals the daily files read back in order."""
+        for day in [4, 5, 6]:
+            df = sample_trades_df.copy()
+            df["price"] = df["price"] + day
+            _store_day(service, df, 2025, 11, day)
+
+        service._consolidate_to_monthly("DETR", 2025, 11)
+
+        daily_root = temp_root / "de" / "xetra" / "trades" / "venue=DETR"
+        expected = pd.concat(
+            [pd.read_parquet(f) for f in sorted(daily_root.rglob("trades.parquet"))],
+            ignore_index=True,
+        )
+        monthly_df = pd.read_parquet(_monthly_path(temp_root, 2025, 11))
+        pd.testing.assert_frame_equal(monthly_df, expected)
+
+    def test_consolidate_mixed_schema_days(self, service, temp_root, sample_trades_df):
+        """Test that days with different columns consolidate to the union, null-filled."""
+        _store_day(service, sample_trades_df, 2025, 11, 4)
+        changed = sample_trades_df.drop(columns=["mnemonic"]).assign(
+            volume=[100.5, 50.5, 200.5], extra=["x", "y", "z"]
+        )
+        _store_day(service, changed, 2025, 11, 5)
+
+        service._consolidate_to_monthly("DETR", 2025, 11)
+
+        monthly_df = pd.read_parquet(_monthly_path(temp_root, 2025, 11))
+        assert len(monthly_df) == 6
+        assert set(sample_trades_df.columns) | {"extra"} <= set(monthly_df.columns)
+        assert monthly_df["extra"].tolist() == [None, None, None, "x", "y", "z"]
+        assert monthly_df["mnemonic"].tolist() == ["DBK", "VOW3", "DBK"] + [None] * 3
+        assert monthly_df["volume"].tolist() == [100, 50, 200, 100.5, 50.5, 200.5]
+
+    def test_consolidate_leaves_out_unreadable_day_and_rebuilds_after_repair(
+        self, service, temp_root, sample_trades_df
+    ):
+        """Test that a corrupt daily file is skipped on the record, then picked up once fixed."""
+        _store_day(service, sample_trades_df, 2025, 11, 4)
+        corrupt_dir = _daily_dir(temp_root, 2025, 11, 5)
+        corrupt_dir.mkdir(parents=True)
+        (corrupt_dir / "trades.parquet").write_bytes(b"not a parquet file")
+
+        service._consolidate_to_monthly("DETR", 2025, 11)
+
+        monthly_path = _monthly_path(temp_root, 2025, 11)
+        assert len(pd.read_parquet(monthly_path)) == 3
+        assert _days_included(monthly_path) == [4]
+        assert list(monthly_path.parent.glob("*.tmp")) == []
+
+        # Nothing changed on disk: the next call is a no-op
+        before = monthly_path.stat()
+        service._consolidate_to_monthly("DETR", 2025, 11)
+        assert monthly_path.stat().st_ino == before.st_ino
+
+        # Repairing the day changes the fingerprint and triggers a rebuild
+        shutil.rmtree(corrupt_dir)
+        _store_day(service, sample_trades_df, 2025, 11, 5)
+        service._consolidate_to_monthly("DETR", 2025, 11)
+
+        assert len(pd.read_parquet(monthly_path)) == 6
+        assert _days_included(monthly_path) == [4, 5]
+
+    def test_consolidate_merges_leftover_mini_files_first(
+        self, service, temp_root, sample_trades_df
+    ):
+        """Test that a day left as mini-files is merged and included, not dropped."""
+        _store_day(service, sample_trades_df, 2025, 11, 4)
+        service.store_trades(sample_trades_df, "DETR", datetime(2025, 11, 5))
+        leftover_dir = _daily_dir(temp_root, 2025, 11, 5)
+        assert not (leftover_dir / "trades.parquet").exists()
+
+        service._consolidate_to_monthly("DETR", 2025, 11)
+
+        monthly_path = _monthly_path(temp_root, 2025, 11)
+        assert len(pd.read_parquet(monthly_path)) == 6
+        assert _days_included(monthly_path) == [4, 5]
+        assert (leftover_dir / "trades.parquet").exists()
+        assert list(leftover_dir.glob("trades-*.parquet")) == []
+
+    def test_consolidate_never_shrinks_existing_monthly(
+        self, service, temp_root, sample_trades_df
+    ):
+        """Test that a monthly file is kept when the daily files hold fewer trades."""
+        _store_day(service, sample_trades_df, 2025, 11, 4)
+        _store_day(service, sample_trades_df, 2025, 11, 5)
+        service._consolidate_to_monthly("DETR", 2025, 11)
+        monthly_path = _monthly_path(temp_root, 2025, 11)
+        before = monthly_path.stat()
+
+        shutil.rmtree(_daily_dir(temp_root, 2025, 11, 5))
+        service._consolidate_to_monthly("DETR", 2025, 11)
+
+        assert monthly_path.stat().st_ino == before.st_ino
+        assert len(pd.read_parquet(monthly_path)) == 6
+        assert list(monthly_path.parent.glob("*.tmp")) == []
+
+
+class TestDailyMergeWatermark:
+    """Test how the daily merge treats mini-files next to an existing daily file."""
+
+    def test_new_mini_files_are_merged_into_existing_daily(
+        self, service, temp_root, sample_trades_df
+    ):
+        """Test that mini-files staged after the daily file was written are not lost."""
+        _store_day(service, sample_trades_df, 2025, 11, 4)
+        day_dir = _daily_dir(temp_root, 2025, 11, 4)
+
+        service.store_trades(sample_trades_df, "DETR", datetime(2025, 11, 4))
+        service._consolidate_daily_files("DETR", "2025-11-04")
+
+        assert len(pd.read_parquet(day_dir / "trades.parquet")) == 6
+        assert list(day_dir.glob("trades-*.parquet")) == []
+
+    def test_stale_mini_files_are_deleted_without_duplicating(
+        self, service, temp_root, sample_trades_df
+    ):
+        """Test the crash-during-cleanup case: merged mini-files that were not removed."""
+        service.store_trades(sample_trades_df, "DETR", datetime(2025, 11, 4))
+        day_dir = _daily_dir(temp_root, 2025, 11, 4)
+        (mini,) = day_dir.glob("trades-*.parquet")
+        mini_bytes = mini.read_bytes()
+        service._consolidate_daily_files("DETR", "2025-11-04")
+        mini.write_bytes(mini_bytes)
+
+        service._consolidate_daily_files("DETR", "2025-11-04")
+
+        assert len(pd.read_parquet(day_dir / "trades.parquet")) == 3
+        assert list(day_dir.glob("trades-*.parquet")) == []
+
+    def test_daily_file_without_watermark_falls_back_to_its_write_time(
+        self, service, temp_root, sample_trades_df
+    ):
+        """Test daily files written before the watermark existed."""
+        _store_day(service, sample_trades_df, 2025, 11, 4)
+        day_dir = _daily_dir(temp_root, 2025, 11, 4)
+        final = day_dir / "trades.parquet"
+        table = pq.ParquetFile(final).read()
+        metadata = {
+            k: v
+            for k, v in table.schema.metadata.items()
+            if k != XetraService._MERGED_THROUGH_KEY
+        }
+        pq.write_table(table.replace_schema_metadata(metadata), str(final))
+
+        # Staged long before the daily file was written: already in it
+        service.store_trades(sample_trades_df, "DETR", datetime(2025, 11, 4))
+        (old_mini,) = day_dir.glob("trades-*.parquet")
+        old_mini.rename(day_dir / "trades-1-1000.parquet")
+        # Staged after it: new data
+        service.store_trades(sample_trades_df, "DETR", datetime(2025, 11, 4))
+
+        service._consolidate_daily_files("DETR", "2025-11-04")
+
+        assert len(pd.read_parquet(final)) == 6
+        assert list(day_dir.glob("trades-*.parquet")) == []
+
+    def test_unreadable_daily_file_keeps_mini_files(
+        self, service, temp_root, sample_trades_df
+    ):
+        """Test that mini-files are not deleted when the daily file cannot be read."""
+        service.store_trades(sample_trades_df, "DETR", datetime(2025, 11, 4))
+        day_dir = _daily_dir(temp_root, 2025, 11, 4)
+        (day_dir / "trades.parquet").write_bytes(b"not a parquet file")
+
+        service._consolidate_daily_files("DETR", "2025-11-04")
+
+        assert len(list(day_dir.glob("trades-*.parquet"))) == 1
+        assert (day_dir / "trades.parquet").read_bytes() == b"not a parquet file"
 
 
 class TestCheckPartialDownloads:

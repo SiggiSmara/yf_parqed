@@ -10,6 +10,12 @@ This document records user-facing changes by release. Each section should captur
 
 ## Unreleased
 
+- **Xetra monthly consolidation no longer exhausts memory:** the consolidation now streams one trading day at a time and skips the work when the monthly file is already up to date. Previously it reloaded the whole previous month on every fetch cycle for the first days of each month, which filled RAM and swap on small hosts. See [ADR 2026-10-03](adr/in-progress/2026-10-03-daemon-resource-footprint.md).
+- **Xetra monthly files are complete and say what they contain:** days left as unmerged mini-files are merged before a month is consolidated, a corrupt daily file is left out and logged instead of silently dropped, and a monthly file is never replaced by one with fewer trades. Each monthly file lists the days it contains in its Parquet metadata.
+- **Xetra daily merge no longer deletes new data:** mini-files found next to an existing daily file are merged into it when they were staged after it; only genuinely stale ones are deleted.
+- **Raw cache cleanup is stricter:** a raw file is deleted only when its own day is proven to be in a daily or monthly Parquet file.
+- **Upgrade note:** after deploying, rebuild the monthly files once with `xetra-parqed consolidate-month DETR --all` (runbook in the ADR). Four existing monthly files are behind their daily data.
+
 
 ## 2025-12-06 — Version 0.4.2 (UTC Trading Hours Hardening)
 

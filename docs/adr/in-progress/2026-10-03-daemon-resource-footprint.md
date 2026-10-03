@@ -62,7 +62,11 @@ Fix the three problems in the order below, then add memory limits as a safety ne
 ### 1. Make Xetra monthly consolidation idempotent and streaming
 
 - **Skip when current.** The monthly file records a fingerprint of the daily files it was built from (their count, total size and newest modification time) in its Parquet metadata. `_consolidate_to_monthly` returns early when that fingerprint matches the daily files on disk. The existing triggers stay as they are; repeat calls cost a few `stat` calls and one footer read. Monthly files written before this change carry no fingerprint and are rebuilt once if their month is triggered again.
-- **An unreadable daily file aborts the run.** The previous code skipped such a day and wrote a monthly file that silently lacked it. Now the consolidation fails, the existing monthly file is left as it is, and the error is logged every cycle until the daily file is repaired (for example with `reprocess-raw-cache`).
+- **Merge leftover mini-files first.** Before a month is consolidated, any day that still has mini-files is merged into its daily file. Two days in production (2026-05-08, 2026-06-10) had been left as mini-files and were silently missing from their monthly files.
+- **Tell stale mini-files from new ones.** The daily merge used to delete every mini-file found next to an existing daily file, on the assumption that they were leftovers of a crash. A daily file now records the staging time of the newest mini-file it contains. Mini-files staged up to that time are deleted as before; later ones are merged in. Daily files written before this change fall back to their own write time. If the daily file cannot be read, the mini-files are kept.
+- **Leave an unreadable day out, on the record.** The monthly file is built from the days that can be read and lists those days in its Parquet metadata (`yf_parqed.days_included`). The skipped day is logged as an error. Repairing the daily file changes the fingerprint, so the monthly file is rebuilt at the next trigger.
+- **Never shrink a monthly file.** If the readable daily files hold fewer trades than the existing monthly file, the monthly file is kept and an error is logged. This protects months whose daily files were removed or damaged after consolidation. To force a rebuild, remove the monthly file.
+- **Raw-cache cleanup checks the specific day.** A raw file is deleted only if its day has a readable daily file or is listed in the monthly file's `days_included`. Before, any readable monthly file vouched for every day of its month, which is how the raw files of the two unmerged days were deleted. A monthly file without the list (written before this change) vouches for nothing.
 - **Stream one day at a time.** Replace the pandas read, concat and convert with a PyArrow `ParquetWriter` on the temp file: read one daily table, write it, release it, move to the next. Peak memory becomes one trading day (370,000 to 475,000 rows in the days examined) instead of a month. The temp file, fsync and rename stay.
 - **Unify schemas up front.** Read the schemas of the daily files (metadata only), unify them, and cast each daily table to the unified schema before writing, so a schema change within a month does not abort the write.
 - **Drop the dead sort.** Remove the `time` sort rather than repair it. A global sort needs the whole month in memory, which is the thing being removed. Monthly files are ordered by day, then by download order within the day. Consumers that need time order sort on `trading_date_time`.
@@ -91,7 +95,8 @@ Steps are grouped into batches. A batch is one working session, one commit serie
 
 **Batch 1 — Xetra consolidation**
 
-- [ ] **Step A** — Skip-when-current fingerprint, streaming `ParquetWriter`, schema unification, abort on an unreadable daily file, remove the dead `time` sort. Tests: a second call does not rewrite the file; a month with a new daily file is re-consolidated; streamed output equals the daily inputs; mixed-schema days consolidate; an unreadable daily file leaves the existing monthly file untouched. **Must be deployed before 2026-11-01.**
+- [x] **Step A** — *(implemented 2026-10-03, not yet deployed)* Monthly consolidation: skip-when-current fingerprint, streaming `ParquetWriter`, schema unification, leftover mini-files merged first, unreadable days left out and recorded, never shrink an existing monthly file, dead `time` sort removed. Daily merge: watermark that separates stale mini-files from new ones. Raw-cache cleanup: per-day proof. Tests in `tests/test_xetra_consolidation.py` and `tests/test_xetra_raw_cache.py`. **Must be deployed before 2026-11-01.**
+- [ ] **Step A2** — One-off repair of the monthly files that are behind their daily data (January, February, May, June 2026). Runbook under "Repairing the monthly files" below. Needs Step A deployed first; run by the owner.
 
 **Batch 2 — Shutdown and logrotate**
 
@@ -141,10 +146,52 @@ The agent cannot deploy. Each batch ends with commits on `develop`; the owner th
 
 ### Checking a deploy
 
-- **Batch 1.** The proof arrives at the next month change (2026-11-01 to 11-04). In `/var/log/yf_parqed/xetra-DETR.log*`, `Consolidated to monthly` should appear once for October, and `sar -S` should show swap staying near its baseline. Before that, the dev validation in the Progress Log is the evidence.
+- **Batch 1.** The proof arrives at the next month change (2026-11-01 to 11-04). In `/var/log/yf_parqed/xetra-DETR.log*`, `Consolidated to monthly` should appear once for October, and `sar -S` should show swap staying near its baseline. Before that, the dev validation in the Progress Log is the evidence. For the repair (Step A2), compare the row counts with the table under "Repairing the monthly files".
 - **Batch 2.** After the next midnight, `journalctl -u yf-parqed -u 'xetra@DETR' | grep -E 'timed out|SIGKILL'` should show nothing new, and neither service should have restarted at 00:00.
 - **Batch 3, after B and C.** Pick a ticker and list its partition files: only the current month's file should have a fresh modification time after a cycle. Cycle duration (from `Processing ... tickers` to `All tickers were processed.` in `journalctl -u yf-parqed`) should fall well below the 4h08m baseline.
 - **Batch 3, after D.** For a week, repeat the gap check below and compare with the baseline. Also confirm that `tickers.json` now carries `last_data_date` values and that the list of tickers going `permanently_dead` looks reasonable.
+
+### Repairing the monthly files (Step A2)
+
+Four monthly files hold fewer trades than their daily files. The repair rebuilds every month from its daily files with the new code; months that are already complete come out with the same row count. It rewrites files under `trades_monthly/` and creates two daily files from mini-files, so it needs the owner's go-ahead and must run as `yfparqed`, after Step A is deployed. Run it outside trading hours with the Xetra service stopped, so that only one process merges mini-files.
+
+```bash
+# 1. Stop the collector and keep a copy of the current monthly files (about 2.3 GB)
+sudo systemctl stop 'xetra@DETR'
+sudo cp -a /var/lib/yf_parqed/data/de/xetra/trades_monthly /var/lib/yf_parqed/data/de/xetra/trades_monthly.bak-2026-10
+
+# 2. Rebuild every month (about one minute per month).
+#    The cd matters: consolidate-month ignores --wrk-dir and looks for ./data.
+#    From any other directory it reports "No months found" and does nothing.
+cd /var/lib/yf_parqed
+sudo -u yfparqed /opt/yf_parqed/.venv/bin/xetra-parqed consolidate-month DETR --all
+
+# 3. Check the row counts, then start the collector again
+sudo -u yfparqed /opt/yf_parqed/.venv/bin/python3 -c "
+import pyarrow.parquet as pq, pathlib
+for f in sorted(pathlib.Path('/var/lib/yf_parqed/data/de/xetra/trades_monthly').rglob('trades.parquet')):
+    print(f.parent.parent.name, f.parent.name, format(pq.read_metadata(f).num_rows, ','))"
+sudo systemctl start 'xetra@DETR'
+```
+
+Expected row counts, taken from the daily files on 2026-10-03:
+
+| Month | Before | After | Change |
+|---|---|---|---|
+| 2025-12 | 5,224,813 | 5,224,813 | none |
+| 2026-01 | 8,766,890 | 9,285,530 | +518,640 |
+| 2026-02 | 6,507,722 | 9,495,685 | +2,987,963 |
+| 2026-04 | 503,888 | 503,888 | none |
+| 2026-05 | 9,766,173 | 10,267,787 | +501,614 (day 8 merged from 830 mini-files) |
+| 2026-06 | 10,628,160 | 11,190,760 | +562,600 (day 10 merged from 831 mini-files) |
+| 2026-07 | 10,038,312 | 10,038,312 | none |
+| 2026-08 | 7,978,227 | 7,978,227 | none |
+| 2026-09 | 8,140,348 | 8,140,348 | none |
+| 2026-10 | no file | 917,190 or more | new; the current month is included by `--all` and is rebuilt at the November rollover |
+
+Two things change besides row counts. Every rebuilt file gains the fingerprint and day list in its metadata. And the four oldest files (2025-12 to 2026-04), which were written by the May 2026 migration without the `venue`, `year`, `month` and `day` columns, come out with those columns, like the files from May onward.
+
+If a count is lower than expected, nothing was lost: the never-shrink guard refuses to replace a file with a smaller one, and the copy from step 1 is still there. Delete the copy once the counts are confirmed.
 
 ### Baseline for the Yahoo gap check (measured 2026-10-03)
 
@@ -159,12 +206,16 @@ After Step D, any liquid ticker with a missing business day or a day well short 
 
 ### Progress Log
 
-- **2026-10-03** — Investigation done, ADR written, steps ordered into batches. Step A started in the same session.
+- **2026-10-03** — Investigation done, ADR written, steps ordered into batches.
+- **2026-10-03** — Step A implemented in `XetraService._consolidate_to_monthly` with tests in `tests/test_xetra_consolidation.py`; full suite 541 passed, 1 skipped. Validated in dev against the real September 2026 daily files (read-only, output to a scratch directory): 59 seconds and 326 MB peak memory, against 6 to 70 minutes and the whole machine before. The result has the same 8,140,348 rows as the production monthly file, an equal schema, and all 21 columns identical value for value and in the same order. A second call returned in 9 ms. **Left open:** the changes are in the working tree on `develop`, not committed and not deployed. Next: commit, deploy before 2026-11-01, then start Batch 2 in a new session.
+- **2026-10-03** — Finding while reviewing how an unreadable daily file is handled. No Parquet file has ever been unreadable (167 daily and 9 monthly footers all read; no read errors in the retained logs). A different gap was real: 2026-05-08 and 2026-06-10 never got a daily `trades.parquet`. Their trades were intact in mini-files but missing from the May and June monthly files. Why those days were never merged is unknown; the logs from then are gone. Their raw cache had been deleted because cleanup accepted any readable monthly file as proof for the whole month. The January and February 2026 monthly files are also behind their daily files (by 518,640 and 2,987,963 trades); they were written on 2026-05-01 and the daily files changed afterwards.
+- **2026-10-03** — Step A extended to cover this (see Decision 1): leftover mini-files merged before consolidating, stale-versus-new watermark in the daily merge, unreadable days left out on the record, never-shrink guard, per-day raw-cache proof. Full suite 549 passed, 1 skipped. Rehearsed on scratch copies of real data: May 2026 went from 9,766,173 to 10,267,787 trades with day 8 included (85 seconds), February 2026 from 6,507,722 to 9,495,685 (75 seconds), peak memory 542 MB, repeat calls skipped in 11 ms. **Left open:** the extension is in the working tree, not committed; nothing is deployed; Step A2 (the repair) has not been run.
 
 ## Risk Controls
 
 - **Daily files stay the record.** Consolidation never deletes or modifies daily files. Before deploying Step A, run the new consolidation in dev against a copy of a real month and compare row count and per-ISIN counts with the existing monthly file.
-- **Raw-cache cleanup is unchanged.** It still deletes raw files only when a readable daily or monthly Parquet exists.
+- **Raw-cache cleanup became stricter, not looser.** It deletes a raw file only when that specific day is proven to be in a readable daily file or listed in a monthly file. Until Step A2 has rebuilt the older monthly files, they carry no day list and prove nothing; this only matters for days without a daily file, and currently every day has one except the two being repaired.
+- **The daily merge now keeps data it used to delete.** Mini-files found next to an existing daily file are merged when they were staged after it. If the system clock is set backwards between a crash and the next run, an already-merged mini-file could be merged twice. That needs a crash and a clock step together; it is accepted.
 - **Step D activates a code path production has effectively never run.** Once `last_data_date` is saved, the fetch decision becomes `business_days_between(last_data_date, today) > 0`, which works in whole days. For 1-minute data on a 2-hour cycle this must be reviewed and covered by tests before deploying, so that saving the registry does not leave gaps. Yahoo serves only the last 7 days of 1-minute bars, so a ticker that goes unfetched for longer loses data permanently.
 - **Step D also lets the not-found cycle advance.** Tickers will start reaching `permanently_dead` for the first time in the daemon. Check the first week's registry changes against expectations before trusting the pruning that follows.
 - **Scoped writes must not drop rows.** A test must show that rows merged into a touched month are complete and that deduplication within that month still works.

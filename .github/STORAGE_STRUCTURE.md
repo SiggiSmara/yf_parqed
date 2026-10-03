@@ -202,9 +202,9 @@ Every downloaded `.json.gz` is written here **before** it is parsed. This provid
 
 Files are kept for **7 days** (default). The daemon runs `cleanup_raw_cache` at the start of each fetch cycle. A file is deleted when **both** conditions hold:
 1. The file is older than the TTL.
-2. A readable daily or monthly Parquet exists that confirms the data has been persisted.
+2. A readable Parquet file confirms that the file's own day has been persisted.
 
-Files older than the TTL but without a readable Parquet are **kept** and logged as warnings — this is a signal that data may be unaccounted for.
+Files older than the TTL are deleted only when their own day is proven to be stored: a readable daily file for that day, or a monthly file that lists the day in its `yf_parqed.days_included` metadata. Otherwise they are **kept** and logged as warnings — this is a signal that data may be unaccounted for.
 
 Orphaned `.json.gz.tmp` files (from interrupted writes) are removed unconditionally on the next cleanup run.
 

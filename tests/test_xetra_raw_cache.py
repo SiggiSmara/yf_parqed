@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import time
 from pathlib import Path
@@ -83,9 +84,13 @@ def _monthly_parquet(tmp_path, venue, year, month, market="de", source="xetra"):
     )
 
 
-def _write_minimal_parquet(path: Path):
+def _write_minimal_parquet(path: Path, days_included: list[int] | None = None):
     path.parent.mkdir(parents=True, exist_ok=True)
     table = pa.table({"isin": pa.array(["DE0001"], type=pa.string())})
+    if days_included is not None:
+        table = table.replace_schema_metadata(
+            {XetraService._DAYS_INCLUDED_KEY: json.dumps(days_included).encode()}
+        )
     pq.write_table(table, str(path))
 
 
@@ -280,7 +285,33 @@ class TestCleanupRawCache:
         assert result["deleted"] == 1
         assert not cache.exists()
 
-    def test_deletes_old_file_with_readable_monthly_parquet(self, tmp_path):
+    def test_deletes_old_file_with_monthly_parquet_listing_the_day(self, tmp_path):
+        svc = _make_service(tmp_path)
+        fname = "DETR-posttrade-2026-04-30T09_00.json.gz"
+        cache = _cache_path(tmp_path, "DETR", "2026-04-30", fname)
+        self._aged_file(cache, 8 * 86400)
+
+        monthly = _monthly_parquet(tmp_path, "DETR", 2026, 4)
+        _write_minimal_parquet(monthly, days_included=[29, 30])
+
+        result = svc.cleanup_raw_cache("DETR", max_age_days=7)
+        assert result["deleted"] == 1
+        assert not cache.exists()
+
+    def test_keeps_old_file_when_monthly_parquet_lacks_the_day(self, tmp_path):
+        svc = _make_service(tmp_path)
+        fname = "DETR-posttrade-2026-04-30T09_00.json.gz"
+        cache = _cache_path(tmp_path, "DETR", "2026-04-30", fname)
+        self._aged_file(cache, 8 * 86400)
+
+        monthly = _monthly_parquet(tmp_path, "DETR", 2026, 4)
+        _write_minimal_parquet(monthly, days_included=[28, 29])
+
+        result = svc.cleanup_raw_cache("DETR", max_age_days=7)
+        assert result["kept_no_parquet"] == 1
+        assert cache.exists()
+
+    def test_keeps_old_file_when_monthly_parquet_does_not_list_days(self, tmp_path):
         svc = _make_service(tmp_path)
         fname = "DETR-posttrade-2026-04-30T09_00.json.gz"
         cache = _cache_path(tmp_path, "DETR", "2026-04-30", fname)
@@ -290,8 +321,8 @@ class TestCleanupRawCache:
         _write_minimal_parquet(monthly)
 
         result = svc.cleanup_raw_cache("DETR", max_age_days=7)
-        assert result["deleted"] == 1
-        assert not cache.exists()
+        assert result["kept_no_parquet"] == 1
+        assert cache.exists()
 
     def test_keeps_old_file_without_parquet(self, tmp_path):
         svc = _make_service(tmp_path)
