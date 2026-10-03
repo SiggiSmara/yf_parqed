@@ -493,29 +493,42 @@ grep "Outside trading hours" /var/log/yf-parqed/update.log
 ### Problem: High Memory Usage
 
 **Symptoms:**
-- Process uses >2GB RAM
-- System slows down during updates
+- Swap fills up, the whole machine slows down, other projects on the host run short of memory
+- High iowait while a daemon cycle is running
 
-**Common Causes & Fixes:**
+**Find out which daemon and when, before changing anything:**
 
-1. **Too many tickers loading simultaneously**
-   ```python
-   # Modify interval_scheduler.py to process in smaller batches
-   batch_size = 100  # Process 100 tickers at a time
-   ```
+```bash
+# 1. History of memory, swap and CPU in 10-minute samples (about a week is kept).
+#    DD is the day of the month, e.g. sa02 for the 2nd.
+sar -r -f /var/log/sysstat/saDD     # memory; watch kbavail
+sar -S -f /var/log/sysstat/saDD     # swap used
+sar -u -f /var/log/sysstat/saDD     # CPU; watch %iowait
 
-2. **Large parquet files not releasing memory**
-   ```python
-   # Force garbage collection in loops
-   import gc
-   gc.collect()
-   ```
+# 2. Peaks per service as recorded by systemd.
+#    The slice keeps its peaks across service restarts.
+systemctl show yf-parqed 'xetra@DETR' system-xetra.slice \
+  -p MemoryCurrent,MemoryPeak,MemorySwapPeak,CPUUsageNSec
 
-3. **Partitioned storage more memory efficient**
-   ```bash
-   # Migrate to partitioned storage
-   uv run yf-parqed-migrate migrate --venue us:yahoo --interval 1d
-   ```
+# 3. Real memory of the running processes (HWM = peak resident size).
+for p in $(pgrep -u yfparqed); do
+  grep -E '^(Name|VmHWM|VmRSS|VmSwap)' /proc/$p/status
+done
+
+# 4. What the daemons were doing at the time of a spike.
+grep -E 'Consolidat|rolled over' /var/log/yf_parqed/xetra-DETR.log*   # Xetra logs to file
+journalctl -u yf-parqed --since "YYYY-MM-DD HH:MM"                     # Yahoo logs to the journal
+```
+
+A service's `MemoryPeak` includes the page cache of the files it read and wrote, which the kernel can reclaim. Compare it with `VmHWM` before concluding that a process is large.
+
+**Known causes:**
+
+1. **Xetra monthly consolidation at the start of a month.** The log shows `Month rolled over ... consolidating` on every cycle, and swap follows a sawtooth with the same period. Each run loads the whole previous month into memory. It stops by itself after two or three days. Tracked in [ADR 2026-10-03](../docs/adr/to-do/2026-10-03-daemon-resource-footprint.md), Step A.
+
+2. **Yahoo daemon rewriting every partition each cycle.** This shows as steady CPU and iowait rather than memory: the process stays around 250 MB. Tracked in the same ADR, Steps B to D.
+
+3. **A one-off migration or backfill using pandas on a large month.** Use Polars or PyArrow and process one file at a time.
 
 ---
 

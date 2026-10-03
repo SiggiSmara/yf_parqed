@@ -6,7 +6,7 @@ Agent instructions for this codebase. Read this before doing anything else.
 
 - **Always run Python via `uv run`** — never `python`, `python3`, or direct venv activation. Example: `uv run pytest`, `uv run python3 -c "..."`, `uv run xetra-parqed ...`
 - **Never edit `pyproject.toml` manually** — use `uv add` / `uv remove` for dependency changes
-- **All tests must pass before finishing any task**: `uv run pytest` — currently 448 passed, 1 skipped
+- **All tests must pass before finishing any task**: `uv run pytest` — currently 536 passed, 1 skipped
 - **Data safety**: existing Parquet files are the primary record. Never delete or overwrite without explicit user confirmation. See `.github/DATA_SAFETY_STRATEGY.md` for the full ruleset.
 
 ## Project layout
@@ -57,6 +57,8 @@ The daemon runs as a systemd service under user `yfparqed`. **Do not confuse the
 | `/var/lib/yf_parqed/data/` | All collected Parquet data |
 | `/var/log/yf_parqed/` | Service logs |
 | `/run/yf_parqed/` | PID files |
+
+**Host limits:** production runs on a small machine shared with other projects: 2 CPU cores, 3.7 GiB RAM, 3.7 GiB swap, one 7200 rpm hard disk. Code that loads a month of trades into memory, or rewrites many files per cycle, slows everything else on the host. See `docs/adr/to-do/2026-10-03-daemon-resource-footprint.md`.
 
 Production data path pattern:
 - Xetra trades: `/var/lib/yf_parqed/data/de/xetra/trades/venue=DETR/year=YYYY/month=MM/day=DD/trades.parquet`

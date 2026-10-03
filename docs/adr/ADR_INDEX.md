@@ -1,44 +1,29 @@
-```markdown
 # ADR Index
 
-This index lists ADRs and provides a suggested classification (implemented / in-progress / to-do / idea / archived). Use the `Status:` header inside each ADR for the canonical value; this index is a convenience for discovery.
+One row per ADR, oldest first. The folder an ADR sits in is its state; the `Status:` header inside the file is the canonical value and should agree with the folder.
 
-| Date | File | Title | Suggested Location | Notes |
-|------|------|-------|--------------------|-------|
-| 2025-10-12 | `2025-10-12-partition-aware-storage.md` | Partition-Aware Storage | implemented | ADR text says "Accepted" and release notes indicate implemented (2025-10-19).
-| 2025-10-12 | `2025-10-12-duckdb-query-layer.md` | DuckDB Query Layer | idea | Roadmap lists as upcoming; likely work-in-progress.
-| 2025-10-10 | `2025-10-10-yahoo-finance-data-pipeline.md` | Yahoo Finance Data Pipeline | implemented | Contains design and appears operational; release notes reference daemon mode and YF behavior.
-| 2025-10-12 | `2025-10-12-xetra-delayed-data.md` | Xetra Delayed Data | implemented | Release notes: Xetra Phase 1 complete (2025-10-19). Phase 2 (OHLCV aggregation) is tracked in its own ADR.
-| 2025-12-05 | `2025-12-05-ohlcv-aggregation-service.md` | OHLCV Aggregation Service | to-do | Agreed to implement (canonical aggregator). Work not started yet — suitable for 'to-do' classification.
-| 2025-12-06 | `2025-12-06-separation-of-concerns.md` | Separation of Concerns | implemented | Package refactor completed; tests and import shims updated (see ADR contents).
+| Date | ADR | State | Notes |
+|------|-----|-------|-------|
+| 2025-10-10 | [Yahoo Finance Data Pipeline](implemented/2025-10-10-yahoo-finance-data-pipeline.md) | implemented | Core Yahoo pipeline, ticker registry and daemon mode. |
+| 2025-10-12 | [Partition-Aware Storage](implemented/2025-10-12-partition-aware-storage.md) | implemented | Monthly partitions per ticker; legacy and partitioned backends coexist. |
+| 2025-10-12 | [Xetra Delayed Data](implemented/2025-10-12-xetra-delayed-data.md) | implemented | Phase 1 (raw trade capture) complete. OHLCV aggregation is tracked in its own ADR. |
+| 2025-10-12 | [DuckDB Query Layer](idea/2025-10-12-duckdb-query-layer.md) | idea | Proposed; not scheduled. |
+| 2025-12-05 | [OHLCV Aggregation Service](to-do/2025-12-05-ohlcv-aggregation-service.md) | to-do | Agreed; normalization (Phase 2a) is prioritized before aggregation. |
+| 2025-12-06 | [Separation of Concerns](implemented/2025-12-06-separation-of-concerns.md) | implemented | Package split into `yahoo/`, `xetra/`, `common/`. |
+| 2025-12-09 | [Normalized Analytics Layer](idea/2025-12-09-normalized-analytics-layer.md) | idea | Proposed; not scheduled. |
+| 2026-04-26 | [Xetra Parser Schema Resilience](implemented/2026-04-26-xetra-parser-schema-resilience.md) | implemented | Multi-schema parser. The deferred quarantine steps were superseded by the raw cache (2026-05-01 ADR). |
+| 2026-04-26 | [Xetra Two-Tier Trade Storage](to-do/2026-04-26-xetra-two-tier-storage.md) | to-do | Stable 7-column MiFIR core tier plus a flexible extended tier. |
+| 2026-05-01 | [Xetra Daemon Write-Path Performance and Hygiene](implemented/2026-05-01-xetra-daemon-write-path-perf.md) | implemented | Raw cache, mini-file daily writes, monthly consolidation cadence. Follow-up on consolidation in the 2026-10-03 ADR. |
+| 2026-10-03 | [Daemon Resource Footprint](to-do/2026-10-03-daemon-resource-footprint.md) | to-do | Xetra consolidation loop and memory, Yahoo full rewrite per cycle, nightly SIGKILL. Step A is due before 2026-11-01. |
 
+## Folders
 
-## How to use
-- If you agree with the suggested locations, I can (with your confirmation) move each ADR into the corresponding folder and update the `Status:` header inside the ADR and this index.
-- New category `to-do`: indicates ADRs that have been agreed and scheduled for implementation but where work has not yet started. Use this for tracking implementation planning.
-- If you'd like a different classification policy (e.g., require a linked PR to mark implemented), tell me and I'll apply that filter.
+| Folder | Meaning |
+|--------|---------|
+| `idea/` | Exploratory; not agreed. |
+| `to-do/` | Agreed; work not started. |
+| `in-progress/` | Being implemented; the ADR's sequenced steps show what is left. |
+| `implemented/` | Done. |
+| `archived/` | Superseded. |
 
-
-```
-# ADR Index
-
-This index lists ADRs and provides a suggested classification (implemented / in-progress / idea / archived). Use the `Status:` header inside each ADR for the canonical value; this index is a convenience for discovery.
-
-| Date | File | Title | Suggested Location | Notes |
-|------|------|-------|--------------------|-------|
-| 2025-10-12 | `2025-10-12-partition-aware-storage.md` | Partition-Aware Storage | implemented | ADR text says "Accepted" and release notes indicate implemented (2025-10-19).
-| 2025-10-12 | `2025-10-12-duckdb-query-layer.md` | DuckDB Query Layer | idea | Roadmap lists as upcoming; likely work-in-progress.
-| 2025-10-10 | `2025-10-10-yahoo-finance-data-pipeline.md` | Yahoo Finance Data Pipeline | implemented | Contains design and appears operational; release notes reference daemon mode and YF behavior.
-| 2025-10-12 | `2025-10-12-xetra-delayed-data.md` | Xetra Delayed Data | implemented | Release notes: Xetra Phase 1 complete (2025-10-19).
-| 2025-10-12 | `2025-10-12-xetra-delayed-data.md` | Xetra Delayed Data | implemented | ADR: Phase 1 complete, Phase 2 & 3 (OHLCV aggregation) deferred to own ADR.
-| 2025-12-05 | `2025-12-05-ohlcv-aggregation-service.md` | OHLCV Aggregation Service | in-progress | Roadmap / release notes mark OHLCV aggregation as Phase 2 (pending).
-| 2025-12-06 | `2025-12-06-separation-of-concerns.md` | Separation of Concerns | implemented | Package refactor completed; tests and import shims updated (see ADR contents).
-| 2026-04-26 | `2026-04-26-xetra-parser-schema-resilience.md` | Xetra Parser Schema Resilience | in-progress | Core parser + quarantine done (2026-05-01); `reprocess-quarantine` CLI and DATA_MODEL.md update deferred.
-| 2026-04-26 | `2026-04-26-xetra-two-tier-storage.md` | Xetra Two-Tier Trade Storage | to-do | Stable 7-column MiFIR core contract + flexible extended metadata tier; insulates OHLCV from vendor schema changes.
-| 2026-05-01 | `2026-05-01-xetra-daemon-write-path-perf.md` | Xetra Daemon Write-Path Performance and Hygiene | to-do | Eliminate O(n²) intra-day rewrites in `save_xetra_trades` and monthly consolidation; fix `trade_time` post-migration regression; misc daemon hygiene.
-
-
-## How to use
-- If you agree with the suggested locations, I can (with your confirmation) move each ADR into the corresponding folder and update the `Status:` header inside the ADR and this index.
-- If you'd like a different classification policy (e.g., require a linked PR to mark implemented), tell me and I'll apply that filter.
-
+When an ADR changes state, move the file, update its `Status:` header, and update its row here.
