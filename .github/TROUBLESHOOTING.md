@@ -524,7 +524,7 @@ A service's `MemoryPeak` includes the page cache of the files it read and wrote,
 
 **Known causes:**
 
-1. **Xetra monthly consolidation at the start of a month.** The log shows `Month rolled over ... consolidating` on every cycle, and swap follows a sawtooth with the same period. Each run loads the whole previous month into memory. It stops by itself after two or three days. Tracked in [ADR 2026-10-03](../docs/adr/to-do/2026-10-03-daemon-resource-footprint.md), Step A.
+1. **Xetra monthly consolidation at the start of a month.** The log shows `Month rolled over ... consolidating` on every cycle, and swap follows a sawtooth with the same period. Each run loads the whole previous month into memory. It stops by itself after two or three days. Tracked in [ADR 2026-10-03](../docs/adr/in-progress/2026-10-03-daemon-resource-footprint.md), Step A.
 
 2. **Yahoo daemon rewriting every partition each cycle.** This shows as steady CPU and iowait rather than memory: the process stays around 250 MB. Tracked in the same ADR, Steps B to D.
 

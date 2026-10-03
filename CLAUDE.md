@@ -58,7 +58,7 @@ The daemon runs as a systemd service under user `yfparqed`. **Do not confuse the
 | `/var/log/yf_parqed/` | Service logs |
 | `/run/yf_parqed/` | PID files |
 
-**Host limits:** production runs on a small machine shared with other projects: 2 CPU cores, 3.7 GiB RAM, 3.7 GiB swap, one 7200 rpm hard disk. Code that loads a month of trades into memory, or rewrites many files per cycle, slows everything else on the host. See `docs/adr/to-do/2026-10-03-daemon-resource-footprint.md`.
+**Host limits:** production runs on a small machine shared with other projects: 2 CPU cores, 3.7 GiB RAM, 3.7 GiB swap, one 7200 rpm hard disk. Code that loads a month of trades into memory, or rewrites many files per cycle, slows everything else on the host. See `docs/adr/in-progress/2026-10-03-daemon-resource-footprint.md`.
 
 Production data path pattern:
 - Xetra trades: `/var/lib/yf_parqed/data/de/xetra/trades/venue=DETR/year=YYYY/month=MM/day=DD/trades.parquet`

@@ -1,8 +1,10 @@
 # ADR 2026-10-03: Daemon Resource Footprint (Memory, Disk I/O, Shutdown)
 
-## Status: To-Do
+## Status: In Progress
 
-**Deadline for Step A: before 2026-11-01**, when the Xetra problem described below next recurs.
+**Deadline for Step A: it must be deployed before 2026-11-01**, when the Xetra problem described below next recurs.
+
+**Picking this up in a new session?** Read "Work Plan and Handoff" below first. It says which batch is next, what is already done, and how to check a deploy.
 
 ## Context
 
@@ -59,16 +61,19 @@ Fix the three problems in the order below, then add memory limits as a safety ne
 
 ### 1. Make Xetra monthly consolidation idempotent and streaming
 
-- **Skip when current.** `_consolidate_to_monthly` returns early when the monthly file exists and is newer than every daily `trades.parquet` for that month. The existing triggers stay as they are; repeat calls become cheap no-ops.
+- **Skip when current.** The monthly file records a fingerprint of the daily files it was built from (their count, total size and newest modification time) in its Parquet metadata. `_consolidate_to_monthly` returns early when that fingerprint matches the daily files on disk. The existing triggers stay as they are; repeat calls cost a few `stat` calls and one footer read. Monthly files written before this change carry no fingerprint and are rebuilt once if their month is triggered again.
+- **An unreadable daily file aborts the run.** The previous code skipped such a day and wrote a monthly file that silently lacked it. Now the consolidation fails, the existing monthly file is left as it is, and the error is logged every cycle until the daily file is repaired (for example with `reprocess-raw-cache`).
 - **Stream one day at a time.** Replace the pandas read, concat and convert with a PyArrow `ParquetWriter` on the temp file: read one daily table, write it, release it, move to the next. Peak memory becomes one trading day (370,000 to 475,000 rows in the days examined) instead of a month. The temp file, fsync and rename stay.
 - **Unify schemas up front.** Read the schemas of the daily files (metadata only), unify them, and cast each daily table to the unified schema before writing, so a schema change within a month does not abort the write.
 - **Drop the dead sort.** Remove the `time` sort rather than repair it. A global sort needs the whole month in memory, which is the thing being removed. Monthly files are ordered by day, then by download order within the day. Consumers that need time order sort on `trading_date_time`.
 
 ### 2. Make the Yahoo cycle incremental
 
-- **Persist the registry.** In daemon mode, save `tickers.json` at the end of every cycle regardless of `--save-not-founds`, and also every N tickers during a cycle so that a crash loses minutes, not hours. The save must be atomic (temp file and rename).
-- **Write only the months the new data touches.** `PartitionedStorageBackend.save` writes only partitions whose month appears in `new_data`. Untouched months are left alone.
+The order matters. The first two changes cut the disk load without changing what is fetched, so the current "fetch 7 days every cycle" behaviour keeps protecting the data while they settle. The third is the only one that changes fetch behaviour, so it lands last and alone.
+
+- **Write only the months the new data touches.** `PartitionedStorageBackend.save` writes only partitions whose month appears in `new_data`. Untouched months are left alone. With a 7-day fetch that is one month per ticker, two around a month boundary, instead of all of them.
 - **Then read only those months.** Once writes are scoped, restrict the read to the same months, so a cycle no longer opens every partition of every ticker.
+- **Finally, persist the registry.** In daemon mode, save `tickers.json` at the end of every cycle regardless of `--save-not-founds`, and also every N tickers during a cycle so that a crash loses minutes, not hours. The save must be atomic (temp file and rename).
 
 ### 3. Make shutdown prompt and stop the nightly restart
 
@@ -78,28 +83,90 @@ Fix the three problems in the order below, then add memory limits as a safety ne
 
 ### 4. Add systemd memory limits
 
-Add `MemoryHigh`, `MemoryMax` and `MemorySwapMax` to both unit templates so that a future regression is contained to the service that caused it. `.github/ARCHITECTURE.md` already recommends this; the templates never got it. Choose the values from the peaks observed after Steps A to C are deployed.
+Add `MemoryHigh`, `MemoryMax` and `MemorySwapMax` to both unit templates so that a future regression is contained to the service that caused it. `.github/ARCHITECTURE.md` already recommends this; the templates never got it. Choose the values from the peaks observed after Batches 1 to 3 are deployed.
 
 ## Sequenced Steps
 
-- [ ] **Step A** — Xetra consolidation: skip-when-current guard, streaming `ParquetWriter`, schema unification, remove the dead `time` sort. Tests: a second call does not rewrite the file; a month with a changed daily file is re-consolidated; streamed output has the same rows as the daily inputs; mixed-schema days consolidate. **Must be deployed before 2026-11-01.**
-- [ ] **Step B** — Yahoo registry persistence: save at end of cycle and every N tickers in daemon mode, atomically. Review the fetch decision first (see Risk Controls). Tests: a second cycle sees `last_data_date`; a simulated kill mid-cycle keeps the last periodic save.
-- [ ] **Step C** — Yahoo scoped writes: write only touched months. Test: files of untouched months keep their modification time and content.
-- [ ] **Step D** — Yahoo scoped reads: read only the months needed for the merge.
+Steps are grouped into batches. A batch is one working session, one commit series and one deploy. Batches run in order, one at a time; see "Work Plan and Handoff" for why and for who does what.
+
+**Batch 1 — Xetra consolidation**
+
+- [ ] **Step A** — Skip-when-current fingerprint, streaming `ParquetWriter`, schema unification, abort on an unreadable daily file, remove the dead `time` sort. Tests: a second call does not rewrite the file; a month with a new daily file is re-consolidated; streamed output equals the daily inputs; mixed-schema days consolidate; an unreadable daily file leaves the existing monthly file untouched. **Must be deployed before 2026-11-01.**
+
+**Batch 2 — Shutdown and logrotate**
+
 - [ ] **Step E** — In-loop shutdown checks for both daemons. Tests: a flag set mid-cycle ends the cycle after the current item.
 - [ ] **Step F** — Diagnose and fix the Xetra exit hang.
 - [ ] **Step G** — Logrotate: `copytruncate`, no restart. Update `daemon-manage.sh`, `docs/daemon/INSTALLATION.md` and `docs/DAEMON_MODE.md`.
-- [ ] **Step H** — Memory limits in both unit templates (`daemon-manage.sh`, `docs/daemon/INSTALLATION.md`), with values taken from observed peaks. Only after Step A.
-- [ ] **Step I** — Update `.github/TROUBLESHOOTING.md`, `docs/release-notes.md` and this ADR's status.
+
+**Batch 3 — Yahoo disk load and registry** (two deploys: B and C together, then D alone)
+
+- [ ] **Step B** — Scoped writes: write only touched months. Tests: files of untouched months keep their modification time and content; rows merged into a touched month are complete and deduplicated.
+- [ ] **Step C** — Scoped reads: read only the months needed for the merge.
+- [ ] **Step D** — Registry persistence: save at end of cycle and every N tickers in daemon mode, atomically. Review the fetch decision first (see Risk Controls). Tests: a second cycle sees `last_data_date`; a simulated kill mid-cycle keeps the last periodic save. Deploy separately from B and C, and only after they have run cleanly for a few days.
+
+**Batch 4 — Memory limits**
+
+- [ ] **Step H** — Memory limits in both unit templates (`daemon-manage.sh`, `docs/daemon/INSTALLATION.md`), with values taken from observed peaks. Only after Batches 1 to 3 have been deployed and observed for about a week.
+
+**With every batch**
+
+- [ ] **Step I** — Keep `.github/TROUBLESHOOTING.md`, `docs/DAEMON_MODE.md`, `docs/release-notes.md` and this ADR in step with what was changed. When the last batch is done, move this ADR to `implemented/` and update the index.
 
 Run `uv run pytest` after each step; all tests must pass before moving on.
+
+## Work Plan and Handoff
+
+### How the work is split
+
+| Batch | Steps | Session | Model | Why |
+|---|---|---|---|---|
+| 1 | A | The session that wrote this ADR (2026-10-03) | Opus | Smallest scope, hard deadline, and the context was already loaded. |
+| 2 | E, F, G | New session | Opus for F; Sonnet is enough for E and G | F is an open diagnosis. E and G are mechanical and fully specified here. |
+| 3 | B, C, then D | New session | Opus | Storage and fetch logic where a mistake loses data permanently. |
+| 4 | H | Any, about a week after Batch 3 | Sonnet | A few lines in two templates; the work is choosing the values. |
+
+**Do not run batches in parallel.** Development happens on the production host (2 cores, 3.7 GiB RAM), so several agents running the test suite compete with the daemons. The shutdown work (E) also touches the same files as Steps A and D. And each batch changes production behaviour that should be watched before the next one lands.
+
+### Starting a session
+
+1. Read this ADR. The Context section holds the evidence; it cannot be regenerated, because `sar` keeps only about a week.
+2. Find the lowest batch with an unchecked step. Read the Progress Log below for anything the previous session left open.
+3. Read the Risk Controls that mention your steps before writing code.
+4. Work the steps in order. Tick each box when its tests pass. Add a dated line to the Progress Log when you stop, including anything unfinished or surprising.
+
+### Deploying
+
+The agent cannot deploy. Each batch ends with commits on `develop`; the owner then runs `sudo ./daemon-manage.sh update`, which pulls the code and restarts the services. Record the deploy date in the Progress Log.
+
+### Checking a deploy
+
+- **Batch 1.** The proof arrives at the next month change (2026-11-01 to 11-04). In `/var/log/yf_parqed/xetra-DETR.log*`, `Consolidated to monthly` should appear once for October, and `sar -S` should show swap staying near its baseline. Before that, the dev validation in the Progress Log is the evidence.
+- **Batch 2.** After the next midnight, `journalctl -u yf-parqed -u 'xetra@DETR' | grep -E 'timed out|SIGKILL'` should show nothing new, and neither service should have restarted at 00:00.
+- **Batch 3, after B and C.** Pick a ticker and list its partition files: only the current month's file should have a fresh modification time after a cycle. Cycle duration (from `Processing ... tickers` to `All tickers were processed.` in `journalctl -u yf-parqed`) should fall well below the 4h08m baseline.
+- **Batch 3, after D.** For a week, repeat the gap check below and compare with the baseline. Also confirm that `tickers.json` now carries `last_data_date` values and that the list of tickers going `permanently_dead` looks reasonable.
+
+### Baseline for the Yahoo gap check (measured 2026-10-03)
+
+Count 1-minute bars per trading day for a few liquid tickers by reading the `date` column of `/var/lib/yf_parqed/data/us/yahoo/stocks_1m/ticker=<T>/`.
+
+- AAPL, MSFT, NVDA, JPM, XOM and ZTS each had 214 trading days from 2025-11-25 to 2026-10-02 with a median of 390 bars per day (a full session).
+- No business day was missing except market holidays. Half-day sessions (2025-11-28, 2025-12-24) have 196 to 210 bars.
+- One known anomaly: 2026-01-06 has only 293 to 323 bars for all six. Cause unknown; it predates this work.
+- Thinly traded instruments (SPAC units and the like) legitimately have gaps of weeks. Use liquid tickers for the check.
+
+After Step D, any liquid ticker with a missing business day or a day well short of 390 bars is a regression. Yahoo serves only the last 7 days of 1-minute data, so act within that window: revert Step D and let the old fetch-everything behaviour refill the gap.
+
+### Progress Log
+
+- **2026-10-03** — Investigation done, ADR written, steps ordered into batches. Step A started in the same session.
 
 ## Risk Controls
 
 - **Daily files stay the record.** Consolidation never deletes or modifies daily files. Before deploying Step A, run the new consolidation in dev against a copy of a real month and compare row count and per-ISIN counts with the existing monthly file.
 - **Raw-cache cleanup is unchanged.** It still deletes raw files only when a readable daily or monthly Parquet exists.
-- **Step B activates a code path production has effectively never run.** Once `last_data_date` is saved, the fetch decision becomes `business_days_between(last_data_date, today) > 0`, which works in whole days. For 1-minute data on a 2-hour cycle this must be reviewed and covered by tests before deploying, so that saving the registry does not leave gaps. Yahoo serves only the last 7 days of 1-minute bars, so a ticker that goes unfetched for longer loses data permanently.
-- **Step B also lets the not-found cycle advance.** Tickers will start reaching `permanently_dead` for the first time in the daemon. Check the first week's registry changes against expectations before trusting the pruning that follows.
+- **Step D activates a code path production has effectively never run.** Once `last_data_date` is saved, the fetch decision becomes `business_days_between(last_data_date, today) > 0`, which works in whole days. For 1-minute data on a 2-hour cycle this must be reviewed and covered by tests before deploying, so that saving the registry does not leave gaps. Yahoo serves only the last 7 days of 1-minute bars, so a ticker that goes unfetched for longer loses data permanently.
+- **Step D also lets the not-found cycle advance.** Tickers will start reaching `permanently_dead` for the first time in the daemon. Check the first week's registry changes against expectations before trusting the pruning that follows.
 - **Scoped writes must not drop rows.** A test must show that rows merged into a touched month are complete and that deduplication within that month still works.
 - **Memory limits before Step A would do harm.** With the current code a limit makes the monthly consolidation fail every month. Step H depends on Step A.
 
