@@ -13,7 +13,7 @@ class XetraParser:
         "2025-legacy": {
             "messageId": "message_id",
             "sourceName": "source_name",
-            "isin": "isin",                              # sentinel
+            "isin": "isin",  # sentinel
             "instrumentId": "instrument_id",
             "transIdCode": "transaction_id",
             "tickId": "tick_id",
@@ -35,7 +35,7 @@ class XetraParser:
             "mmtAlgoInd": "algo_indicator",
         },
         "2026-mifid": {
-            "instrumentIdentificationCode": "isin",      # sentinel
+            "instrumentIdentificationCode": "isin",  # sentinel
             "transactionIdentificationCode": "transaction_id",
             "price": "price",
             "quantity": "quantity",
@@ -148,13 +148,17 @@ class XetraParser:
         Hard-required: raises ValueError if any are absent.
         Soft-required: adds null column with a WARNING if absent.
         """
-        missing_hard = [col for col in self.HARD_REQUIRED_FIELDS if col not in df.columns]
+        missing_hard = [
+            col for col in self.HARD_REQUIRED_FIELDS if col not in df.columns
+        ]
         if missing_hard:
             raise ValueError(
                 f"Missing hard-required fields in trade data: {', '.join(sorted(missing_hard))}"
             )
 
-        missing_soft = [col for col in self.SOFT_REQUIRED_FIELDS if col not in df.columns]
+        missing_soft = [
+            col for col in self.SOFT_REQUIRED_FIELDS if col not in df.columns
+        ]
         if missing_soft:
             logger.warning(
                 f"Soft-required fields missing, storing as null: {sorted(missing_soft)}"
@@ -179,13 +183,17 @@ class XetraParser:
                     df[col] = pd.to_numeric(df[col], errors="coerce").astype("Int64")
         return df
 
-    def _ensure_complete_schema(self, df: pd.DataFrame, field_mapping: dict) -> pd.DataFrame:
+    def _ensure_complete_schema(
+        self, df: pd.DataFrame, field_mapping: dict
+    ) -> pd.DataFrame:
         """
         Add any missing mapped columns as None; drop unmapped columns; reorder.
 
         Columns are ordered by field_mapping sequence with schema_version appended.
         """
-        expected = list(dict.fromkeys(list(field_mapping.values()) + ["schema_version"]))
+        expected = list(
+            dict.fromkeys(list(field_mapping.values()) + ["schema_version"])
+        )
 
         missing = [col for col in expected if col not in df.columns]
         if missing:
@@ -197,10 +205,11 @@ class XetraParser:
 
     def _create_empty_dataframe(self) -> pd.DataFrame:
         """Create an empty DataFrame with minimum schema for no-data files."""
-        columns = (
-            sorted(self.HARD_REQUIRED_FIELDS | self.SOFT_REQUIRED_FIELDS)
-            + ["distribution_time", "algo_indicator", "schema_version"]
-        )
+        columns = sorted(self.HARD_REQUIRED_FIELDS | self.SOFT_REQUIRED_FIELDS) + [
+            "distribution_time",
+            "algo_indicator",
+            "schema_version",
+        ]
         df = pd.DataFrame(columns=columns)
         for col, dtype in self.EXPECTED_DTYPES.items():
             if col in df.columns:

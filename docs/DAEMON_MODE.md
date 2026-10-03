@@ -99,8 +99,10 @@ yf-parqed update-data --daemon --pid-file /run/yf-parqed/yf-parqed.pid
 
 ### 4. Graceful Shutdown
 - **Signal handling**: Responds to SIGTERM and SIGINT (Ctrl+C)
-- **Clean exit**: Completes current ticker before shutting down
+- **Clean exit**: Finishes the current update cycle before shutting down
 - **Resource cleanup**: Releases locks, removes PID file
+
+> **Known limitation:** the shutdown request is checked between cycles, not between tickers. A cycle over the full ticker list takes hours, so a stop during a cycle runs into systemd's `TimeoutStopSec` and the process is killed. Writes are atomic, so no data is corrupted, but the next start has to clear a stale lock first. Per-ticker checking is planned in [ADR 2026-10-03](adr/in-progress/2026-10-03-daemon-resource-footprint.md), Step E.
 
 ```bash
 # Graceful shutdown
@@ -506,8 +508,10 @@ xetra-parqed --log-file logs/xetra.log fetch-trades DETR \
 
 ### 4. Graceful Shutdown
 - **Signal handling**: Responds to SIGTERM and SIGINT (Ctrl+C)
-- **Clean exit**: Completes current operation before shutting down
+- **Clean exit**: Finishes the current fetch cycle before shutting down; while waiting between cycles it reacts within 10 seconds
 - **Resource cleanup**: Closes HTTP connections, removes PID file
+
+> **Known limitation:** under systemd the process currently does not exit after logging `Daemon shutting down gracefully` and is killed at `TimeoutStopSec`. The cause is not yet known. A stop during a cycle also waits for the whole cycle. Both are tracked in [ADR 2026-10-03](adr/in-progress/2026-10-03-daemon-resource-footprint.md), Steps E and F.
 
 ```bash
 # Graceful shutdown

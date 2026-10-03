@@ -237,7 +237,7 @@ class TestUpdateLoopHarness:
     @pytest.mark.parametrize(
         "days_since, expected_invocations",
         [
-            (3, 0),   # still inside 7-workday cooling window
+            (3, 0),  # still inside 7-workday cooling window
             (14, 1),  # past 7 workdays (2 full weeks = 10 workdays)
             (20, 1),  # comfortably outside window
         ],

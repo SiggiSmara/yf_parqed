@@ -11,9 +11,10 @@ from yf_parqed import yfinance_cli as main
 
 class StubConfig:
     """Minimal config stub for CLI tests."""
+
     def load_storage_config(self):
         return {"partitioned": True, "markets": {}, "sources": {}}
-    
+
     def save_storage_config(self, config):
         pass
 
@@ -81,7 +82,7 @@ class StubYFParqed:
 
 @pytest.fixture
 def runner():
-    return CliRunner()
+    return CliRunner(env={"NO_COLOR": "1"})
 
 
 @pytest.fixture

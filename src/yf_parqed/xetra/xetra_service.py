@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import List, Optional
 from pathlib import Path
 import gc
+import json
 import os
 import time
 
@@ -68,7 +69,9 @@ class XetraService:
         else:
             self.backend = backend
 
-    def has_any_data(self, venue: str, market: str = "de", source: str = "xetra") -> bool:
+    def has_any_data(
+        self, venue: str, market: str = "de", source: str = "xetra"
+    ) -> bool:
         """
         Check if any data exists for the specified venue.
 
@@ -88,10 +91,10 @@ class XetraService:
             / "trades"
             / f"venue={venue}"
         )
-        
+
         if not venue_dir.exists():
             return False
-        
+
         # Check if any parquet files exist in the venue directory tree
         parquet_files = list(venue_dir.rglob("*.parquet"))
         return len(parquet_files) > 0
@@ -168,6 +171,9 @@ class XetraService:
         """
         Delete raw cache files older than max_age_days when a readable Parquet confirms the data.
 
+        Proof is a readable daily file for that day, or a monthly file that lists the day
+        in its metadata. A monthly file that does not list its days proves nothing.
+
         Returns dict with keys: deleted, kept_recent, kept_no_parquet, errors.
         """
         raw_dir = self.root_path / market / source / "raw" / venue
@@ -177,6 +183,7 @@ class XetraService:
         now = time.time()
         ttl = max_age_days * 86400
         deleted = kept_recent = kept_no_parquet = errors = 0
+        monthly_days: dict[Path, set] = {}
 
         # Remove orphaned .tmp files unconditionally
         for tmp_path in raw_dir.rglob("*.json.gz.tmp"):
@@ -200,7 +207,9 @@ class XetraService:
                 day_part = next((p for p in parts if p.startswith("day=")), None)
 
                 if not (year_part and month_part and day_part):
-                    logger.warning(f"Cannot parse date from raw cache path {cache_file}")
+                    logger.warning(
+                        f"Cannot parse date from raw cache path {cache_file}"
+                    )
                     kept_no_parquet += 1
                     continue
 
@@ -209,17 +218,35 @@ class XetraService:
                 day = day_part.split("=")[1]
 
                 daily_path = (
-                    self.root_path / market / source / "trades"
-                    / f"venue={venue}" / f"year={year}" / f"month={month}" / f"day={day}"
+                    self.root_path
+                    / market
+                    / source
+                    / "trades"
+                    / f"venue={venue}"
+                    / f"year={year}"
+                    / f"month={month}"
+                    / f"day={day}"
                     / "trades.parquet"
                 )
                 monthly_path = (
-                    self.root_path / market / source / "trades_monthly"
-                    / f"venue={venue}" / f"year={year}" / f"month={month}"
+                    self.root_path
+                    / market
+                    / source
+                    / "trades_monthly"
+                    / f"venue={venue}"
+                    / f"year={year}"
+                    / f"month={month}"
                     / "trades.parquet"
                 )
 
-                if self._is_parquet_readable(daily_path) or self._is_parquet_readable(monthly_path):
+                if monthly_path not in monthly_days:
+                    monthly_days[monthly_path] = self._monthly_days_included(
+                        monthly_path
+                    )
+                if (
+                    self._is_parquet_readable(daily_path)
+                    or int(day) in monthly_days[monthly_path]
+                ):
                     if not dry_run:
                         cache_file.unlink(missing_ok=True)
                     deleted += 1
@@ -228,7 +255,7 @@ class XetraService:
                     kept_no_parquet += 1
                     logger.warning(
                         f"Raw cache {cache_file.name} is >{max_age_days}d old "
-                        f"but no readable Parquet found — keeping"
+                        f"but no readable Parquet holds that day — keeping"
                     )
             except Exception as e:
                 logger.warning(f"Error processing raw cache file {cache_file}: {e}")
@@ -265,18 +292,30 @@ class XetraService:
         """
         trade_date = datetime.strptime(date_str, "%Y-%m-%d")
         cache_dir = (
-            self.root_path / market / source / "raw" / venue
-            / f"year={trade_date.year}" / f"month={trade_date.month:02d}"
+            self.root_path
+            / market
+            / source
+            / "raw"
+            / venue
+            / f"year={trade_date.year}"
+            / f"month={trade_date.month:02d}"
             / f"day={trade_date.day:02d}"
         )
         if not cache_dir.exists():
-            raise FileNotFoundError(f"No raw cache for {venue} {date_str} at {cache_dir}")
+            raise FileNotFoundError(
+                f"No raw cache for {venue} {date_str} at {cache_dir}"
+            )
 
         if not force:
             daily_path = (
-                self.root_path / market / source / "trades"
-                / f"venue={venue}" / f"year={trade_date.year}"
-                / f"month={trade_date.month:02d}" / f"day={trade_date.day:02d}"
+                self.root_path
+                / market
+                / source
+                / "trades"
+                / f"venue={venue}"
+                / f"year={trade_date.year}"
+                / f"month={trade_date.month:02d}"
+                / f"day={trade_date.day:02d}"
                 / "trades.parquet"
             )
             if self._is_parquet_readable(daily_path):
@@ -284,11 +323,18 @@ class XetraService:
                     f"Readable Parquet already exists for {venue} {date_str}; "
                     f"use force=True to reprocess anyway"
                 )
-                return {"processed": 0, "trades": 0, "skipped_unknown_schema": 0, "errors": 0}
+                return {
+                    "processed": 0,
+                    "trades": 0,
+                    "skipped_unknown_schema": 0,
+                    "errors": 0,
+                }
 
         raw_files = sorted(cache_dir.glob("*.json.gz"))
         if not raw_files:
-            raise FileNotFoundError(f"Raw cache directory exists but is empty: {cache_dir}")
+            raise FileNotFoundError(
+                f"Raw cache directory exists but is empty: {cache_dir}"
+            )
 
         processed = trades = skipped_unknown_schema = errors = 0
 
@@ -318,7 +364,9 @@ class XetraService:
         try:
             self._consolidate_daily_files(venue, date_str, market, source)
         except Exception as e:
-            logger.error(f"Failed to consolidate daily files for {venue} {date_str}: {e}")
+            logger.error(
+                f"Failed to consolidate daily files for {venue} {date_str}: {e}"
+            )
 
         return {
             "processed": processed,
@@ -624,7 +672,11 @@ class XetraService:
                 this_month = (trade_date.year, trade_date.month)
 
                 # H: consolidate previous month when month rolls over
-                if consolidate and last_processed_month is not None and this_month != last_processed_month:
+                if (
+                    consolidate
+                    and last_processed_month is not None
+                    and this_month != last_processed_month
+                ):
                     py, pm = last_processed_month
                     try:
                         logger.info(
@@ -636,7 +688,9 @@ class XetraService:
                         logger.error(f"Failed to consolidate {py}-{pm:02d}: {e}")
 
                 files_to_fetch = [
-                    f for f in files if not self._is_cached(venue, date_str, f, market, source)
+                    f
+                    for f in files
+                    if not self._is_cached(venue, date_str, f, market, source)
                 ]
 
                 if not files_to_fetch:
@@ -694,7 +748,9 @@ class XetraService:
                     try:
                         self._consolidate_daily_files(venue, date_str, market, source)
                     except Exception as e:
-                        logger.error(f"Failed to consolidate daily files for {date_str}: {e}")
+                        logger.error(
+                            f"Failed to consolidate daily files for {date_str}: {e}"
+                        )
 
                 elif date_files > 0:
                     dates_partial.append(date_str)
@@ -750,12 +806,17 @@ class XetraService:
         """
         Merge per-call mini-Parquets into a single daily trades.parquet.
 
-        If trades.parquet already exists (crash-during-cleanup scenario), the
-        mini-files are stale and are deleted without re-reading them.
+        The daily file records the staging time of the newest mini-file it contains.
+        If trades.parquet already exists, mini-files staged up to that time are stale
+        (crash-during-cleanup scenario) and are deleted without re-reading them; later
+        ones are new data and are merged into the daily file.
         """
         d = datetime.strptime(date_str, "%Y-%m-%d")
         daily_dir = (
-            self.root_path / market / source / "trades"
+            self.root_path
+            / market
+            / source
+            / "trades"
             / f"venue={venue}"
             / f"year={d.year}"
             / f"month={d.month:02d}"
@@ -770,11 +831,27 @@ class XetraService:
         if not mini_files:
             return
 
+        existing = None
         if final_path.exists():
-            for mini in mini_files:
+            try:
+                merged_through = self._merged_through_ns(final_path)
+            except Exception as e:
+                logger.error(
+                    f"Cannot read {final_path}; keeping {len(mini_files)} mini-files: {e}"
+                )
+                return
+            stale = [m for m in mini_files if self._mini_staged_ns(m) <= merged_through]
+            for mini in stale:
                 mini.unlink(missing_ok=True)
-            logger.debug(f"Cleaned {len(mini_files)} stale mini-files for {venue} {date_str}")
-            return
+            if stale:
+                logger.debug(
+                    f"Cleaned {len(stale)} stale mini-files for {venue} {date_str}"
+                )
+            mini_files = [m for m in mini_files if m not in stale]
+            if not mini_files:
+                return
+            with pq.ParquetFile(final_path) as final:
+                existing = final.read()
 
         tables = []
         for mini in mini_files:
@@ -786,11 +863,26 @@ class XetraService:
         if not tables:
             return
 
-        combined = pa.concat_tables(tables)
+        if existing is None:
+            combined = pa.concat_tables(tables)
+        else:
+            # Partition columns come back from a mini-file dictionary-encoded, but plain
+            # from the daily file
+            tables = [self._align_types(t, existing.schema) for t in tables]
+            combined = pa.concat_tables([existing, *tables], promote_options="default")
+        merged_through = max(self._mini_staged_ns(m) for m in mini_files)
+        combined = combined.replace_schema_metadata(
+            {
+                **(combined.schema.metadata or {}),
+                self._MERGED_THROUGH_KEY: str(merged_through).encode(),
+            }
+        )
         tmp_path = final_path.with_name("trades.parquet.tmp")
         tmp_path.unlink(missing_ok=True)
         try:
-            pq.write_table(combined, str(tmp_path), use_dictionary=False, compression="gzip")
+            pq.write_table(
+                combined, str(tmp_path), use_dictionary=False, compression="gzip"
+            )
             with open(tmp_path, "rb") as fd:
                 os.fsync(fd.fileno())
             tmp_path.replace(final_path)
@@ -801,9 +893,41 @@ class XetraService:
         for mini in mini_files:
             mini.unlink(missing_ok=True)
         logger.info(
-            f"Consolidated {len(mini_files)} mini-files → trades.parquet "
-            f"for {venue} {date_str} ({len(combined)} rows)"
+            f"{'Consolidated' if existing is None else 'Merged'} {len(mini_files)} "
+            f"mini-files → trades.parquet for {venue} {date_str} ({len(combined)} rows)"
         )
+
+    #: Parquet metadata key under which a daily file records the staging time of the
+    #: newest mini-file merged into it.
+    _MERGED_THROUGH_KEY = b"yf_parqed.merged_through_ns"
+
+    @staticmethod
+    def _mini_staged_ns(mini: Path) -> int:
+        """Staging time of a mini-file, from its name: trades-{pid}-{time_ns}.parquet."""
+        try:
+            return int(mini.stem.rsplit("-", 1)[1])
+        except (IndexError, ValueError):
+            return 0
+
+    @staticmethod
+    def _align_types(table: pa.Table, schema: pa.Schema) -> pa.Table:
+        """Cast columns to the types the schema has for them; other columns are kept."""
+        for i, field in enumerate(table.schema):
+            if field.name in schema.names:
+                target = schema.field(field.name)
+                if field.type != target.type:
+                    table = table.set_column(
+                        i, target, table.column(i).cast(target.type)
+                    )
+        return table
+
+    def _merged_through_ns(self, final_path: Path) -> int:
+        """Staging time up to which mini-files are already contained in a daily file."""
+        metadata = pq.read_schema(final_path).metadata or {}
+        if self._MERGED_THROUGH_KEY in metadata:
+            return int(metadata[self._MERGED_THROUGH_KEY])
+        # Written before the watermark existed: it holds everything staged before its write
+        return final_path.stat().st_mtime_ns
 
     def _consolidate_to_monthly(
         self,
@@ -816,9 +940,18 @@ class XetraService:
         """
         Consolidate all daily parquet files for a month into a single optimized monthly file.
 
-        Reads all date-partitioned files for the month, combines them, and writes to
-        a single monthly parquet file with optimal compression. Daily files are kept
+        Streams the date-partitioned files into the monthly file one day at a time, so
+        memory stays proportional to a single trading day. Daily files are kept
         as a safety backup (can be manually deleted after verification).
+
+        Safe to call repeatedly: the monthly file records a fingerprint of the daily
+        files it was built from, and the call returns early while that still matches.
+        Rows are ordered by day, then by download order within the day (no global sort).
+
+        Days that still have unmerged mini-files are merged into their daily file first.
+        An unreadable daily file is left out and logged; the monthly file lists the days
+        it contains in its metadata, which raw-cache cleanup relies on. An existing
+        monthly file is never replaced by one with fewer trades.
 
         Path strategy:
         - Daily files: {root}/{market}/{source}/trades/venue=X/year=Y/month=M/day=D/trades.parquet
@@ -846,41 +979,23 @@ class XetraService:
             logger.warning(f"No data found for {venue} {year}-{month_str}")
             return
 
+        # Days whose mini-files were never merged would otherwise be left out unnoticed
+        for day_dir in sorted(daily_root.glob("day=*")):
+            if any(day_dir.glob("trades-*.parquet")):
+                date_str = f"{year}-{month_str}-{day_dir.name.split('=')[1]}"
+                try:
+                    self._consolidate_daily_files(venue, date_str, market, source)
+                except Exception as e:
+                    logger.error(
+                        f"Failed to merge mini-files for {venue} {date_str}: {e}"
+                    )
+
         # Collect all daily parquet files
         daily_files = sorted(daily_root.rglob("trades.parquet"))
         if not daily_files:
             logger.warning(f"No daily files found for {venue} {year}-{month_str}")
             return
 
-        logger.info(
-            f"Consolidating {len(daily_files)} daily files for {venue} {year}-{month_str}"
-        )
-
-        # Read and combine all daily files
-        daily_dfs = []
-        total_trades = 0
-        for daily_file in daily_files:
-            try:
-                df = pd.read_parquet(daily_file)
-                daily_dfs.append(df)
-                total_trades += len(df)
-                logger.debug(f"Read {len(df):,} trades from {daily_file.name}")
-            except Exception as e:
-                logger.error(f"Failed to read {daily_file}: {e}")
-                continue
-
-        if not daily_dfs:
-            logger.error(f"No data could be read for {venue} {year}-{month_str}")
-            return
-
-        # Combine all monthly data
-        monthly_df = pd.concat(daily_dfs, ignore_index=True)
-
-        # Sort by timestamp for optimal query performance
-        if "time" in monthly_df.columns:
-            monthly_df = monthly_df.sort_values("time")
-
-        # Write to monthly consolidated file
         monthly_root = (
             self.backend._path_builder._root
             / market
@@ -890,33 +1005,172 @@ class XetraService:
             / f"year={year}"
             / f"month={month_str}"
         )
-        monthly_root.mkdir(parents=True, exist_ok=True)
         monthly_file = monthly_root / "trades.parquet"
+
+        # Taken before reading, so a daily file that changes mid-run forces a redo next call
+        fingerprint = self._daily_fingerprint(daily_files)
+        if self._monthly_is_current(monthly_file, fingerprint):
+            logger.debug(
+                f"Monthly file already current for {venue} {year}-{month_str}, skipping"
+            )
+            return
+
+        logger.info(
+            f"Consolidating {len(daily_files)} daily files for {venue} {year}-{month_str}"
+        )
+
+        # Footers only: schemas and row counts, and which daily files can be read at all
+        schemas = []
+        readable = []
+        skipped = []
+        expected_trades = 0
+        for daily_file in daily_files:
+            try:
+                with pq.ParquetFile(daily_file) as daily:
+                    schemas.append(daily.schema_arrow)
+                    expected_trades += daily.metadata.num_rows
+                readable.append(daily_file)
+            except Exception as e:
+                logger.error(f"Leaving unreadable daily file out: {daily_file}: {e}")
+                skipped.append(daily_file)
+
+        if not readable:
+            logger.error(f"No data could be read for {venue} {year}-{month_str}")
+            return
+
+        existing_trades = 0
+        if monthly_file.exists():
+            try:
+                existing_trades = pq.read_metadata(monthly_file).num_rows
+            except Exception as e:
+                logger.warning(f"Could not read {monthly_file}, will rebuild it: {e}")
+
+        def would_shrink(trades: int) -> bool:
+            if trades >= existing_trades:
+                return False
+            logger.error(
+                f"Not rebuilding monthly file for {venue} {year}-{month_str}: the "
+                f"readable daily files hold {trades:,} trades but the existing monthly "
+                f"file holds {existing_trades:,}. Remove {monthly_file} to force a rebuild."
+            )
+            return True
+
+        if would_shrink(expected_trades):
+            return
+
+        # Days that differ in schema are cast to the union of their schemas
+        schema = pa.unify_schemas(schemas, promote_options="permissive")
+        schema = schema.with_metadata(
+            {
+                k: v
+                for k, v in (schema.metadata or {}).items()
+                if k != self._MERGED_THROUGH_KEY
+            }
+        )
+
+        monthly_root.mkdir(parents=True, exist_ok=True)
 
         # Use same atomic write pattern as backend
         temp_file = monthly_file.with_suffix(".tmp")
+        total_trades = 0
+        isins: set = set()
+        days_included = []
         try:
-            table = pa.Table.from_pandas(monthly_df)
-            pq.write_table(
-                table,
-                str(temp_file),
-                compression="gzip",
-                row_group_size=100000,
-            )
+            # One day in memory at a time: a whole month does not fit in RAM in production
+            with pq.ParquetWriter(str(temp_file), schema, compression="gzip") as writer:
+                for daily_file in readable:
+                    try:
+                        with pq.ParquetFile(daily_file) as daily:
+                            table = self._conform_table(daily.read(), schema)
+                    except Exception as e:
+                        logger.error(
+                            f"Leaving unreadable daily file out: {daily_file}: {e}"
+                        )
+                        skipped.append(daily_file)
+                        continue
+                    writer.write_table(table, row_group_size=100000)
+                    total_trades += len(table)
+                    days_included.append(int(daily_file.parent.name.split("=")[1]))
+                    if "isin" in table.column_names:
+                        isins.update(table["isin"].unique().to_pylist())
+                    logger.debug(f"Wrote {len(table):,} trades from {daily_file}")
+                    del table
+                writer.add_key_value_metadata(
+                    {
+                        self._DAILY_FINGERPRINT_KEY: fingerprint,
+                        self._DAYS_INCLUDED_KEY: json.dumps(days_included).encode(),
+                    }
+                )
+            if would_shrink(total_trades):
+                temp_file.unlink(missing_ok=True)
+                return
             with open(temp_file, "rb") as fd:
                 os.fsync(fd.fileno())
             temp_file.replace(monthly_file)
 
+            isins.discard(None)
             logger.info(
                 f"✓ Consolidated to monthly: {monthly_file.name} "
-                f"({total_trades:,} trades, "
-                f"{monthly_df['isin'].nunique() if 'isin' in monthly_df.columns else 0} unique ISINs)"
+                f"({total_trades:,} trades, {len(isins)} unique ISINs)"
             )
+            if skipped:
+                logger.error(
+                    f"Monthly file for {venue} {year}-{month_str} lacks "
+                    f"{len(skipped)} unreadable day(s): "
+                    f"{[f.parent.name for f in skipped]}. It is rebuilt automatically "
+                    f"once they are repaired."
+                )
         except Exception as e:
             logger.error(f"Failed to write monthly file: {e}")
-            if temp_file.exists():
-                temp_file.unlink()
+            temp_file.unlink(missing_ok=True)
             raise
+
+    #: Parquet metadata key under which a monthly file records its daily inputs.
+    _DAILY_FINGERPRINT_KEY = b"yf_parqed.daily_fingerprint"
+    #: Parquet metadata key under which a monthly file lists the days it contains.
+    _DAYS_INCLUDED_KEY = b"yf_parqed.days_included"
+
+    @staticmethod
+    def _daily_fingerprint(daily_files: List[Path]) -> bytes:
+        """Describe a set of daily files well enough to notice any being added or rewritten."""
+        stats = [daily_file.stat() for daily_file in daily_files]
+        return json.dumps(
+            {
+                "files": len(stats),
+                "bytes": sum(s.st_size for s in stats),
+                "max_mtime_ns": max(s.st_mtime_ns for s in stats),
+            },
+            sort_keys=True,
+        ).encode()
+
+    def _monthly_is_current(self, monthly_file: Path, fingerprint: bytes) -> bool:
+        """True if the monthly file was built from exactly the daily files on disk now."""
+        if not monthly_file.exists():
+            return False
+        try:
+            metadata = pq.read_metadata(monthly_file).metadata or {}
+        except Exception as e:
+            logger.warning(f"Could not read {monthly_file}, will rebuild it: {e}")
+            return False
+        return metadata.get(self._DAILY_FINGERPRINT_KEY) == fingerprint
+
+    def _monthly_days_included(self, monthly_file: Path) -> set:
+        """Days a monthly file is known to contain; empty if it does not say or is unreadable."""
+        try:
+            metadata = pq.read_metadata(monthly_file).metadata or {}
+            return set(json.loads(metadata[self._DAYS_INCLUDED_KEY]))
+        except Exception:
+            return set()
+
+    @staticmethod
+    def _conform_table(table: pa.Table, schema: pa.Schema) -> pa.Table:
+        """Fill columns the table lacks with nulls, then order and cast it to the schema."""
+        for field in schema:
+            if field.name not in table.column_names:
+                table = table.append_column(
+                    field, pa.nulls(len(table), type=field.type)
+                )
+        return table.select(schema.names).cast(schema)
 
     def check_partial_downloads(
         self, venue: str, market: str = "de", source: str = "xetra"
@@ -1129,9 +1383,16 @@ class XetraService:
             logger.warning("No trades to store (empty DataFrame)")
             return
 
-        d = trade_date if isinstance(trade_date, datetime) else datetime.strptime(str(trade_date), "%Y-%m-%d")
+        d = (
+            trade_date
+            if isinstance(trade_date, datetime)
+            else datetime.strptime(str(trade_date), "%Y-%m-%d")
+        )
         daily_dir = (
-            self.root_path / market / source / "trades"
+            self.root_path
+            / market
+            / source
+            / "trades"
             / f"venue={venue}"
             / f"year={d.year}"
             / f"month={d.month:02d}"
@@ -1144,7 +1405,9 @@ class XetraService:
         tmp_path = mini_path.with_suffix(".tmp")
         try:
             table = pa.Table.from_pandas(df, preserve_index=False)
-            pq.write_table(table, str(tmp_path), use_dictionary=False, compression="gzip")
+            pq.write_table(
+                table, str(tmp_path), use_dictionary=False, compression="gzip"
+            )
             with open(tmp_path, "rb") as fd:
                 os.fsync(fd.fileno())
             tmp_path.replace(mini_path)
@@ -1171,7 +1434,14 @@ class XetraService:
     def _migration_sentinel_path(
         self, venue: str, market: str = "de", source: str = "xetra"
     ) -> Path:
-        return self.root_path / market / source / "trades" / f"venue={venue}" / ".migration_complete"
+        return (
+            self.root_path
+            / market
+            / source
+            / "trades"
+            / f"venue={venue}"
+            / ".migration_complete"
+        )
 
     def find_unmigrated_files(
         self,
@@ -1213,7 +1483,9 @@ class XetraService:
             if not sentinel.exists():
                 sentinel.parent.mkdir(parents=True, exist_ok=True)
                 sentinel.touch()
-                logger.info(f"All files migrated for {venue} — wrote sentinel {sentinel}")
+                logger.info(
+                    f"All files migrated for {venue} — wrote sentinel {sentinel}"
+                )
 
         return unmigrated
 

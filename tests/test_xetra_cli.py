@@ -6,9 +6,11 @@ from unittest.mock import patch
 
 from typer.testing import CliRunner
 
+from tests.conftest import strip_ansi
+
 from yf_parqed.xetra_cli import app
 
-runner = CliRunner()
+runner = CliRunner(env={"NO_COLOR": "1"})
 
 
 def test_fetch_trades_uses_wrk_dir(tmp_path):
@@ -49,10 +51,13 @@ def test_fetch_trades_uses_wrk_dir(tmp_path):
                 "consolidated": False,
             }
 
-    with patch("yf_parqed.xetra_cli.ConfigService", ConfigStub), patch(
-        "yf_parqed.xetra_cli.XetraService", ServiceStub
+    with (
+        patch("yf_parqed.xetra_cli.ConfigService", ConfigStub),
+        patch("yf_parqed.xetra_cli.XetraService", ServiceStub),
     ):
-        result = runner.invoke(app, ["--wrk-dir", str(tmp_path), "fetch-trades", "DETR"])
+        result = runner.invoke(
+            app, ["--wrk-dir", str(tmp_path), "fetch-trades", "DETR"]
+        )
 
     assert result.exit_code == 0
     # preflight check + run_fetch_once each create a ConfigService with wrk_dir
@@ -66,10 +71,11 @@ def test_fetch_trades_help():
     """Verify fetch-trades --help works."""
     result = runner.invoke(app, ["fetch-trades", "--help"])
     assert result.exit_code == 0
-    assert "venue" in result.output.lower()
-    assert "xetra" in result.output.lower()  # Should show venue descriptions
+    clean = strip_ansi(result.output)
+    assert "venue" in clean.lower()
+    assert "xetra" in clean.lower()  # Should show venue descriptions
     # Should NOT have --date anymore
-    assert "--date" not in result.output
+    assert "--date" not in clean
 
 
 @patch(
@@ -172,6 +178,7 @@ def test_fetch_trades_with_skipped_dates(mock_fetch_incremental):
 def test_check_status_command(mock_list_files):
     """Test check-status command."""
     from datetime import datetime
+
     today = datetime.now()
     mock_list_files.return_value = [
         f"DETR-posttrade-{today.strftime('%Y-%m-%d')}T10_00.json.gz",
@@ -217,9 +224,10 @@ def test_list_files_help():
     """Verify list-files --help works."""
     result = runner.invoke(app, ["list-files", "--help"])
     assert result.exit_code == 0
-    assert "venue" in result.output.lower()
-    assert "date" in result.output.lower()
-    assert "xetra" in result.output.lower()  # Should show venue descriptions
+    clean = strip_ansi(result.output)
+    assert "venue" in clean.lower()
+    assert "date" in clean.lower()
+    assert "xetra" in clean.lower()  # Should show venue descriptions
 
 
 @patch("yf_parqed.xetra.xetra_service.XetraService.list_files")

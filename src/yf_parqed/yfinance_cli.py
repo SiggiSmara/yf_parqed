@@ -164,7 +164,7 @@ def main(
             yf_parqed = YFParqed(my_path=wrk_dir, my_intervals=["1d"])
     else:
         yf_parqed.set_working_path(wrk_dir)
-    
+
     if limits is not None and limits != (3, 2):
         yf_parqed.set_limiter(max_requests=limits[0], duration=limits[1])
 
@@ -178,7 +178,7 @@ def initialize():
     yf_parqed.save_intervals(["1m"])
     yf_parqed.update_current_list_of_stocks()
     yf_parqed.save_tickers()
-    
+
     # Ensure storage_config.json exists with partitioned storage enabled
     storage_config = yf_parqed.config.load_storage_config()
     yf_parqed.config.save_storage_config(storage_config)
@@ -610,7 +610,9 @@ def add_ticker(
 
 @app.command("remove-ticker")
 def remove_ticker(
-    ticker: Annotated[str, typer.Argument(help="Ticker symbol to permanently deactivate")],
+    ticker: Annotated[
+        str, typer.Argument(help="Ticker symbol to permanently deactivate")
+    ],
 ):
     """Permanently deactivate a ticker. Not reactivated by CSV updates."""
     global yf_parqed

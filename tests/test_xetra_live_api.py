@@ -206,7 +206,13 @@ class TestXetraLiveAPI:
                 )
 
             # Check required columns exist
-            required_cols = ["isin", "price", "quantity", "price_currency", "trading_date_time"]
+            required_cols = [
+                "isin",
+                "price",
+                "quantity",
+                "price_currency",
+                "trading_date_time",
+            ]
             for col in required_cols:
                 assert col in df.columns, f"Missing column: {col}"
 

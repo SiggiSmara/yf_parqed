@@ -23,8 +23,11 @@ def _seconds_until_isin_next_run() -> int:
     """Seconds until next 00:05 CET (anchored, not fixed-interval)."""
     now = datetime.now(_BERLIN)
     tomorrow = (now + timedelta(days=1)).date()
-    next_run = datetime.combine(tomorrow, _ISIN_DAEMON_TARGET_TIME).replace(tzinfo=_BERLIN)
+    next_run = datetime.combine(tomorrow, _ISIN_DAEMON_TARGET_TIME).replace(
+        tzinfo=_BERLIN
+    )
     return max(60, int((next_run - now).total_seconds()))
+
 
 app = typer.Typer()
 
@@ -733,13 +736,20 @@ def consolidate_month(
 def update_isin_mapping(
     ctx: typer.Context,
     force: Annotated[
-        bool, typer.Option("--force", help="Force update even if cache is less than 24 hours old")
+        bool,
+        typer.Option(
+            "--force", help="Force update even if cache is less than 24 hours old"
+        ),
     ] = False,
     dry_run: Annotated[
-        bool, typer.Option("--dry-run", help="Show what would be written without saving")
+        bool,
+        typer.Option("--dry-run", help="Show what would be written without saving"),
     ] = False,
     daemon: Annotated[
-        bool, typer.Option("--daemon", help="Run continuously, updating at 00:05 CET each day")
+        bool,
+        typer.Option(
+            "--daemon", help="Run continuously, updating at 00:05 CET each day"
+        ),
     ] = False,
     pid_file: Annotated[
         Path | None,
@@ -801,9 +811,7 @@ def update_isin_mapping(
 
     def _run_once() -> None:
         if not force and not daemon and cache_path.exists():
-            age_hours = (
-                datetime.now().timestamp() - cache_path.stat().st_mtime
-            ) / 3600
+            age_hours = (datetime.now().timestamp() - cache_path.stat().st_mtime) / 3600
             if age_hours < 24:
                 logger.info(
                     f"Cache is fresh ({age_hours:.1f}h old); skipping. Use --force to override."
@@ -820,7 +828,9 @@ def update_isin_mapping(
                 logger.info(f"CSV URL: {csv_url}")
                 new_data = updater.download_and_parse(csv_url)
                 merged = updater.merge_with_cache(new_data, cache_path)
-                typer.echo(f"[dry-run] Would write {len(merged)} entries to {cache_path}")
+                typer.echo(
+                    f"[dry-run] Would write {len(merged)} entries to {cache_path}"
+                )
             else:
                 updater.run(cache_path)
                 typer.echo(f"ISIN mapping updated → {cache_path}")
@@ -836,7 +846,9 @@ def update_isin_mapping(
                     with ISINMappingUpdater() as updater:
                         updater.run(cache_path)
                 except Exception as e:
-                    logger.error(f"ISIN mapping run #{run_count} failed: {e}", exc_info=True)
+                    logger.error(
+                        f"ISIN mapping run #{run_count} failed: {e}", exc_info=True
+                    )
 
                 if shutdown_requested["flag"]:
                     break
@@ -862,8 +874,13 @@ def update_isin_mapping(
 def cleanup_raw_cache(
     ctx: typer.Context,
     venue: Annotated[str, typer.Argument(help="Venue code (e.g. DETR)")],
-    max_age_days: Annotated[int, typer.Option(help="Delete files older than this many days")] = 7,
-    dry_run: Annotated[bool, typer.Option("--dry-run", help="Show what would be deleted without deleting")] = False,
+    max_age_days: Annotated[
+        int, typer.Option(help="Delete files older than this many days")
+    ] = 7,
+    dry_run: Annotated[
+        bool,
+        typer.Option("--dry-run", help="Show what would be deleted without deleting"),
+    ] = False,
     market: Annotated[str, typer.Option(help="Market code")] = "de",
     source: Annotated[str, typer.Option(help="Source code")] = "xetra",
 ):
@@ -885,7 +902,11 @@ def cleanup_raw_cache(
 
     with XetraService(root_path=root_path) as service:
         result = service.cleanup_raw_cache(
-            venue, max_age_days=max_age_days, market=market, source=source, dry_run=dry_run
+            venue,
+            max_age_days=max_age_days,
+            market=market,
+            source=source,
+            dry_run=dry_run,
         )
 
     prefix = "[DRY RUN] " if dry_run else ""
@@ -901,7 +922,10 @@ def reprocess_raw_cache(
     ctx: typer.Context,
     venue: Annotated[str, typer.Argument(help="Venue code (e.g. DETR)")],
     date: Annotated[str, typer.Argument(help="Trade date (YYYY-MM-DD)")],
-    force: Annotated[bool, typer.Option("--force", help="Reprocess even if a readable Parquet exists")] = False,
+    force: Annotated[
+        bool,
+        typer.Option("--force", help="Reprocess even if a readable Parquet exists"),
+    ] = False,
     market: Annotated[str, typer.Option(help="Market code")] = "de",
     source: Annotated[str, typer.Option(help="Source code")] = "xetra",
 ):
@@ -931,14 +955,18 @@ def reprocess_raw_cache(
             raise typer.Exit(1)
 
     if result["processed"] == 0 and result["errors"] == 0:
-        typer.echo(f"✓ Parquet already exists for {venue} {date} — use --force to reprocess")
+        typer.echo(
+            f"✓ Parquet already exists for {venue} {date} — use --force to reprocess"
+        )
     else:
         typer.echo(
             f"✓ Reprocessed {venue} {date}: "
             f"{result['processed']} files, {result['trades']} trades"
         )
         if result["skipped_unknown_schema"]:
-            typer.echo(f"  ⚠ {result['skipped_unknown_schema']} file(s) had unknown schema — check logs")
+            typer.echo(
+                f"  ⚠ {result['skipped_unknown_schema']} file(s) had unknown schema — check logs"
+            )
         if result["errors"]:
             typer.echo(f"  ✗ {result['errors']} error(s) — check logs", err=True)
 
@@ -949,7 +977,9 @@ def migrate_legacy_columns(
     venue: Annotated[str, typer.Argument(help="Venue code (e.g. DETR)")],
     dry_run: Annotated[
         bool,
-        typer.Option("--dry-run", help="Show what would be migrated without writing anything"),
+        typer.Option(
+            "--dry-run", help="Show what would be migrated without writing anything"
+        ),
     ] = False,
     market: Annotated[str, typer.Option(help="Market code")] = "de",
     source: Annotated[str, typer.Option(help="Source code")] = "xetra",
@@ -989,7 +1019,9 @@ def migrate_legacy_columns(
     if not dry_run:
         typer.echo("")
         with XetraService(root_path=root_path) as service:
-            summary = service.migrate_legacy_columns(venue, market, source, dry_run=False)
+            summary = service.migrate_legacy_columns(
+                venue, market, source, dry_run=False
+            )
 
         if summary["failed"]:
             typer.echo(

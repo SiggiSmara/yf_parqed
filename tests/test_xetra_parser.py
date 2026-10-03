@@ -244,7 +244,9 @@ class TestXetraParser:
         with pytest.raises(XetraSchemaUnknownError) as exc_info:
             parser.parse(unknown)
 
-        assert "unknownField" in str(exc_info.value) or "anotherField" in str(exc_info.value)
+        assert "unknownField" in str(exc_info.value) or "anotherField" in str(
+            exc_info.value
+        )
 
     def test_unknown_schema_error_contains_actual_fields(self, parser):
         unknown = json.dumps({"futureField": "x", "anotherFuture": 1})
@@ -284,7 +286,9 @@ class TestXetraParser:
         assert "execution_venue" in df.columns
         assert pd.isna(df.loc[0, "execution_venue"])
 
-    def test_soft_required_transaction_id_missing_stores_null(self, parser, legacy_trade):
+    def test_soft_required_transaction_id_missing_stores_null(
+        self, parser, legacy_trade
+    ):
         del legacy_trade["transIdCode"]
         df = parser.parse(json.dumps(legacy_trade))
 
@@ -394,7 +398,9 @@ class TestXetraParser:
         for version, mapping in XetraParser.SCHEMAS.items():
             mapped_cols = set(mapping.values())
             missing = hard - mapped_cols
-            assert not missing, f"Schema '{version}' missing hard-required columns: {missing}"
+            assert not missing, (
+                f"Schema '{version}' missing hard-required columns: {missing}"
+            )
 
     def test_legacy_schema_contains_expected_fields(self):
         mapping = XetraParser.SCHEMAS["2025-legacy"]

@@ -1,0 +1,293 @@
+# ADR 2026-10-03: Daemon Resource Footprint (Memory, Disk I/O, Shutdown)
+
+## Status: In Progress
+
+**Deadline for Step A: it must be deployed before 2026-11-01**, when the Xetra problem described below next recurs.
+
+**Picking this up in a new session?** Read "Work Plan and Handoff" below first. It says which batch is next, what is already done, and how to check a deploy.
+
+## Context
+
+Both daemons run on one small machine that other projects share: 2 CPU cores, 3.7 GiB RAM, a 3.7 GiB swap file and a single 7200 rpm hard disk. On 2026-10-01 and 2026-10-02 another project on that machine reported that memory kept running out and swap was heavily used. An investigation on 2026-10-03 confirmed it and found three separate problems. None of them lost data.
+
+### 1. Xetra: the monthly consolidation repeats every cycle and does not fit in RAM
+
+System history (`sar`, 10-minute samples) for the days around the month change:
+
+| Day | Peak swap used | Lowest available RAM | Average iowait |
+|---|---|---|---|
+| Sep 25–28 | 1% (~34 MB) | ~2.9 GiB | 8% |
+| Oct 1 | 81% | 21 MB | 24% |
+| Oct 2 | 95% | 59 MB | 41% |
+| Oct 3 | 18% (leftover, no swap traffic) | 2.2 GiB | 12% |
+
+The Xetra log shows `Month rolled over 2026-09 → 2026-10, consolidating` on every fetch cycle: 18 times on Oct 1 and 13 times on Oct 2. Every run read the same 22 daily files (8,140,348 trades) and rewrote the same 244 MB monthly file. A run took between 6 and 70 minutes, depending on how hard the machine was swapping. The lifetime peaks systemd recorded for `system-xetra.slice` are 3.66 GB of RAM and 3.14 GB of swap, which is the whole machine.
+
+Two things in `XetraService` combine to cause this:
+
+- **The trigger has no memory.** `get_missing_dates` returns every date the API currently lists (a rolling window of about three trading days), not only dates that are missing locally. `fetch_and_store_missing_trades_incremental` calls `_consolidate_to_monthly` whenever two consecutive dates in that list fall in different months, and again after the loop when the last date belongs to a past month. Neither call checks whether the monthly file is already up to date. So for as long as the API window touches the previous month, every cycle consolidates it again.
+- **The consolidation holds the whole month in memory several times.** `_consolidate_to_monthly` reads each daily file into a pandas DataFrame, concatenates them, and converts the result to an Arrow table. That is about three copies of 8 million rows with 11 string columns.
+
+This is a gap in [ADR 2026-05-01: Xetra Daemon Write-Path Performance and Hygiene](../implemented/2026-05-01-xetra-daemon-write-path-perf.md). Its Step H moved consolidation from "after every date" to "when the month changes between dates", and its Step I deliberately left `get_missing_dates` returning every available date. Neither step made consolidation idempotent or bounded its memory.
+
+The modification times of the monthly files (Jun 3, Jul 3, Aug 3, Sep 2, Oct 2) show the same thing has happened at the start of every month since May. It stops by itself once the API window contains only the new month.
+
+One smaller defect in the same function: it sorts by a column named `time`, which no longer exists (the column is `trading_date_time` since the May 2026 migration). The sort has silently not run since then, so monthly files are ordered by day and, within a day, by download order.
+
+### 2. Yahoo: every cycle refetches and rewrites everything
+
+The Yahoo daemon is not a memory problem (about 250 MB resident, nothing in swap). It is the constant load: 5 to 6 CPU-hours per day and, while a cycle runs, 20–35% I/O pressure on the shared disk.
+
+- **The ticker registry is never saved by the daemon.** `run_update_once` saves `tickers.json` only when the `--save-not-founds` flag is set, and the systemd unit does not set it. Every cycle ends with `Tickers file was not updated.` The scheduler reloads the registry from disk at the start of each cycle, so everything a cycle learned is discarded. On disk, 5 of 9,276 tickers have any interval metadata.
+- **So every ticker looks new every cycle.** With no `last_data_date`, `save_single_stock_data` takes the `load_all` path: it fetches the full 7 days of 1-minute bars for every ticker on every cycle, including weekends.
+- **And every partition is rewritten.** `PartitionedStorageBackend.read` loads every monthly partition of the ticker, and `_write_partitions` writes every month back with an fsync, not only the month the new data belongs to. On Saturday 2026-10-03 all 12 of AAPL's monthly files were rewritten at 06:31.
+- **Scale:** 93,472 partition files (4.8 GiB) are read and rewritten per cycle. A cycle takes 4h08m, sleeps 2h, and starts again.
+
+A side effect: the not-found bookkeeping (streak, cooling-off, `permanently_dead`) lives in the same unsaved registry, so it cannot advance in the daemon. One cycle on Oct 3 logged 1,758 "possibly delisted" responses from tickers that are asked again every cycle.
+
+### 3. Both daemons are SIGKILLed every night
+
+Logrotate's `postrotate` runs `systemctl reload-or-restart yf-parqed 'xetra@*'` at 00:00 each day. Neither unit has a reload action, so both are restarted.
+
+- **Yahoo:** the SIGTERM handler sets a flag that the loop checks only between cycles. A cycle lasts about four hours, `TimeoutStopSec` is 60 seconds, so systemd kills the process (seen Oct 2 and Oct 3; on Oct 1 it happened to be between cycles and stopped cleanly). The next start finds a stale run lock and scans for leftover temp files before working; on Oct 3 that scan took 13 minutes.
+- **Xetra:** when idle it notices the signal within 10 seconds and logs `Daemon shutting down gracefully`, but the process then does not exit and is killed at `TimeoutStopSec=30` (seen Oct 1 and Oct 3). `PID file removed` is never logged. **The cause of this hang has not been identified.** When a cycle is running, the flag is not checked until the cycle ends (Oct 2: the stop arrived during a consolidation and the process was killed).
+- The Yahoo daemon logs only to the journal. The rotated files are all Xetra's, so restarting the Yahoo service serves no purpose.
+
+Writes are atomic (temp file, fsync, rename), which is why the nightly kill has not corrupted data. It still costs a restart, a recovery scan, and an immediate extra cycle.
+
+## Decision
+
+Fix the three problems in the order below, then add memory limits as a safety net.
+
+### 1. Make Xetra monthly consolidation idempotent and streaming
+
+- **Skip when current.** The monthly file records a fingerprint of the daily files it was built from (their count, total size and newest modification time) in its Parquet metadata. `_consolidate_to_monthly` returns early when that fingerprint matches the daily files on disk. The existing triggers stay as they are; repeat calls cost a few `stat` calls and one footer read. Monthly files written before this change carry no fingerprint and are rebuilt once if their month is triggered again.
+- **Merge leftover mini-files first.** Before a month is consolidated, any day that still has mini-files is merged into its daily file. Two days in production (2026-05-08, 2026-06-10) had been left as mini-files and were silently missing from their monthly files.
+- **Tell stale mini-files from new ones.** The daily merge used to delete every mini-file found next to an existing daily file, on the assumption that they were leftovers of a crash. A daily file now records the staging time of the newest mini-file it contains. Mini-files staged up to that time are deleted as before; later ones are merged in. Daily files written before this change fall back to their own write time. If the daily file cannot be read, the mini-files are kept.
+- **Leave an unreadable day out, on the record.** The monthly file is built from the days that can be read and lists those days in its Parquet metadata (`yf_parqed.days_included`). The skipped day is logged as an error. Repairing the daily file changes the fingerprint, so the monthly file is rebuilt at the next trigger.
+- **Never shrink a monthly file.** If the readable daily files hold fewer trades than the existing monthly file, the monthly file is kept and an error is logged. This protects months whose daily files were removed or damaged after consolidation. To force a rebuild, remove the monthly file.
+- **Raw-cache cleanup checks the specific day.** A raw file is deleted only if its day has a readable daily file or is listed in the monthly file's `days_included`. Before, any readable monthly file vouched for every day of its month, which is how the raw files of the two unmerged days were deleted. A monthly file without the list (written before this change) vouches for nothing.
+- **Stream one day at a time.** Replace the pandas read, concat and convert with a PyArrow `ParquetWriter` on the temp file: read one daily table, write it, release it, move to the next. Peak memory becomes one trading day (370,000 to 475,000 rows in the days examined) instead of a month. The temp file, fsync and rename stay.
+- **Unify schemas up front.** Read the schemas of the daily files (metadata only), unify them, and cast each daily table to the unified schema before writing, so a schema change within a month does not abort the write.
+- **Drop the dead sort.** Remove the `time` sort rather than repair it. A global sort needs the whole month in memory, which is the thing being removed. Monthly files are ordered by day, then by download order within the day. Consumers that need time order sort on `trading_date_time`.
+
+### 2. Make the Yahoo cycle incremental
+
+The order matters. The first two changes cut the disk load without changing what is fetched, so the current "fetch 7 days every cycle" behaviour keeps protecting the data while they settle. The third is the only one that changes fetch behaviour, so it lands last and alone.
+
+- **Write only the months the new data touches.** `PartitionedStorageBackend.save` writes only partitions whose month appears in `new_data`. Untouched months are left alone. With a 7-day fetch that is one month per ticker, two around a month boundary, instead of all of them.
+- **Then read only those months.** Once writes are scoped, restrict the read to the same months, so a cycle no longer opens every partition of every ticker.
+- **Finally, persist the registry.** In daemon mode, save `tickers.json` at the end of every cycle regardless of `--save-not-founds`, and also every N tickers during a cycle so that a crash loses minutes, not hours. The save must be atomic (temp file and rename).
+
+### 3. Make shutdown prompt and stop the nightly restart
+
+- **Check the flag inside the loops.** The Yahoo per-ticker loop and the Xetra per-date and per-file loops check the shutdown flag between items. An atomic write in progress is always allowed to finish.
+- **Find and fix the Xetra exit hang.** Establish why the process does not exit after the daemon loop ends.
+- **Stop restarting from logrotate.** Use `copytruncate` for the Xetra log file and remove the `postrotate` restart. The templates live in `daemon-manage.sh` and `docs/daemon/INSTALLATION.md`.
+
+### 4. Add systemd memory limits
+
+Add `MemoryHigh`, `MemoryMax` and `MemorySwapMax` to both unit templates so that a future regression is contained to the service that caused it. `.github/ARCHITECTURE.md` already recommends this; the templates never got it. Choose the values from the peaks observed after Batches 1 to 3 are deployed.
+
+## Sequenced Steps
+
+Steps are grouped into batches. A batch is one working session, one commit series and one deploy. Batches run in order, one at a time; see "Work Plan and Handoff" for why and for who does what.
+
+**Batch 1 — Xetra consolidation**
+
+- [x] **Step A** — *(implemented 2026-10-03, not yet deployed)* Monthly consolidation: skip-when-current fingerprint, streaming `ParquetWriter`, schema unification, leftover mini-files merged first, unreadable days left out and recorded, never shrink an existing monthly file, dead `time` sort removed. Daily merge: watermark that separates stale mini-files from new ones. Raw-cache cleanup: per-day proof. Tests in `tests/test_xetra_consolidation.py` and `tests/test_xetra_raw_cache.py`. **Must be deployed before 2026-11-01.**
+- [ ] **Step A2** — One-off repair of the monthly files that are behind their daily data (January, February, May, June 2026). Runbook under "Repairing the monthly files" below. Needs Step A deployed first; run by the owner.
+
+**Batch 2 — Shutdown and logrotate**
+
+- [ ] **Step E** — In-loop shutdown checks for both daemons. Tests: a flag set mid-cycle ends the cycle after the current item.
+- [ ] **Step F** — Diagnose and fix the Xetra exit hang.
+- [ ] **Step G** — Logrotate: `copytruncate`, no restart. Update `daemon-manage.sh`, `docs/daemon/INSTALLATION.md` and `docs/DAEMON_MODE.md`.
+
+**Batch 3 — Yahoo disk load and registry** (two deploys: B and C together, then D alone)
+
+- [ ] **Step B** — Scoped writes: write only touched months. Tests: files of untouched months keep their modification time and content; rows merged into a touched month are complete and deduplicated.
+- [ ] **Step C** — Scoped reads: read only the months needed for the merge.
+- [ ] **Step D** — Registry persistence: save at end of cycle and every N tickers in daemon mode, atomically. Review the fetch decision first (see Risk Controls). Tests: a second cycle sees `last_data_date`; a simulated kill mid-cycle keeps the last periodic save. Deploy separately from B and C, and only after they have run cleanly for a few days.
+
+**Batch 4 — Memory limits**
+
+- [ ] **Step H** — Memory limits in both unit templates (`daemon-manage.sh`, `docs/daemon/INSTALLATION.md`), with values taken from observed peaks. Only after Batches 1 to 3 have been deployed and observed for about a week.
+
+**With every batch**
+
+- [ ] **Step I** — Keep `.github/TROUBLESHOOTING.md`, `docs/DAEMON_MODE.md`, `docs/release-notes.md` and this ADR in step with what was changed. When the last batch is done, move this ADR to `implemented/` and update the index.
+
+Run `uv run pytest` after each step; all tests must pass before moving on.
+
+## Work Plan and Handoff
+
+### How the work is split
+
+| Batch | Steps | Session | Model | Why |
+|---|---|---|---|---|
+| 1 | A | The session that wrote this ADR (2026-10-03) | Opus | Smallest scope, hard deadline, and the context was already loaded. |
+| 2 | E, F, G | New session | Opus for F; Sonnet is enough for E and G | F is an open diagnosis. E and G are mechanical and fully specified here. |
+| 3 | B, C, then D | New session | Opus | Storage and fetch logic where a mistake loses data permanently. |
+| 4 | H | Any, about a week after Batch 3 | Sonnet | A few lines in two templates; the work is choosing the values. |
+
+**Do not run batches in parallel.** Development happens on the production host (2 cores, 3.7 GiB RAM), so several agents running the test suite compete with the daemons. The shutdown work (E) also touches the same files as Steps A and D. And each batch changes production behaviour that should be watched before the next one lands.
+
+### Starting a session
+
+1. Read this ADR. The Context section holds the evidence; it cannot be regenerated, because `sar` keeps only about a week.
+2. Find the lowest batch with an unchecked step. Read the Progress Log below for anything the previous session left open.
+3. Read the Risk Controls that mention your steps before writing code.
+4. Work the steps in order. Tick each box when its tests pass. Add a dated line to the Progress Log when you stop, including anything unfinished or surprising.
+
+### Deploying
+
+The agent cannot deploy. Production (`/opt/yf_parqed`) is a checkout of `main`, and `sudo ./daemon-manage.sh update` runs `git pull origin main` before restarting the services. A commit on `develop` therefore reaches production only after it has been pushed **and merged into `main`**. Each batch ends with commits on `develop`; the owner pushes, merges to `main` and runs the update. Record the deploy date in the Progress Log.
+
+Before relying on a deploy, confirm that production has the code. For Step A:
+
+```bash
+grep -c '_DAYS_INCLUDED_KEY' /opt/yf_parqed/src/yf_parqed/xetra/xetra_service.py   # 0 means the old code is still installed
+```
+
+### Checking a deploy
+
+- **Batch 1.** The proof arrives at the next month change (2026-11-01 to 11-04). In `/var/log/yf_parqed/xetra-DETR.log*`, `Consolidated to monthly` should appear once for October, and `sar -S` should show swap staying near its baseline. Before that, the dev validation in the Progress Log is the evidence. For the repair (Step A2), compare the row counts with the table under "Repairing the monthly files".
+- **Batch 2.** After the next midnight, `journalctl -u yf-parqed -u 'xetra@DETR' | grep -E 'timed out|SIGKILL'` should show nothing new, and neither service should have restarted at 00:00.
+- **Batch 3, after B and C.** Pick a ticker and list its partition files: only the current month's file should have a fresh modification time after a cycle. Cycle duration (from `Processing ... tickers` to `All tickers were processed.` in `journalctl -u yf-parqed`) should fall well below the 4h08m baseline.
+- **Batch 3, after D.** For a week, repeat the gap check below and compare with the baseline. Also confirm that `tickers.json` now carries `last_data_date` values and that the list of tickers going `permanently_dead` looks reasonable.
+
+### Repairing the monthly files (Step A2)
+
+Four monthly files hold fewer trades than their daily files. The repair rebuilds every month from its daily files; months that are already complete come out with the same row count. It rewrites files under `trades_monthly/` and creates two daily files from mini-files, so it needs the owner's go-ahead.
+
+**The repair runs the code installed in `/opt/yf_parqed`, not the code in the dev repo.** Committing the fix on `develop` changes nothing in production. The fix has to travel `develop` → GitHub → `main` → `/opt/yf_parqed` first. With the old code the same command loads a whole month into memory and exhausts RAM and swap; that is what happened on the first attempt on 2026-10-03.
+
+Do the three parts in order. Every command is run on the server as `siggi`.
+
+**Part 1 — get the fix into production (this is "deploying Batch 1")**
+
+```bash
+# 1.1 In the dev repo: nothing uncommitted, then publish develop
+cd /home/siggi/github/yf_parqed
+git status                 # must show a clean working tree on branch develop
+git push origin develop
+
+# 1.2 On GitHub: open a pull request from develop into main, wait for CI to pass, merge it.
+#     Do NOT create a version tag for this. A tag (v*) is what triggers publishing to PyPI;
+#     production only needs the commit on main.
+
+# 1.3 Install main into production. This stops both services, pulls origin/main into
+#     /opt/yf_parqed, syncs dependencies, clears the bytecache and starts both services again.
+cd /home/siggi/github/yf_parqed
+sudo ./daemon-manage.sh update
+#     It asks "Reinstall systemd service templates ...? [y/N]"  -> answer N.
+#     It may ask about a pending migration or registry pruning -> answer as you normally do;
+#     neither is related to this repair.
+```
+
+**Part 2 — confirm production has the fix**
+
+```bash
+grep -c '_DAYS_INCLUDED_KEY' /opt/yf_parqed/src/yf_parqed/xetra/xetra_service.py
+```
+
+This must print `3`. If it prints `0`, production still has the old code: stop here and go back to Part 1.
+
+**Part 3 — run the repair**
+
+Run it outside trading hours. The update in Part 1 started both services again, so stop the Xetra collector first; only one process should merge mini-files.
+
+```bash
+# 3.1 Stop the Xetra collector
+sudo systemctl stop 'xetra@DETR'
+
+# 3.2 Backup: already done. trades_monthly.bak-2026-10 was made on 2026-10-03 before the
+#     first attempt and is complete. Do not copy again; that would overwrite it.
+ls /var/lib/yf_parqed/data/de/xetra/trades_monthly.bak-2026-10/venue=DETR    # must list year=2025 and year=2026
+
+# 3.3 Rebuild every month.
+#     The cd is required: consolidate-month ignores --wrk-dir and looks for ./data.
+#     From any other directory it reports "No months found" and does nothing.
+cd /var/lib/yf_parqed
+sudo -u yfparqed /opt/yf_parqed/.venv/bin/xetra-parqed consolidate-month DETR --all
+
+# 3.4 Check the row counts against the table below
+sudo -u yfparqed /opt/yf_parqed/.venv/bin/python3 -c "
+import pyarrow.parquet as pq, pathlib
+for f in sorted(pathlib.Path('/var/lib/yf_parqed/data/de/xetra/trades_monthly').rglob('trades.parquet')):
+    print(f.parent.parent.name, f.parent.name, format(pq.read_metadata(f).num_rows, ','))"
+
+# 3.5 Start the Xetra collector again
+sudo systemctl start 'xetra@DETR'
+```
+
+What to expect in step 3.3: one to one and a half minutes per month, about fifteen minutes for all ten, with memory use staying under 1 GB. If a single month runs for more than five minutes or `free -m` shows swap climbing, press Ctrl+C: the old code is running, and Part 2 was skipped or failed.
+
+Expected row counts, taken from the daily files on 2026-10-03:
+
+| Month | Before | After | Change |
+|---|---|---|---|
+| 2025-12 | 5,224,813 | 5,224,813 | none |
+| 2026-01 | 8,766,890 | 9,285,530 | +518,640 |
+| 2026-02 | 6,507,722 | 9,495,685 | +2,987,963 |
+| 2026-04 | 503,888 | 503,888 | none |
+| 2026-05 | 9,766,173 | 10,267,787 | +501,614 (day 8 merged from 830 mini-files) |
+| 2026-06 | 10,628,160 | 11,190,760 | +562,600 (day 10 merged from 831 mini-files) |
+| 2026-07 | 10,038,312 | 10,038,312 | none |
+| 2026-08 | 7,978,227 | 7,978,227 | none |
+| 2026-09 | 8,140,348 | 8,140,348 | none |
+| 2026-10 | no file | 917,190 or more | new; the current month is included by `--all` and is rebuilt at the November rollover |
+
+Two things change besides row counts. Every rebuilt file gains the fingerprint and day list in its metadata. And the four oldest files (2025-12 to 2026-04), which were written by the May 2026 migration without the `venue`, `year`, `month` and `day` columns, come out with those columns, like the files from May onward.
+
+If a count is lower than expected, nothing was lost: the never-shrink guard refuses to replace a file with a smaller one, and the backup is still there. Delete the backup (`sudo rm -r /var/lib/yf_parqed/data/de/xetra/trades_monthly.bak-2026-10`) once the counts are confirmed.
+
+### Baseline for the Yahoo gap check (measured 2026-10-03)
+
+Count 1-minute bars per trading day for a few liquid tickers by reading the `date` column of `/var/lib/yf_parqed/data/us/yahoo/stocks_1m/ticker=<T>/`.
+
+- AAPL, MSFT, NVDA, JPM, XOM and ZTS each had 214 trading days from 2025-11-25 to 2026-10-02 with a median of 390 bars per day (a full session).
+- No business day was missing except market holidays. Half-day sessions (2025-11-28, 2025-12-24) have 196 to 210 bars.
+- One known anomaly: 2026-01-06 has only 293 to 323 bars for all six. Cause unknown; it predates this work.
+- Thinly traded instruments (SPAC units and the like) legitimately have gaps of weeks. Use liquid tickers for the check.
+
+After Step D, any liquid ticker with a missing business day or a day well short of 390 bars is a regression. Yahoo serves only the last 7 days of 1-minute data, so act within that window: revert Step D and let the old fetch-everything behaviour refill the gap.
+
+### Progress Log
+
+- **2026-10-03** — Investigation done, ADR written, steps ordered into batches.
+- **2026-10-03** — Step A implemented in `XetraService._consolidate_to_monthly` with tests in `tests/test_xetra_consolidation.py`; full suite 541 passed, 1 skipped. Validated in dev against the real September 2026 daily files (read-only, output to a scratch directory): 59 seconds and 326 MB peak memory, against 6 to 70 minutes and the whole machine before. The result has the same 8,140,348 rows as the production monthly file, an equal schema, and all 21 columns identical value for value and in the same order. A second call returned in 9 ms. **Left open:** the changes are in the working tree on `develop`, not committed and not deployed. Next: commit, deploy before 2026-11-01, then start Batch 2 in a new session.
+- **2026-10-03** — Finding while reviewing how an unreadable daily file is handled. No Parquet file has ever been unreadable (167 daily and 9 monthly footers all read; no read errors in the retained logs). A different gap was real: 2026-05-08 and 2026-06-10 never got a daily `trades.parquet`. Their trades were intact in mini-files but missing from the May and June monthly files. Why those days were never merged is unknown; the logs from then are gone. Their raw cache had been deleted because cleanup accepted any readable monthly file as proof for the whole month. The January and February 2026 monthly files are also behind their daily files (by 518,640 and 2,987,963 trades); they were written on 2026-05-01 and the daily files changed afterwards.
+- **2026-10-03** — Step A extended to cover this (see Decision 1): leftover mini-files merged before consolidating, stale-versus-new watermark in the daily merge, unreadable days left out on the record, never-shrink guard, per-day raw-cache proof. Full suite 549 passed, 1 skipped. Rehearsed on scratch copies of real data: May 2026 went from 9,766,173 to 10,267,787 trades with day 8 included (85 seconds), February 2026 from 6,507,722 to 9,495,685 (75 seconds), peak memory 542 MB, repeat calls skipped in 11 ms. **Left open:** the extension is in the working tree, not committed; nothing is deployed; Step A2 (the repair) has not been run.
+- **2026-10-03** — The repair (Step A2) was attempted before Step A had reached production and had to be abandoned. Production was still on `main` at commit `6928491` (2026-05-02); the Step A commits were on local `develop`, unpushed. So `consolidate-month --all` ran the old pandas consolidation: December 2025 completed, January 2026 exhausted memory, and the kernel OOM-killed the process at 08:52 UTC (3.2 GB resident). **No data was damaged:** December was rewritten with the same 5,224,813 rows and identical content in every column (checked against the backup); January and all later monthly files are untouched; no temp file was left behind; the mini-files of 2026-05-08 and 2026-06-10 are untouched; the backup `trades_monthly.bak-2026-10` is complete. Both services were stopped by the owner beforehand and are still stopped. The runbook now starts with a check that production has the new code, and the Deploying section now states that production follows `main`. **Left open:** Step A2 from Part 1 of its runbook (push `develop`, merge to `main`, run the update, confirm, repair).
+
+## Risk Controls
+
+- **Daily files stay the record.** Consolidation never deletes or modifies daily files. Before deploying Step A, run the new consolidation in dev against a copy of a real month and compare row count and per-ISIN counts with the existing monthly file.
+- **Raw-cache cleanup became stricter, not looser.** It deletes a raw file only when that specific day is proven to be in a readable daily file or listed in a monthly file. Until Step A2 has rebuilt the older monthly files, they carry no day list and prove nothing; this only matters for days without a daily file, and currently every day has one except the two being repaired.
+- **The daily merge now keeps data it used to delete.** Mini-files found next to an existing daily file are merged when they were staged after it. If the system clock is set backwards between a crash and the next run, an already-merged mini-file could be merged twice. That needs a crash and a clock step together; it is accepted.
+- **Step D activates a code path production has effectively never run.** Once `last_data_date` is saved, the fetch decision becomes `business_days_between(last_data_date, today) > 0`, which works in whole days. For 1-minute data on a 2-hour cycle this must be reviewed and covered by tests before deploying, so that saving the registry does not leave gaps. Yahoo serves only the last 7 days of 1-minute bars, so a ticker that goes unfetched for longer loses data permanently.
+- **Step D also lets the not-found cycle advance.** Tickers will start reaching `permanently_dead` for the first time in the daemon. Check the first week's registry changes against expectations before trusting the pruning that follows.
+- **Scoped writes must not drop rows.** A test must show that rows merged into a touched month are complete and that deduplication within that month still works.
+- **Memory limits before Step A would do harm.** With the current code a limit makes the monthly consolidation fail every month. Step H depends on Step A.
+
+## Alternatives Considered
+
+**Add RAM or move to an SSD.** Rejected as the fix: it hides the waste without removing it, and the work grows with every month of data and every ticker. Still worthwhile later for other reasons.
+
+**Memory limits only.** Rejected: the consolidation would be killed each month and the monthly file would never be produced.
+
+**Make `get_missing_dates` return only missing dates.** Considered (it is the alternative noted under item #3 of the 2026-05-01 ADR). It would narrow the trigger, but the current day must be rechecked every cycle anyway, and it does not make consolidation safe to call twice or bound its memory. It can be done in addition; it is not a substitute.
+
+**Polars or DuckDB for the consolidation.** Both can stream. Rejected for now because PyArrow is already in the write path and one day at a time is enough; no new dependency in the daemon's hot path.
+
+**Append each day to the monthly file as it completes.** Considered. Rejected for now: Parquet files cannot be appended in place, so this means rewriting the monthly file daily or keeping a writer open across restarts. Once-per-month streaming is simpler and cheap.
+
+## Consequences
+
+- Xetra consolidation runs once per month, in memory proportional to one trading day, and repeated triggers cost a few `stat` calls.
+- A Yahoo cycle touches only the current month's partition per ticker and skips tickers with nothing new, which removes most of the disk writes and should shorten the 4-hour cycle substantially. The actual gain is to be measured after Steps B to D.
+- The daemons stop within seconds of a stop request and are no longer restarted nightly.
+- Monthly Xetra files are explicitly not globally time-sorted. This matches what has been on disk since May 2026.
+- A runaway daemon is contained by its own memory limit instead of pushing the whole machine into swap.

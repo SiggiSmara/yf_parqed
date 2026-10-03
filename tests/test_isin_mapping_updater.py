@@ -1,9 +1,8 @@
 """Tests for ISINMappingUpdater: scraper, parser, and cache merger."""
 
-import io
 from datetime import date
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pandas as pd
 import pytest
@@ -73,7 +72,9 @@ def test_make_absolute_keeps_absolute():
 
 
 def test_make_absolute_expands_relative():
-    assert _make_absolute("/resource/blob/1/a/data/t7-xetr-allTradableInstruments.csv") == (
+    assert _make_absolute(
+        "/resource/blob/1/a/data/t7-xetr-allTradableInstruments.csv"
+    ) == (
         "https://www.xetra.com/resource/blob/1/a/data/t7-xetr-allTradableInstruments.csv"
     )
 
@@ -209,19 +210,21 @@ def _make_cache(tmp_path: Path, rows: list[dict]) -> Path:
 
 
 def _make_new_data(isins: list[str]) -> pd.DataFrame:
-    return pd.DataFrame([
-        {
-            "isin": isin,
-            "ticker": f"T{i}",
-            "name": f"Company {i}",
-            "currency": "EUR",
-            "wkn": f"WKN{i:06d}",
-            "status": "active",
-            "last_seen": date.today(),
-            "source": "deutsche_boerse_csv",
-        }
-        for i, isin in enumerate(isins, 1)
-    ])
+    return pd.DataFrame(
+        [
+            {
+                "isin": isin,
+                "ticker": f"T{i}",
+                "name": f"Company {i}",
+                "currency": "EUR",
+                "wkn": f"WKN{i:06d}",
+                "status": "active",
+                "last_seen": date.today(),
+                "source": "deutsche_boerse_csv",
+            }
+            for i, isin in enumerate(isins, 1)
+        ]
+    )
 
 
 def test_merge_first_run_all_new(tmp_path):
@@ -241,19 +244,22 @@ def test_merge_first_run_all_new(tmp_path):
 
 def test_merge_new_isin_gets_first_seen_today(tmp_path):
     """A genuinely new ISIN gets first_seen = today."""
-    cache_path = _make_cache(tmp_path, [
-        {
-            "isin": "DE0005140008",
-            "ticker": "DBK",
-            "name": "DEUTSCHE BANK",
-            "currency": "EUR",
-            "wkn": "514000",
-            "status": "active",
-            "first_seen": date(2025, 10, 1),
-            "last_seen": date(2025, 10, 1),
-            "source": "deutsche_boerse_csv",
-        }
-    ])
+    cache_path = _make_cache(
+        tmp_path,
+        [
+            {
+                "isin": "DE0005140008",
+                "ticker": "DBK",
+                "name": "DEUTSCHE BANK",
+                "currency": "EUR",
+                "wkn": "514000",
+                "status": "active",
+                "first_seen": date(2025, 10, 1),
+                "last_seen": date(2025, 10, 1),
+                "source": "deutsche_boerse_csv",
+            }
+        ],
+    )
 
     updater = ISINMappingUpdater()
     new_data = _make_new_data(["DE0005140008", "DE0007236101"])  # SIE is new
@@ -266,19 +272,22 @@ def test_merge_new_isin_gets_first_seen_today(tmp_path):
 def test_merge_existing_isin_keeps_first_seen(tmp_path):
     """Existing ISINs preserve their original first_seen."""
     old_first_seen = date(2025, 10, 1)
-    cache_path = _make_cache(tmp_path, [
-        {
-            "isin": "DE0005140008",
-            "ticker": "DBK",
-            "name": "DEUTSCHE BANK",
-            "currency": "EUR",
-            "wkn": "514000",
-            "status": "active",
-            "first_seen": old_first_seen,
-            "last_seen": date(2025, 10, 1),
-            "source": "deutsche_boerse_csv",
-        }
-    ])
+    cache_path = _make_cache(
+        tmp_path,
+        [
+            {
+                "isin": "DE0005140008",
+                "ticker": "DBK",
+                "name": "DEUTSCHE BANK",
+                "currency": "EUR",
+                "wkn": "514000",
+                "status": "active",
+                "first_seen": old_first_seen,
+                "last_seen": date(2025, 10, 1),
+                "source": "deutsche_boerse_csv",
+            }
+        ],
+    )
 
     updater = ISINMappingUpdater()
     new_data = _make_new_data(["DE0005140008"])
@@ -292,30 +301,33 @@ def test_merge_existing_isin_keeps_first_seen(tmp_path):
 
 def test_merge_delisted_isin_marked_inactive(tmp_path):
     """ISINs present in cache but absent from new CSV are marked inactive."""
-    cache_path = _make_cache(tmp_path, [
-        {
-            "isin": "DE0005140008",
-            "ticker": "DBK",
-            "name": "DEUTSCHE BANK",
-            "currency": "EUR",
-            "wkn": "514000",
-            "status": "active",
-            "first_seen": date(2025, 10, 1),
-            "last_seen": date(2025, 10, 1),
-            "source": "deutsche_boerse_csv",
-        },
-        {
-            "isin": "DE9999999999",
-            "ticker": "OLD",
-            "name": "OLD CORP",
-            "currency": "EUR",
-            "wkn": "999999",
-            "status": "active",
-            "first_seen": date(2025, 10, 1),
-            "last_seen": date(2025, 10, 1),
-            "source": "deutsche_boerse_csv",
-        },
-    ])
+    cache_path = _make_cache(
+        tmp_path,
+        [
+            {
+                "isin": "DE0005140008",
+                "ticker": "DBK",
+                "name": "DEUTSCHE BANK",
+                "currency": "EUR",
+                "wkn": "514000",
+                "status": "active",
+                "first_seen": date(2025, 10, 1),
+                "last_seen": date(2025, 10, 1),
+                "source": "deutsche_boerse_csv",
+            },
+            {
+                "isin": "DE9999999999",
+                "ticker": "OLD",
+                "name": "OLD CORP",
+                "currency": "EUR",
+                "wkn": "999999",
+                "status": "active",
+                "first_seen": date(2025, 10, 1),
+                "last_seen": date(2025, 10, 1),
+                "source": "deutsche_boerse_csv",
+            },
+        ],
+    )
 
     updater = ISINMappingUpdater()
     # New CSV only has DBK, not OLD
@@ -331,19 +343,22 @@ def test_merge_delisted_isin_marked_inactive(tmp_path):
 
 def test_merge_reactivates_previously_inactive(tmp_path):
     """An ISIN that was inactive and reappears in the CSV becomes active again."""
-    cache_path = _make_cache(tmp_path, [
-        {
-            "isin": "DE0005140008",
-            "ticker": "DBK",
-            "name": "DEUTSCHE BANK",
-            "currency": "EUR",
-            "wkn": "514000",
-            "status": "inactive",
-            "first_seen": date(2025, 10, 1),
-            "last_seen": date(2025, 11, 1),
-            "source": "deutsche_boerse_csv",
-        }
-    ])
+    cache_path = _make_cache(
+        tmp_path,
+        [
+            {
+                "isin": "DE0005140008",
+                "ticker": "DBK",
+                "name": "DEUTSCHE BANK",
+                "currency": "EUR",
+                "wkn": "514000",
+                "status": "inactive",
+                "first_seen": date(2025, 10, 1),
+                "last_seen": date(2025, 11, 1),
+                "source": "deutsche_boerse_csv",
+            }
+        ],
+    )
 
     updater = ISINMappingUpdater()
     new_data = _make_new_data(["DE0005140008"])

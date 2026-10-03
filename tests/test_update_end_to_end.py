@@ -81,7 +81,11 @@ def test_update_stock_data_end_to_end(monkeypatch, seeded_workspace: Path):
 
     # AAA should have parquet output for 1d interval (in partitioned storage)
     # Find the parquet file in the partitioned structure
-    parquet_files = list((seeded_workspace / "data" / "us" / "yahoo" / "stocks_1d" / "ticker=AAA").rglob("*.parquet"))
+    parquet_files = list(
+        (seeded_workspace / "data" / "us" / "yahoo" / "stocks_1d" / "ticker=AAA").rglob(
+            "*.parquet"
+        )
+    )
     assert len(parquet_files) > 0, "Expected at least one parquet file for AAA"
     saved_df = pd.read_parquet(parquet_files[0])
     assert saved_df.shape[0] == 2

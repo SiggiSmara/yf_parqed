@@ -16,7 +16,7 @@ def cli_environment(monkeypatch):
     temp_dir = tempfile.TemporaryDirectory()
     tmp_path = Path(temp_dir.name)
 
-    runner = CliRunner()
+    runner = CliRunner(env={"NO_COLOR": "1"})
 
     original_instance = main.yf_parqed
     original_intervals = main.all_intervals
@@ -100,7 +100,7 @@ def test_cli_initialize_and_update_flow(cli_environment):
     interval_meta = instance.tickers["SYN"]["intervals"]["1m"]
     assert interval_meta["status"] == "active"
     assert interval_meta["last_data_date"] == "2024-01-02"
-    
+
     # Verify storage_config.json was created with partitioned mode
     storage_config_path = tmp_path / "storage_config.json"
     assert storage_config_path.exists()

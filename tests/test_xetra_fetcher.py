@@ -728,7 +728,9 @@ def test_download_retries_on_remote_protocol_error():
         return good_response
 
     with patch("httpx.Client.get", side_effect=side_effect):
-        data = fetcher.download_file("DETR", "2025-11-04", "DETR-posttrade-2025-11-04T09_00.json.gz")
+        data = fetcher.download_file(
+            "DETR", "2025-11-04", "DETR-posttrade-2025-11-04T09_00.json.gz"
+        )
 
     assert data == b"data"
     assert call_count == 2
@@ -754,7 +756,9 @@ def test_download_retries_on_connect_error():
         return good_response
 
     with patch("httpx.Client.get", side_effect=side_effect):
-        data = fetcher.download_file("DETR", "2025-11-04", "DETR-posttrade-2025-11-04T09_00.json.gz")
+        data = fetcher.download_file(
+            "DETR", "2025-11-04", "DETR-posttrade-2025-11-04T09_00.json.gz"
+        )
 
     assert data == b"data"
     assert call_count == 2
@@ -765,8 +769,12 @@ def test_download_raises_after_max_retries_on_connect_error():
     """ConnectError is re-raised after exhausting retries."""
     fetcher = XetraFetcher(inter_request_delay=0.0, burst_size=1000)
 
-    with patch("httpx.Client.get", side_effect=httpx.ConnectError("refused", request=Mock())):
+    with patch(
+        "httpx.Client.get", side_effect=httpx.ConnectError("refused", request=Mock())
+    ):
         with pytest.raises(httpx.ConnectError):
-            fetcher.download_file("DETR", "2025-11-04", "DETR-posttrade-2025-11-04T09_00.json.gz")
+            fetcher.download_file(
+                "DETR", "2025-11-04", "DETR-posttrade-2025-11-04T09_00.json.gz"
+            )
 
     fetcher.close()

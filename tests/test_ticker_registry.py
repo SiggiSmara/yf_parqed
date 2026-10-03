@@ -48,10 +48,14 @@ def test_save_is_atomic(tmp_path: Path) -> None:
 
     assert config.tickers_path.exists()
     assert not config.tickers_path.with_suffix(".tmp").exists()
-    assert registry.tickers == {"X": {"ticker": "X", "status": "active", "intervals": {}}}
+    assert registry.tickers == {
+        "X": {"ticker": "X", "status": "active", "intervals": {}}
+    }
 
 
-def test_update_current_list_adds_new_does_not_reactivate(registry: TickerRegistry) -> None:
+def test_update_current_list_adds_new_does_not_reactivate(
+    registry: TickerRegistry,
+) -> None:
     """New tickers are added; existing not_found tickers are NOT reactivated."""
     existing = {
         "STAY": {
@@ -96,62 +100,75 @@ def test_update_current_list_adds_new_does_not_reactivate(registry: TickerRegist
     assert registry.tickers["STAY"]["intervals"]["1d"]["status"] == "not_found"
 
 
-def test_update_current_list_prunes_dead_tickers_absent_from_csv(registry: TickerRegistry) -> None:
+def test_update_current_list_prunes_dead_tickers_absent_from_csv(
+    registry: TickerRegistry,
+) -> None:
     """Permanently dead CSV tickers not in the new CSV are removed from registry."""
-    registry.replace({
-        "DEAD": {
-            "ticker": "DEAD",
-            "status": "active",
-            "source": "csv",
-            "intervals": {
-                "1d": {"status": "not_found", "permanently_dead": True},
-                "1h": {"status": "not_found", "permanently_dead": True},
+    registry.replace(
+        {
+            "DEAD": {
+                "ticker": "DEAD",
+                "status": "active",
+                "source": "csv",
+                "intervals": {
+                    "1d": {"status": "not_found", "permanently_dead": True},
+                    "1h": {"status": "not_found", "permanently_dead": True},
+                },
             },
-        },
-        "ALIVE": {
-            "ticker": "ALIVE",
-            "status": "active",
-            "source": "csv",
-            "intervals": {"1d": {"status": "active"}},
-        },
-        "MANUAL": {
-            "ticker": "MANUAL",
-            "status": "active",
-            "source": "manual",
-            "intervals": {
-                "1d": {"status": "not_found", "permanently_dead": True},
+            "ALIVE": {
+                "ticker": "ALIVE",
+                "status": "active",
+                "source": "csv",
+                "intervals": {"1d": {"status": "active"}},
             },
-        },
-    })
-
-    # CSV now only has ALIVE (DEAD and MANUAL are absent)
-    registry.update_current_list({"ALIVE": {"ticker": "ALIVE", "status": "active", "intervals": {}}})
-
-    assert "DEAD" not in registry.tickers       # pruned
-    assert "ALIVE" in registry.tickers          # kept (still in CSV)
-    assert "MANUAL" in registry.tickers         # kept (manual — never pruned)
-
-
-def test_update_current_list_keeps_partially_dead_tickers(registry: TickerRegistry) -> None:
-    """Ticker with only some intervals dead is NOT pruned even if absent from CSV."""
-    registry.replace({
-        "PARTIAL": {
-            "ticker": "PARTIAL",
-            "status": "active",
-            "source": "csv",
-            "intervals": {
-                "1d": {"status": "not_found", "permanently_dead": True},
-                "1h": {"status": "active"},
+            "MANUAL": {
+                "ticker": "MANUAL",
+                "status": "active",
+                "source": "manual",
+                "intervals": {
+                    "1d": {"status": "not_found", "permanently_dead": True},
+                },
             },
         }
-    })
+    )
 
-    registry.update_current_list({"OTHER": {"ticker": "OTHER", "status": "active", "intervals": {}}})
+    # CSV now only has ALIVE (DEAD and MANUAL are absent)
+    registry.update_current_list(
+        {"ALIVE": {"ticker": "ALIVE", "status": "active", "intervals": {}}}
+    )
+
+    assert "DEAD" not in registry.tickers  # pruned
+    assert "ALIVE" in registry.tickers  # kept (still in CSV)
+    assert "MANUAL" in registry.tickers  # kept (manual — never pruned)
+
+
+def test_update_current_list_keeps_partially_dead_tickers(
+    registry: TickerRegistry,
+) -> None:
+    """Ticker with only some intervals dead is NOT pruned even if absent from CSV."""
+    registry.replace(
+        {
+            "PARTIAL": {
+                "ticker": "PARTIAL",
+                "status": "active",
+                "source": "csv",
+                "intervals": {
+                    "1d": {"status": "not_found", "permanently_dead": True},
+                    "1h": {"status": "active"},
+                },
+            }
+        }
+    )
+
+    registry.update_current_list(
+        {"OTHER": {"ticker": "OTHER", "status": "active", "intervals": {}}}
+    )
 
     assert "PARTIAL" in registry.tickers
 
 
 # ── is_active_for_interval ────────────────────────────────────────────────────
+
 
 def test_is_active_unknown_ticker(registry: TickerRegistry) -> None:
     assert registry.is_active_for_interval("MISSING", "1d") is True
@@ -169,71 +186,89 @@ def test_is_active_legacy_global_not_found(registry: TickerRegistry) -> None:
 
 def test_is_active_manual_ticker_always_true(registry: TickerRegistry) -> None:
     """Manual tickers are exempt from all death-cycle checks."""
-    registry.replace({
-        "M": {
-            "ticker": "M",
-            "status": "not_found",
-            "source": "manual",
-            "intervals": {
-                "1d": {"status": "not_found", "permanently_dead": True, "cooling_since": "2024-01-01"},
-            },
+    registry.replace(
+        {
+            "M": {
+                "ticker": "M",
+                "status": "not_found",
+                "source": "manual",
+                "intervals": {
+                    "1d": {
+                        "status": "not_found",
+                        "permanently_dead": True,
+                        "cooling_since": "2024-01-01",
+                    },
+                },
+            }
         }
-    })
+    )
     assert registry.is_active_for_interval("M", "1d") is True
 
 
 def test_is_active_manually_removed_always_false(registry: TickerRegistry) -> None:
-    registry.replace({
-        "R": {
-            "ticker": "R",
-            "status": "active",
-            "manually_removed": True,
-            "intervals": {},
+    registry.replace(
+        {
+            "R": {
+                "ticker": "R",
+                "status": "active",
+                "manually_removed": True,
+                "intervals": {},
+            }
         }
-    })
+    )
     assert registry.is_active_for_interval("R", "1d") is False
 
 
 def test_is_active_permanently_dead_interval(registry: TickerRegistry) -> None:
-    registry.replace({
-        "D": {
-            "ticker": "D",
-            "status": "active",
-            "intervals": {"1d": {"status": "not_found", "permanently_dead": True}},
+    registry.replace(
+        {
+            "D": {
+                "ticker": "D",
+                "status": "active",
+                "intervals": {"1d": {"status": "not_found", "permanently_dead": True}},
+            }
         }
-    })
+    )
     assert registry.is_active_for_interval("D", "1d") is False
 
 
 def test_is_active_streak_phase_still_active(registry: TickerRegistry) -> None:
     """Ticker in streak phase (not_found but no cooling_since) is still retried."""
-    registry.replace({
-        "S": {
-            "ticker": "S",
-            "status": "active",
-            "intervals": {
-                "1d": {"status": "not_found", "not_found_streak_days": 2, "last_not_found_date": "2024-01-10"},
-            },
+    registry.replace(
+        {
+            "S": {
+                "ticker": "S",
+                "status": "active",
+                "intervals": {
+                    "1d": {
+                        "status": "not_found",
+                        "not_found_streak_days": 2,
+                        "last_not_found_date": "2024-01-10",
+                    },
+                },
+            }
         }
-    })
+    )
     assert registry.is_active_for_interval("S", "1d") is True
 
 
 def test_is_active_cooling_window_inactive(registry: TickerRegistry) -> None:
     """Ticker in cooling window (< 7 workdays elapsed) is not retried."""
-    registry.replace({
-        "C": {
-            "ticker": "C",
-            "status": "active",
-            "intervals": {
-                "1d": {
-                    "status": "not_found",
-                    "not_found_streak_days": 3,
-                    "cooling_since": "2024-02-05",
+    registry.replace(
+        {
+            "C": {
+                "ticker": "C",
+                "status": "active",
+                "intervals": {
+                    "1d": {
+                        "status": "not_found",
+                        "not_found_streak_days": 3,
+                        "cooling_since": "2024-02-05",
+                    },
                 },
-            },
+            }
         }
-    })
+    )
     # 3 days later — still within 7-workday cooldown
     with patch.object(registry._config, "get_now", return_value=datetime(2024, 2, 8)):
         assert registry.is_active_for_interval("C", "1d") is False
@@ -241,18 +276,20 @@ def test_is_active_cooling_window_inactive(registry: TickerRegistry) -> None:
 
 def test_is_active_after_cooling_expires(registry: TickerRegistry) -> None:
     """After 7 work days, ticker becomes active again for single retry."""
-    registry.replace({
-        "C": {
-            "ticker": "C",
-            "status": "active",
-            "intervals": {
-                "1d": {
-                    "status": "not_found",
-                    "cooling_since": "2024-02-05",
+    registry.replace(
+        {
+            "C": {
+                "ticker": "C",
+                "status": "active",
+                "intervals": {
+                    "1d": {
+                        "status": "not_found",
+                        "cooling_since": "2024-02-05",
+                    },
                 },
-            },
+            }
         }
-    })
+    )
     # 2026-02-05 is a Thursday; 7 workdays later = 2026-02-14 (Friday)
     # Use a Monday 10 workdays out to be safely past the window
     with patch.object(registry._config, "get_now", return_value=datetime(2024, 2, 19)):
@@ -261,11 +298,14 @@ def test_is_active_after_cooling_expires(registry: TickerRegistry) -> None:
 
 # ── update_ticker_interval_status — failure path ─────────────────────────────
 
+
 def test_failure_increments_streak_once_per_day(registry: TickerRegistry) -> None:
     day1 = datetime(2024, 3, 1)
     with patch.object(registry._config, "get_now", return_value=day1):
         registry.update_ticker_interval_status("T", "1d", False)
-        registry.update_ticker_interval_status("T", "1d", False)  # same day, no increment
+        registry.update_ticker_interval_status(
+            "T", "1d", False
+        )  # same day, no increment
 
     interval = registry.tickers["T"]["intervals"]["1d"]
     assert interval["not_found_streak_days"] == 1
@@ -285,19 +325,21 @@ def test_failure_streak_across_days_triggers_cooling(registry: TickerRegistry) -
 
 
 def test_failure_post_cooling_marks_permanently_dead(registry: TickerRegistry) -> None:
-    registry.replace({
-        "T": {
-            "ticker": "T",
-            "status": "active",
-            "intervals": {
-                "1d": {
-                    "status": "not_found",
-                    "cooling_since": "2024-02-01",
-                    "not_found_streak_days": 3,
+    registry.replace(
+        {
+            "T": {
+                "ticker": "T",
+                "status": "active",
+                "intervals": {
+                    "1d": {
+                        "status": "not_found",
+                        "cooling_since": "2024-02-01",
+                        "not_found_streak_days": 3,
+                    },
                 },
-            },
+            }
         }
-    })
+    )
     # 10 workdays after cooling_since = past the 7-workday window
     post_cooling = datetime(2024, 2, 15)
     with patch.object(registry._config, "get_now", return_value=post_cooling):
@@ -308,16 +350,24 @@ def test_failure_post_cooling_marks_permanently_dead(registry: TickerRegistry) -
     assert "cooling_since" not in interval
 
 
-def test_failure_skipped_for_permanently_dead_interval(registry: TickerRegistry) -> None:
-    registry.replace({
-        "T": {
-            "ticker": "T",
-            "status": "active",
-            "intervals": {
-                "1d": {"status": "not_found", "permanently_dead": True, "not_found_streak_days": 3},
-            },
+def test_failure_skipped_for_permanently_dead_interval(
+    registry: TickerRegistry,
+) -> None:
+    registry.replace(
+        {
+            "T": {
+                "ticker": "T",
+                "status": "active",
+                "intervals": {
+                    "1d": {
+                        "status": "not_found",
+                        "permanently_dead": True,
+                        "not_found_streak_days": 3,
+                    },
+                },
+            }
         }
-    })
+    )
     with patch.object(registry._config, "get_now", return_value=datetime(2024, 5, 1)):
         registry.update_ticker_interval_status("T", "1d", False)
 
@@ -328,16 +378,18 @@ def test_failure_skipped_for_permanently_dead_interval(registry: TickerRegistry)
 def test_global_status_not_set_on_interval_failures(registry: TickerRegistry) -> None:
     """Global ticker status is no longer set to not_found by per-interval failures."""
     base = datetime(2024, 3, 1)
-    registry.replace({
-        "FAIL": {
-            "ticker": "FAIL",
-            "status": "active",
-            "intervals": {
-                "1d": {"status": "active"},
-                "1h": {"status": "active"},
-            },
+    registry.replace(
+        {
+            "FAIL": {
+                "ticker": "FAIL",
+                "status": "active",
+                "intervals": {
+                    "1d": {"status": "active"},
+                    "1h": {"status": "active"},
+                },
+            }
         }
-    })
+    )
 
     with patch.object(registry._config, "get_now", return_value=base):
         registry.update_ticker_interval_status("FAIL", "1h", False)
@@ -349,20 +401,23 @@ def test_global_status_not_set_on_interval_failures(registry: TickerRegistry) ->
 
 # ── update_ticker_interval_status — success path ─────────────────────────────
 
+
 def test_success_clears_streak_and_cooling(registry: TickerRegistry) -> None:
-    registry.replace({
-        "T": {
-            "ticker": "T",
-            "status": "active",
-            "intervals": {
-                "1d": {
-                    "status": "not_found",
-                    "not_found_streak_days": 2,
-                    "cooling_since": "2024-02-01",
+    registry.replace(
+        {
+            "T": {
+                "ticker": "T",
+                "status": "active",
+                "intervals": {
+                    "1d": {
+                        "status": "not_found",
+                        "not_found_streak_days": 2,
+                        "cooling_since": "2024-02-01",
+                    },
                 },
-            },
+            }
         }
-    })
+    )
     with patch.object(registry._config, "get_now", return_value=datetime(2024, 3, 1)):
         registry.update_ticker_interval_status("T", "1d", True)
 
@@ -374,15 +429,17 @@ def test_success_clears_streak_and_cooling(registry: TickerRegistry) -> None:
 
 def test_success_does_not_clear_permanently_dead(registry: TickerRegistry) -> None:
     """permanently_dead can only be cleared by add_ticker(), not by a success event."""
-    registry.replace({
-        "T": {
-            "ticker": "T",
-            "status": "active",
-            "intervals": {
-                "1d": {"status": "not_found", "permanently_dead": True},
-            },
+    registry.replace(
+        {
+            "T": {
+                "ticker": "T",
+                "status": "active",
+                "intervals": {
+                    "1d": {"status": "not_found", "permanently_dead": True},
+                },
+            }
         }
-    })
+    )
     with patch.object(registry._config, "get_now", return_value=datetime(2024, 3, 1)):
         registry.update_ticker_interval_status("T", "1d", True)
 
@@ -407,6 +464,7 @@ def test_update_interval_status_found_data(registry: TickerRegistry) -> None:
 
 # ── add_ticker / remove_ticker ────────────────────────────────────────────────
 
+
 def test_add_ticker_new_creates_manual_entry(registry: TickerRegistry) -> None:
     with patch.object(registry._config, "get_now", return_value=datetime(2024, 5, 1)):
         registry.add_ticker("NEWCO")
@@ -418,17 +476,23 @@ def test_add_ticker_new_creates_manual_entry(registry: TickerRegistry) -> None:
 
 
 def test_add_ticker_resurrects_permanently_dead(registry: TickerRegistry) -> None:
-    registry.replace({
-        "DEAD": {
-            "ticker": "DEAD",
-            "status": "active",
-            "source": "csv",
-            "intervals": {
-                "1d": {"status": "not_found", "permanently_dead": True, "not_found_streak_days": 3},
-                "1h": {"status": "not_found", "permanently_dead": True},
-            },
+    registry.replace(
+        {
+            "DEAD": {
+                "ticker": "DEAD",
+                "status": "active",
+                "source": "csv",
+                "intervals": {
+                    "1d": {
+                        "status": "not_found",
+                        "permanently_dead": True,
+                        "not_found_streak_days": 3,
+                    },
+                    "1h": {"status": "not_found", "permanently_dead": True},
+                },
+            }
         }
-    })
+    )
     with patch.object(registry._config, "get_now", return_value=datetime(2024, 5, 1)):
         registry.add_ticker("DEAD")
 
@@ -449,14 +513,16 @@ def test_add_ticker_is_exempt_from_death_cycle(registry: TickerRegistry) -> None
 
 
 def test_remove_ticker_marks_manually_removed(registry: TickerRegistry) -> None:
-    registry.replace({
-        "BYE": {
-            "ticker": "BYE",
-            "status": "active",
-            "source": "csv",
-            "intervals": {"1d": {"status": "active"}, "1h": {"status": "active"}},
+    registry.replace(
+        {
+            "BYE": {
+                "ticker": "BYE",
+                "status": "active",
+                "source": "csv",
+                "intervals": {"1d": {"status": "active"}, "1h": {"status": "active"}},
+            }
         }
-    })
+    )
     registry.remove_ticker("BYE")
 
     data = registry.tickers["BYE"]
@@ -468,15 +534,17 @@ def test_remove_ticker_marks_manually_removed(registry: TickerRegistry) -> None:
 
 
 def test_remove_ticker_not_reactivated_by_csv_update(registry: TickerRegistry) -> None:
-    registry.replace({
-        "BYE": {
-            "ticker": "BYE",
-            "status": "active",
-            "source": "manual",
-            "manually_removed": True,
-            "intervals": {"1d": {"status": "not_found", "permanently_dead": True}},
+    registry.replace(
+        {
+            "BYE": {
+                "ticker": "BYE",
+                "status": "active",
+                "source": "manual",
+                "manually_removed": True,
+                "intervals": {"1d": {"status": "not_found", "permanently_dead": True}},
+            }
         }
-    })
+    )
 
     incoming = {"BYE": {"ticker": "BYE", "status": "active", "intervals": {}}}
     registry.update_current_list(incoming)
@@ -490,6 +558,7 @@ def test_remove_ticker_missing_logs_warning(registry: TickerRegistry, caplog) ->
 
 
 # ── business_days_since ───────────────────────────────────────────────────────
+
 
 def test_business_days_since_skips_weekends() -> None:
     # 2024-02-05 is Monday; 2024-02-12 is Monday — 5 workdays between them
@@ -508,6 +577,7 @@ def test_business_days_since_same_day_is_zero() -> None:
 
 
 # ── misc ──────────────────────────────────────────────────────────────────────
+
 
 def test_replace_overwrites_internal_state(registry: TickerRegistry) -> None:
     new_data = {

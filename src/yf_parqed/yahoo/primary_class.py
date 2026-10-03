@@ -311,11 +311,13 @@ class YFParqed:
     def _is_dead_instrument(cls, symbol: str, name: str) -> bool:
         """Return True if the instrument is a derivative that will never trade as a stock."""
         # Known derivative symbol suffixes: .WS .WT .WI .W (warrants), .RT .R (rights), .U (units)
-        if re.search(r'\.(?:W[STI]?|R[T]?|U)$', symbol, re.IGNORECASE):
+        if re.search(r"\.(?:W[STI]?|R[T]?|U)$", symbol, re.IGNORECASE):
             return True
         return bool(cls._DEAD_NAME_PATTERN.search(name))
 
-    def _parse_csv_tickers(self, path: Path, symbol_col: str, name_col: str) -> list[str]:
+    def _parse_csv_tickers(
+        self, path: Path, symbol_col: str, name_col: str
+    ) -> list[str]:
         """Parse a ticker CSV and return live symbols, filtering dead instruments."""
         symbols: list[str] = []
         filtered = 0
