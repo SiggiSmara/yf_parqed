@@ -7,6 +7,7 @@ import httpx
 from loguru import logger
 from typing import List
 from ..common.rate_limiter import CallableRateLimiter, RateLimiter
+from ..common.shutdown import ShutdownRequested, StopCheck, sleep_unless_stopped
 
 
 class XetraFetcher:
@@ -29,6 +30,7 @@ class XetraFetcher:
         burst_size: int = 30,
         burst_cooldown: int = 35,
         filter_empty_files: bool = False,
+        should_stop: StopCheck | None = None,
     ):
         """
         Initialize XetraFetcher with empirically validated rate limiting.
@@ -39,6 +41,8 @@ class XetraFetcher:
             burst_size: Number of requests before triggering cooldown (default: 30)
             burst_cooldown: Cooldown period in seconds after burst (default: 35)
             filter_empty_files: Skip files outside trading hours (default: False)
+            should_stop: Optional check for a daemon stop request. When it turns true,
+                the burst cooldown and retry waits end early and raise ShutdownRequested.
 
         NOTE: Rate limiting based on empirical testing (Nov 2025):
         - 0.6s inter-request delay + 35s cooldown after 30 requests = stable, zero 429 errors
@@ -78,6 +82,7 @@ class XetraFetcher:
         self.burst_cooldown = burst_cooldown
         self.request_count = 0  # Track requests in current burst
         self.last_request_time: datetime | None = None
+        self.should_stop = should_stop
         self.rate_limiter: RateLimiter = CallableRateLimiter(self.enforce_limits)
 
         # Trading hours filtering is disabled for downloads; daemon scheduling may still use hours
@@ -102,7 +107,8 @@ class XetraFetcher:
                 f"Burst cooldown: {self.request_count} requests completed, "
                 f"waiting {self.burst_cooldown}s before next burst..."
             )
-            time.sleep(self.burst_cooldown)
+            if not sleep_unless_stopped(self.burst_cooldown, self.should_stop):
+                raise ShutdownRequested("stop requested during burst cooldown")
             logger.info("Burst cooldown complete, resuming downloads")
 
         # Enforce inter-request delay
@@ -318,6 +324,7 @@ class XetraFetcher:
         Raises:
             httpx.HTTPStatusError: On HTTP errors (404, 500, etc.)
             httpx.RequestError: On network failures
+            ShutdownRequested: If a stop was requested during a rate-limit wait
 
         Example:
             >>> fetcher = XetraFetcher()
@@ -358,7 +365,8 @@ class XetraFetcher:
                         f"Rate limited (429) on attempt {attempt + 1}/{max_retries}. "
                         f"Retrying in {delay}s..."
                     )
-                    time.sleep(delay)
+                    if not sleep_unless_stopped(delay, self.should_stop):
+                        raise ShutdownRequested("stop requested while retrying")
                     continue
                 else:
                     logger.error(

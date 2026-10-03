@@ -46,7 +46,7 @@ def fast_sleep(monkeypatch):
         if len(sleep_calls) >= 1:
             raise SystemExit(0)
 
-    monkeypatch.setattr("yf_parqed.xetra_cli.time.sleep", mock_sleep)
+    monkeypatch.setattr("time.sleep", mock_sleep)
     return sleep_calls
 
 
@@ -64,7 +64,7 @@ def daemon_test_context(mock_xetra_service, monkeypatch):
             if len(sleep_calls) >= 1:
                 raise SystemExit(0)
 
-        monkeypatch.setattr("yf_parqed.xetra_cli.time.sleep", mock_sleep)
+        monkeypatch.setattr("time.sleep", mock_sleep)
 
         yield {
             "service": mock_xetra_service,
@@ -444,7 +444,7 @@ class TestDaemonTradingHoursIntegration:
                 if len(sleep_calls) >= 2:
                     raise SystemExit(0)
 
-            monkeypatch.setattr("yf_parqed.xetra_cli.time.sleep", mock_sleep)
+            monkeypatch.setattr("time.sleep", mock_sleep)
 
             # Setup mock trading hours checker
             mock_checker = MagicMock()

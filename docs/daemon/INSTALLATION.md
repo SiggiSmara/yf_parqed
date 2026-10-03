@@ -377,17 +377,23 @@ sudo tee /etc/logrotate.d/yf_parqed > /dev/null << 'EOF'
     delaycompress
     notifempty
     missingok
-    create 0640 yfparqed yfparqed
-    sharedscripts
-    postrotate
-        systemctl reload-or-restart yf-parqed 'xetra@*' 2>/dev/null || true
-    endscript
+    copytruncate
 }
 EOF
 
 # Test logrotate configuration
 sudo logrotate -d /etc/logrotate.d/yf_parqed
 ```
+
+`copytruncate` copies the live log file and empties it in place, so the daemons keep
+writing to the same file and nothing has to be restarted. Do not add a `postrotate`
+that restarts the services: neither unit has a reload action, so that would restart
+both at midnight and kill the cycle in progress. A line written between the copy and
+the truncate can be lost; that is accepted for a log file.
+
+The Xetra daemon also rotates its own log at 10 MB (`rotation` in `xetra_cli.py`);
+that is independent of this config. The Yahoo daemon writes to the journal only, so
+the `*.log` pattern matches the Xetra and ISIN logs.
 
 ## Post-Installation
 

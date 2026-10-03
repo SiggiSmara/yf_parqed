@@ -46,7 +46,7 @@ class StubYFParqedForDaemon:
     def set_limiter(self, max_requests: int, duration: int):
         self.calls.append(("set_limiter", max_requests, duration))
 
-    def update_stock_data(self, start_date=None, end_date=None):
+    def update_stock_data(self, start_date=None, end_date=None, should_stop=None):
         self.update_data_calls += 1
         self.calls.append(("update_stock_data", start_date, end_date))
 
@@ -616,7 +616,9 @@ class TestDaemonLoop:
                 super().__init__()
                 self.error_count = 0
 
-            def update_stock_data(self, start_date=None, end_date=None):
+            def update_stock_data(
+                self, start_date=None, end_date=None, should_stop=None
+            ):
                 self.update_data_calls += 1
                 self.error_count += 1
                 if self.error_count == 1:

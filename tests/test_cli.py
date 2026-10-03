@@ -62,7 +62,7 @@ class StubYFParqed:
         self.calls.append(("remove_interval", interval))
         self.removed_intervals.append(interval)
 
-    def update_stock_data(self, start_date=None, end_date=None):
+    def update_stock_data(self, start_date=None, end_date=None, should_stop=None):
         self.calls.append(("update_stock_data", start_date, end_date))
 
     def confirm_not_founds(self):

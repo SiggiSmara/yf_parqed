@@ -27,7 +27,7 @@ def test_fetch_trades_uses_wrk_dir(tmp_path):
             return (0.0, 1, 0.0)
 
     class ServiceStub:
-        def __init__(self, *, config: ConfigStub, root_path: Path):
+        def __init__(self, *, config: ConfigStub, root_path: Path, should_stop=None):
             service_inits.append((config.base_path, root_path))
             self.config = config
             self.root_path = root_path

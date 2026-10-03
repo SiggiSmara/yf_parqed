@@ -471,8 +471,11 @@ tail -f /var/log/yf-parqed/update.log
 
 ```bash
 # 1. Was the daemon in the middle of a cycle? Look at the last log lines before the stop.
-#    A stop during a cycle waits for the cycle to end and is killed at TimeoutStopSec.
-#    No data is lost (writes are atomic). In-cycle checks are planned: ADR 2026-10-03, Step E.
+#    Both daemons check for a stop between items (Yahoo: tickers, Xetra: files and dates;
+#    ADR 2026-10-03, Step E) and log "Stop requested, ending ...". If that line is missing,
+#    the installed code predates Step E: this must print 6:
+grep -c 'should_stop' /opt/yf_parqed/src/yf_parqed/xetra/xetra_service.py
+#    A stop during ticker maintenance, or inside one long download or day merge, still waits for it.
 tail -n 20 /var/log/yf_parqed/xetra-DETR.log
 
 # 2. Was the daemon idle and did it log "Daemon shutting down gracefully" before the kill?

@@ -74,8 +74,12 @@ def migrate(wrk_dir: Path, apply: bool) -> None:
                 else:
                     dead_suffix.append(symbol)
 
-    print(f"Old-schema global not_found  → permanently_dead: {len(globally_dead):>5} tickers")
-    print(f"Dead instrument symbol suffix → permanently_dead: {len(dead_suffix):>5} tickers")
+    print(
+        f"Old-schema global not_found  → permanently_dead: {len(globally_dead):>5} tickers"
+    )
+    print(
+        f"Dead instrument symbol suffix → permanently_dead: {len(dead_suffix):>5} tickers"
+    )
     print(f"Total intervals updated:                          {intervals_changed:>5}")
 
     if dead_suffix:

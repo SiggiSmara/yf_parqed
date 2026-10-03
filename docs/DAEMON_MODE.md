@@ -99,10 +99,10 @@ yf-parqed update-data --daemon --pid-file /run/yf-parqed/yf-parqed.pid
 
 ### 4. Graceful Shutdown
 - **Signal handling**: Responds to SIGTERM and SIGINT (Ctrl+C)
-- **Clean exit**: Finishes the current update cycle before shutting down
+- **Clean exit**: Ends the current update cycle after the ticker it is working on, then shuts down. Writes are atomic, so a ticker is either fully saved or not touched
 - **Resource cleanup**: Releases locks, removes PID file
 
-> **Known limitation:** the shutdown request is checked between cycles, not between tickers. A cycle over the full ticker list takes hours, so a stop during a cycle runs into systemd's `TimeoutStopSec` and the process is killed. Writes are atomic, so no data is corrupted, but the next start has to clear a stale lock first. Per-ticker checking is planned in [ADR 2026-10-03](adr/in-progress/2026-10-03-daemon-resource-footprint.md), Step E.
+> **Known limitation:** the optional ticker maintenance (`--ticker-maintenance`) does not check for a stop request while it runs. A stop that arrives during maintenance waits for it to finish. The signal handler only records the request; the log line `Received signal ..., shutting down gracefully...` is written by the main loop when it notices. See [ADR 2026-10-03](adr/in-progress/2026-10-03-daemon-resource-footprint.md), Step E.
 
 ```bash
 # Graceful shutdown
@@ -508,11 +508,11 @@ xetra-parqed --log-file logs/xetra.log fetch-trades DETR \
 
 ### 4. Graceful Shutdown
 - **Signal handling**: Responds to SIGTERM and SIGINT (Ctrl+C)
-- **Clean exit**: Finishes the current fetch cycle before shutting down; while waiting between cycles it reacts within 10 seconds
+- **Clean exit**: Ends the current fetch cycle after the file it is downloading (and abandons a monthly consolidation between days); while waiting between cycles it reacts within 10 seconds. The fetcher's 35-second burst cooldown and its 429 retry waits also end early. Files already stored are kept and the next run resumes where it stopped
 - **Resource cleanup**: Closes HTTP connections, removes PID file
 - **Fast exit**: Once cleanup is done the process ends immediately, without Python's interpreter teardown. On a host short of RAM the idle daemon's memory is in swap, and a normal exit reads it all back from disk before freeing it, which used to take longer than `TimeoutStopSec`. The Yahoo and ISIN mapping daemons exit the same way.
 
-> **Known limitation:** a stop during a cycle waits for the whole cycle and can run into `TimeoutStopSec`. Tracked in [ADR 2026-10-03](adr/in-progress/2026-10-03-daemon-resource-footprint.md), Step E.
+> **Note:** a download or a single-day merge that is already running finishes first, which takes a few seconds. The signal handler only records the request; the main loop logs `Received signal ..., shutting down gracefully...`. See [ADR 2026-10-03](adr/in-progress/2026-10-03-daemon-resource-footprint.md), Step E.
 
 ```bash
 # Graceful shutdown
@@ -803,23 +803,22 @@ ls -la /run/xetra/
 - Manually run one-time fetch to see immediate feedback
 
 ### Logs growing too large
-Adjust rotation settings by editing the CLI source or use external log rotation:
+The daemon already rotates its own log file at 10 MB and keeps 30 days (see `rotation` and `retention` in `xetra_cli.py`). To also rotate on a schedule, use logrotate with `copytruncate`:
 
 ```bash
 # /etc/logrotate.d/xetra
-/var/log/xetra/*.log {
+/var/log/yf_parqed/*.log {
     daily
     rotate 30
     compress
     delaycompress
     notifempty
-    create 0640 xetra xetra
-    sharedscripts
-    postrotate
-        systemctl reload xetra-detr
-    endscript
+    missingok
+    copytruncate
 }
 ```
+
+`copytruncate` keeps the daemon writing to the same file, so no restart is needed. Do not add a `postrotate` that restarts or reloads the service: the units have no reload action, so that restarts the daemon and interrupts the cycle in progress. (`daemon-manage.sh install` sets this up for you.)
 
 ## Trading Hours Behavior
 

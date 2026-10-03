@@ -6,15 +6,14 @@ import sys
 from datetime import datetime, timedelta, time as dt_time
 from typing_extensions import Annotated
 from typing import Tuple
-import signal
 import atexit
-import time
 
 from yf_parqed.yahoo.primary_class import all_intervals as default_all_intervals
 
 from yf_parqed.yahoo.primary_class import YFParqed
 from .common.process_exit import exit_daemon_process
 from .common.run_lock import GlobalRunLock
+from .common.shutdown import StopFlag
 from .xetra.trading_hours_checker import TradingHoursChecker
 
 
@@ -348,6 +347,11 @@ def update_data(
 
         return False
 
+    # Signal handler for graceful shutdown
+    stop = StopFlag()
+    if daemon:
+        stop.install()
+
     def run_ticker_maintenance():
         """Run ticker maintenance tasks."""
         logger.info("Running ticker maintenance...")
@@ -425,7 +429,7 @@ def update_data(
             )
 
             if all([start_date is None, end_date is None]):
-                yf_parqed.update_stock_data()
+                yf_parqed.update_stock_data(should_stop=stop)
             else:
                 if any([start_date is None, end_date is None]):
                     logger.error(
@@ -452,9 +456,13 @@ def update_data(
                 yf_parqed.update_stock_data(
                     start_date=start_dt,
                     end_date=end_dt,
+                    should_stop=stop,
                 )
 
-            logger.info("All tickers were processed.")
+            if stop():
+                logger.info("Stop requested during the update cycle.")
+            else:
+                logger.info("All tickers were processed.")
 
             if yf_parqed.new_not_found:
                 logger.info("Some tickers did not return any data.")
@@ -485,17 +493,6 @@ def update_data(
             except Exception:
                 logger.debug("Failed to release global run lock", exc_info=True)
 
-    # Signal handler for graceful shutdown
-    shutdown_requested = {"flag": False}
-
-    def signal_handler(signum, frame):
-        logger.info(f"Received signal {signum}, shutting down gracefully...")
-        shutdown_requested["flag"] = True
-
-    if daemon:
-        signal.signal(signal.SIGTERM, signal_handler)
-        signal.signal(signal.SIGINT, signal_handler)
-
     try:
         if daemon:
             logger.info(f"Starting daemon mode: updating every {interval} hour(s)")
@@ -509,7 +506,7 @@ def update_data(
             )
 
             run_count = 0
-            while not shutdown_requested["flag"]:
+            while not stop():
                 # Check if within trading hours
                 if hours_checker and not hours_checker.is_within_hours():
                     wait_seconds = hours_checker.seconds_until_active()
@@ -518,20 +515,9 @@ def update_data(
                         f"Outside trading hours. Waiting until {next_active.strftime('%Y-%m-%d %H:%M:%S %Z')}"
                     )
 
-                    # Sleep in small intervals to check for shutdown
-                    sleep_interval = 10  # Check every 10 seconds
-                    for _ in range(int(wait_seconds / sleep_interval)):
-                        if shutdown_requested["flag"]:
-                            break
-                        time.sleep(sleep_interval)
+                    stop.sleep(wait_seconds)
 
-                    # Sleep remaining time
-                    if not shutdown_requested["flag"]:
-                        remaining = wait_seconds % sleep_interval
-                        if remaining > 0:
-                            time.sleep(remaining)
-
-                    if shutdown_requested["flag"]:
+                    if stop():
                         break
 
                     logger.info("Entering trading hours, starting update cycle")
@@ -551,7 +537,7 @@ def update_data(
                         f"Error in daemon run #{run_count}: {e}", exc_info=True
                     )
 
-                if shutdown_requested["flag"]:
+                if stop():
                     break
 
                 # Calculate next run time, capped so we do not oversleep past close
@@ -567,20 +553,9 @@ def update_data(
                     f"Next run at {next_run.strftime('%Y-%m-%d %H:%M:%S')} ==="
                 )
 
-                # Sleep in small intervals to check for shutdown signal
-                sleep_seconds = base_sleep_seconds
-                sleep_interval = 10  # Check every 10 seconds
-                for _ in range(int(sleep_seconds / sleep_interval)):
-                    if shutdown_requested["flag"]:
-                        break
-                    time.sleep(sleep_interval)
+                stop.sleep(base_sleep_seconds)
 
-                # Sleep remaining time
-                if not shutdown_requested["flag"]:
-                    remaining = sleep_seconds % sleep_interval
-                    if remaining > 0:
-                        time.sleep(remaining)
-
+            stop.log_request()
             logger.info("Daemon shutdown complete.")
         else:
             # Single run mode

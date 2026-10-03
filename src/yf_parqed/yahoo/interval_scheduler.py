@@ -7,6 +7,7 @@ import os
 from loguru import logger
 from rich.progress import track
 
+from ..common.shutdown import StopCheck
 from .ticker_registry import TickerRegistry
 
 IntervalProvider = Callable[[], Sequence[str]]
@@ -48,7 +49,9 @@ class IntervalScheduler:
         self,
         start_date: datetime | None = None,
         end_date: datetime | None = None,
+        should_stop: StopCheck | None = None,
     ) -> None:
+        """Process every active ticker; with ``should_stop``, end after the current ticker."""
         self._load_registry()
 
         active_tickers = [
@@ -68,7 +71,15 @@ class IntervalScheduler:
         disable_track = not (os.getenv("YF_PARQED_LOG_LEVEL", "INFO") == "INFO")
         resolved_end = end_date or self._today_provider()
 
+        def stopping() -> bool:
+            if should_stop is not None and should_stop():
+                logger.info("Stop requested, ending the update cycle")
+                return True
+            return False
+
         for interval in self._intervals_provider():
+            if stopping():
+                return
             interval_stocks = [
                 ticker
                 for ticker in active_tickers
@@ -84,6 +95,8 @@ class IntervalScheduler:
                 description=f"Processing stocks for interval:{interval}",
                 disable=disable_track,
             ):
+                if stopping():
+                    return
                 if self._limit is not None:
                     self._limit()
                 self._process_stock(
