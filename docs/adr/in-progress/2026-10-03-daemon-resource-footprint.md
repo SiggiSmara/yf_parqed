@@ -142,7 +142,13 @@ Run `uv run pytest` after each step; all tests must pass before moving on.
 
 ### Deploying
 
-The agent cannot deploy. Each batch ends with commits on `develop`; the owner then runs `sudo ./daemon-manage.sh update`, which pulls the code and restarts the services. Record the deploy date in the Progress Log.
+The agent cannot deploy. Production (`/opt/yf_parqed`) is a checkout of `main`, and `sudo ./daemon-manage.sh update` runs `git pull origin main` before restarting the services. A commit on `develop` therefore reaches production only after it has been pushed **and merged into `main`**. Each batch ends with commits on `develop`; the owner pushes, merges to `main` and runs the update. Record the deploy date in the Progress Log.
+
+Before relying on a deploy, confirm that production has the code. For Step A:
+
+```bash
+grep -c '_DAYS_INCLUDED_KEY' /opt/yf_parqed/src/yf_parqed/xetra/xetra_service.py   # 0 means the old code is still installed
+```
 
 ### Checking a deploy
 
@@ -153,26 +159,70 @@ The agent cannot deploy. Each batch ends with commits on `develop`; the owner th
 
 ### Repairing the monthly files (Step A2)
 
-Four monthly files hold fewer trades than their daily files. The repair rebuilds every month from its daily files with the new code; months that are already complete come out with the same row count. It rewrites files under `trades_monthly/` and creates two daily files from mini-files, so it needs the owner's go-ahead and must run as `yfparqed`, after Step A is deployed. Run it outside trading hours with the Xetra service stopped, so that only one process merges mini-files.
+Four monthly files hold fewer trades than their daily files. The repair rebuilds every month from its daily files; months that are already complete come out with the same row count. It rewrites files under `trades_monthly/` and creates two daily files from mini-files, so it needs the owner's go-ahead.
+
+**The repair runs the code installed in `/opt/yf_parqed`, not the code in the dev repo.** Committing the fix on `develop` changes nothing in production. The fix has to travel `develop` → GitHub → `main` → `/opt/yf_parqed` first. With the old code the same command loads a whole month into memory and exhausts RAM and swap; that is what happened on the first attempt on 2026-10-03.
+
+Do the three parts in order. Every command is run on the server as `siggi`.
+
+**Part 1 — get the fix into production (this is "deploying Batch 1")**
 
 ```bash
-# 1. Stop the collector and keep a copy of the current monthly files (about 2.3 GB)
-sudo systemctl stop 'xetra@DETR'
-sudo cp -a /var/lib/yf_parqed/data/de/xetra/trades_monthly /var/lib/yf_parqed/data/de/xetra/trades_monthly.bak-2026-10
+# 1.1 In the dev repo: nothing uncommitted, then publish develop
+cd /home/siggi/github/yf_parqed
+git status                 # must show a clean working tree on branch develop
+git push origin develop
 
-# 2. Rebuild every month (about one minute per month).
-#    The cd matters: consolidate-month ignores --wrk-dir and looks for ./data.
-#    From any other directory it reports "No months found" and does nothing.
+# 1.2 On GitHub: open a pull request from develop into main, wait for CI to pass, merge it.
+#     Do NOT create a version tag for this. A tag (v*) is what triggers publishing to PyPI;
+#     production only needs the commit on main.
+
+# 1.3 Install main into production. This stops both services, pulls origin/main into
+#     /opt/yf_parqed, syncs dependencies, clears the bytecache and starts both services again.
+cd /home/siggi/github/yf_parqed
+sudo ./daemon-manage.sh update
+#     It asks "Reinstall systemd service templates ...? [y/N]"  -> answer N.
+#     It may ask about a pending migration or registry pruning -> answer as you normally do;
+#     neither is related to this repair.
+```
+
+**Part 2 — confirm production has the fix**
+
+```bash
+grep -c '_DAYS_INCLUDED_KEY' /opt/yf_parqed/src/yf_parqed/xetra/xetra_service.py
+```
+
+This must print `3`. If it prints `0`, production still has the old code: stop here and go back to Part 1.
+
+**Part 3 — run the repair**
+
+Run it outside trading hours. The update in Part 1 started both services again, so stop the Xetra collector first; only one process should merge mini-files.
+
+```bash
+# 3.1 Stop the Xetra collector
+sudo systemctl stop 'xetra@DETR'
+
+# 3.2 Backup: already done. trades_monthly.bak-2026-10 was made on 2026-10-03 before the
+#     first attempt and is complete. Do not copy again; that would overwrite it.
+ls /var/lib/yf_parqed/data/de/xetra/trades_monthly.bak-2026-10/venue=DETR    # must list year=2025 and year=2026
+
+# 3.3 Rebuild every month.
+#     The cd is required: consolidate-month ignores --wrk-dir and looks for ./data.
+#     From any other directory it reports "No months found" and does nothing.
 cd /var/lib/yf_parqed
 sudo -u yfparqed /opt/yf_parqed/.venv/bin/xetra-parqed consolidate-month DETR --all
 
-# 3. Check the row counts, then start the collector again
+# 3.4 Check the row counts against the table below
 sudo -u yfparqed /opt/yf_parqed/.venv/bin/python3 -c "
 import pyarrow.parquet as pq, pathlib
 for f in sorted(pathlib.Path('/var/lib/yf_parqed/data/de/xetra/trades_monthly').rglob('trades.parquet')):
     print(f.parent.parent.name, f.parent.name, format(pq.read_metadata(f).num_rows, ','))"
+
+# 3.5 Start the Xetra collector again
 sudo systemctl start 'xetra@DETR'
 ```
+
+What to expect in step 3.3: one to one and a half minutes per month, about fifteen minutes for all ten, with memory use staying under 1 GB. If a single month runs for more than five minutes or `free -m` shows swap climbing, press Ctrl+C: the old code is running, and Part 2 was skipped or failed.
 
 Expected row counts, taken from the daily files on 2026-10-03:
 
@@ -191,7 +241,7 @@ Expected row counts, taken from the daily files on 2026-10-03:
 
 Two things change besides row counts. Every rebuilt file gains the fingerprint and day list in its metadata. And the four oldest files (2025-12 to 2026-04), which were written by the May 2026 migration without the `venue`, `year`, `month` and `day` columns, come out with those columns, like the files from May onward.
 
-If a count is lower than expected, nothing was lost: the never-shrink guard refuses to replace a file with a smaller one, and the copy from step 1 is still there. Delete the copy once the counts are confirmed.
+If a count is lower than expected, nothing was lost: the never-shrink guard refuses to replace a file with a smaller one, and the backup is still there. Delete the backup (`sudo rm -r /var/lib/yf_parqed/data/de/xetra/trades_monthly.bak-2026-10`) once the counts are confirmed.
 
 ### Baseline for the Yahoo gap check (measured 2026-10-03)
 
@@ -210,6 +260,7 @@ After Step D, any liquid ticker with a missing business day or a day well short 
 - **2026-10-03** — Step A implemented in `XetraService._consolidate_to_monthly` with tests in `tests/test_xetra_consolidation.py`; full suite 541 passed, 1 skipped. Validated in dev against the real September 2026 daily files (read-only, output to a scratch directory): 59 seconds and 326 MB peak memory, against 6 to 70 minutes and the whole machine before. The result has the same 8,140,348 rows as the production monthly file, an equal schema, and all 21 columns identical value for value and in the same order. A second call returned in 9 ms. **Left open:** the changes are in the working tree on `develop`, not committed and not deployed. Next: commit, deploy before 2026-11-01, then start Batch 2 in a new session.
 - **2026-10-03** — Finding while reviewing how an unreadable daily file is handled. No Parquet file has ever been unreadable (167 daily and 9 monthly footers all read; no read errors in the retained logs). A different gap was real: 2026-05-08 and 2026-06-10 never got a daily `trades.parquet`. Their trades were intact in mini-files but missing from the May and June monthly files. Why those days were never merged is unknown; the logs from then are gone. Their raw cache had been deleted because cleanup accepted any readable monthly file as proof for the whole month. The January and February 2026 monthly files are also behind their daily files (by 518,640 and 2,987,963 trades); they were written on 2026-05-01 and the daily files changed afterwards.
 - **2026-10-03** — Step A extended to cover this (see Decision 1): leftover mini-files merged before consolidating, stale-versus-new watermark in the daily merge, unreadable days left out on the record, never-shrink guard, per-day raw-cache proof. Full suite 549 passed, 1 skipped. Rehearsed on scratch copies of real data: May 2026 went from 9,766,173 to 10,267,787 trades with day 8 included (85 seconds), February 2026 from 6,507,722 to 9,495,685 (75 seconds), peak memory 542 MB, repeat calls skipped in 11 ms. **Left open:** the extension is in the working tree, not committed; nothing is deployed; Step A2 (the repair) has not been run.
+- **2026-10-03** — The repair (Step A2) was attempted before Step A had reached production and had to be abandoned. Production was still on `main` at commit `6928491` (2026-05-02); the Step A commits were on local `develop`, unpushed. So `consolidate-month --all` ran the old pandas consolidation: December 2025 completed, January 2026 exhausted memory, and the kernel OOM-killed the process at 08:52 UTC (3.2 GB resident). **No data was damaged:** December was rewritten with the same 5,224,813 rows and identical content in every column (checked against the backup); January and all later monthly files are untouched; no temp file was left behind; the mini-files of 2026-05-08 and 2026-06-10 are untouched; the backup `trades_monthly.bak-2026-10` is complete. Both services were stopped by the owner beforehand and are still stopped. The runbook now starts with a check that production has the new code, and the Deploying section now states that production follows `main`. **Left open:** Step A2 from Part 1 of its runbook (push `develop`, merge to `main`, run the update, confirm, repair).
 
 ## Risk Controls
 
