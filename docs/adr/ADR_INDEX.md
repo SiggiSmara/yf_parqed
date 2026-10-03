@@ -14,7 +14,7 @@ One row per ADR, oldest first. The folder an ADR sits in is its state; the `Stat
 | 2026-04-26 | [Xetra Parser Schema Resilience](implemented/2026-04-26-xetra-parser-schema-resilience.md) | implemented | Multi-schema parser. The deferred quarantine steps were superseded by the raw cache (2026-05-01 ADR). |
 | 2026-04-26 | [Xetra Two-Tier Trade Storage](to-do/2026-04-26-xetra-two-tier-storage.md) | to-do | Stable 7-column MiFIR core tier plus a flexible extended tier. |
 | 2026-05-01 | [Xetra Daemon Write-Path Performance and Hygiene](implemented/2026-05-01-xetra-daemon-write-path-perf.md) | implemented | Raw cache, mini-file daily writes, monthly consolidation cadence. Follow-up on consolidation in the 2026-10-03 ADR. |
-| 2026-10-03 | [Daemon Resource Footprint](in-progress/2026-10-03-daemon-resource-footprint.md) | in-progress | Xetra consolidation loop and memory, Yahoo full rewrite per cycle, nightly SIGKILL. Batch 1 (Xetra consolidation and monthly repair) deployed 2026-10-03; Batch 2 (shutdown and logrotate) is implemented (Steps E, F, G), waiting for deploy. |
+| 2026-10-03 | [Daemon Resource Footprint](in-progress/2026-10-03-daemon-resource-footprint.md) | in-progress | Xetra consolidation loop and memory, Yahoo full rewrite per cycle, nightly SIGKILL. Batch 1 (Xetra consolidation and monthly repair) deployed 2026-10-03; Batch 2 (shutdown and logrotate, Steps E, F, G) deployed 2026-10-03; Batch 3 (Yahoo disk load and registry): Steps B and C implemented, waiting for deploy; Step D not started. |
 
 ## Folders
 

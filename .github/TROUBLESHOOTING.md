@@ -570,7 +570,7 @@ A service's `MemoryPeak` includes the page cache of the files it read and wrote,
 
 1. **Xetra monthly consolidation at the start of a month.** The log shows `Month rolled over ... consolidating` on every cycle, and swap follows a sawtooth with the same period. Each run loads the whole previous month into memory. It stops by itself after two or three days. Tracked in [ADR 2026-10-03](../docs/adr/in-progress/2026-10-03-daemon-resource-footprint.md), Step A.
 
-2. **Yahoo daemon rewriting every partition each cycle.** This shows as steady CPU and iowait rather than memory: the process stays around 250 MB. Tracked in the same ADR, Steps B to D.
+2. **Yahoo daemon rewriting every partition each cycle.** This shows as steady CPU and iowait rather than memory: the process stays around 250 MB. Check whether the installed code has the fix: `grep -c 'def merge' /opt/yf_parqed/src/yf_parqed/common/partitioned_storage_backend.py` prints 1 when it does (ADR Steps B and C: a cycle opens only the months its new bars fall into and rewrites a file only when it changes). The daemon still refetches every ticker each cycle until Step D (saving the ticker registry) is deployed. Tracked in the same ADR.
 
 3. **A one-off migration or backfill using pandas on a large month.** Use Polars or PyArrow and process one file at a time.
 

@@ -80,7 +80,7 @@ data/us/yahoo/stocks_1m/ticker=TSLA/year=2025/month=12/data.parquet
 
 - **Single file per partition**: `data.parquet`
 - **Monthly partitions**: One file contains all trading days for that month
-- **Updates**: Existing file is read, merged with new data, deduplicated, and rewritten
+- **Updates**: Only the monthly files that the new data falls into are read and merged with it (deduplicated by date). A file is rewritten only if the merged rows differ from the stored ones. An incoming row that holds fewer values than the stored row for the same date does not replace it. The other months of the ticker are not opened, so a file's modification time is the last time its content changed.
 
 ---
 

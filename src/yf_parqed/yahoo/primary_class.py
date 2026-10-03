@@ -429,6 +429,22 @@ class YFParqed:
         backend = self._select_storage_backend(request)
         return backend.save(request, new_data, existing_data)
 
+    def merge_yf(
+        self, new_data: pd.DataFrame, target: StorageRequest | Path | str
+    ) -> None:
+        """Store freshly fetched bars for one ticker and interval.
+
+        Partitioned storage opens and rewrites only the months the new bars
+        fall into. The legacy layout is one file per ticker, read and
+        rewritten whole; it gets none of that.
+        """
+        request = self._ensure_storage_request(target)
+        backend = self._select_storage_backend(request)
+        if backend is self._partition_storage:
+            self._partition_storage.merge(request, new_data)
+        else:
+            backend.save(request, new_data, backend.read(request))
+
     def read_yf(self, target: StorageRequest | Path | str) -> pd.DataFrame:
         request = self._ensure_storage_request(target)
         backend = self._select_storage_backend(request)
@@ -534,8 +550,6 @@ class YFParqed:
 
         last_data_date = self.registry.get_last_data_date(stock, interval)
 
-        df2 = self.read_yf(storage_request)
-
         if end_date is None:
             end_date = self.get_today()
 
@@ -568,7 +582,7 @@ class YFParqed:
                 last_data_date = (
                     df1.index.get_level_values("date").max().to_pydatetime()
                 )
-                self.save_yf(df1, df2, storage_request)
+                self.merge_yf(df1, storage_request)
 
                 # Update ticker status - data found for this interval
                 # Also record storage backend information

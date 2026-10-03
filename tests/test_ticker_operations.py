@@ -543,7 +543,7 @@ class TestTickerOperations:
                 return_value=datetime(2024, 2, 20),
             ),
             patch.object(yf_parqed.data_fetcher, "fetch", return_value=success_df),
-            patch.object(yf_parqed, "save_yf", return_value=success_df),
+            patch.object(yf_parqed, "merge_yf", return_value=None),
         ):
             yf_parqed.save_single_stock_data("BOUNCE", interval="1d")
 
