@@ -513,6 +513,99 @@ class TestDailyMergeWatermark:
         assert len(pd.read_parquet(final)) == 6
         assert list(day_dir.glob("trades-*.parquet")) == []
 
+    def test_mini_file_with_missing_values_keeps_the_usual_type(
+        self, service, temp_root, sample_trades_df
+    ):
+        """Test that one mini-file with a widened column does not block the merge."""
+        trade_date = datetime(2025, 11, 4)
+        service.store_trades(sample_trades_df, "DETR", trade_date)
+        service.store_trades(sample_trades_df, "DETR", trade_date)
+        # A missing value makes pandas store the integer column as float
+        service.store_trades(
+            sample_trades_df.assign(volume=[100.0, None, 200.0]), "DETR", trade_date
+        )
+
+        service._consolidate_daily_files("DETR", "2025-11-04")
+
+        day_dir = _daily_dir(temp_root, 2025, 11, 4)
+        table = pq.ParquetFile(day_dir / "trades.parquet").read()
+        assert len(table) == 9
+        assert str(table.schema.field("volume").type) == "int64"
+        assert table.column("volume").null_count == 1
+        assert list(day_dir.glob("trades-*.parquet")) == []
+
+    def test_mini_file_with_fractional_values_widens_the_column(
+        self, service, temp_root, sample_trades_df
+    ):
+        """Test that values that do not fit the usual type are kept, not rejected."""
+        trade_date = datetime(2025, 11, 4)
+        service.store_trades(sample_trades_df, "DETR", trade_date)
+        service.store_trades(sample_trades_df, "DETR", trade_date)
+        service.store_trades(
+            sample_trades_df.assign(volume=[100.5, 50.0, 200.0]), "DETR", trade_date
+        )
+
+        service._consolidate_daily_files("DETR", "2025-11-04")
+
+        day_dir = _daily_dir(temp_root, 2025, 11, 4)
+        table = pq.ParquetFile(day_dir / "trades.parquet").read()
+        assert len(table) == 9
+        assert str(table.schema.field("volume").type) == "double"
+        assert 100.5 in table.column("volume").to_pylist()
+
+    def test_contract_column_with_missing_values_becomes_integer(
+        self, service, temp_root, sample_trades_df
+    ):
+        """Test that a float price_notation is an integer after the merge, even if every mini-file has it."""
+        trade_date = datetime(2025, 11, 4)
+        for _ in range(2):
+            service.store_trades(
+                sample_trades_df.assign(price_notation=[1.0, None, 1.0]),
+                "DETR",
+                trade_date,
+            )
+
+        service._consolidate_daily_files("DETR", "2025-11-04")
+
+        day_dir = _daily_dir(temp_root, 2025, 11, 4)
+        table = pq.ParquetFile(day_dir / "trades.parquet").read()
+        assert str(table.schema.field("price_notation").type) == "int64"
+        assert table.column("price_notation").to_pylist() == [1, None, 1] * 2
+        assert not (temp_root / "de" / "xetra" / "contract_violations").exists()
+
+    def test_contract_column_with_fraction_becomes_null_and_original_kept(
+        self, service, temp_root, sample_trades_df
+    ):
+        """Test that a fractional price_notation becomes null and the mini-file is preserved."""
+        trade_date = datetime(2025, 11, 4)
+        service.store_trades(
+            sample_trades_df.assign(price_notation=[1, 1, 1]), "DETR", trade_date
+        )
+        service.store_trades(
+            sample_trades_df.assign(price_notation=[1.6, None, 1.0]), "DETR", trade_date
+        )
+        day_dir = _daily_dir(temp_root, 2025, 11, 4)
+        offending = sorted(day_dir.glob("trades-*.parquet"))[1]
+        offending_bytes = offending.read_bytes()
+
+        service._consolidate_daily_files("DETR", "2025-11-04")
+
+        table = pq.ParquetFile(day_dir / "trades.parquet").read()
+        assert str(table.schema.field("price_notation").type) == "int64"
+        assert table.column("price_notation").to_pylist() == [1, 1, 1, None, None, 1]
+        kept = (
+            temp_root
+            / "de"
+            / "xetra"
+            / "contract_violations"
+            / "DETR"
+            / "year=2025"
+            / "month=11"
+            / "day=04"
+            / offending.name
+        )
+        assert kept.read_bytes() == offending_bytes
+
     def test_unreadable_daily_file_keeps_mini_files(
         self, service, temp_root, sample_trades_df
     ):

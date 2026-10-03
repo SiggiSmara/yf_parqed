@@ -77,7 +77,7 @@ class TestXetraParser:
             "venueOfExecution": "XETA",
             "transactionIdentificationCode": "2000000000000025050760176191884004245705800000006636",
             "tradingSystem": "XETRA",
-            "priceNotation": "MONE",
+            "priceNotation": 1,
             "venueOfPublication": "XETA",
             "mmtTradingMode": "2",
             "mmtModificationInd": "-",
@@ -209,6 +209,66 @@ class TestXetraParser:
 
         assert "instrumentIdentificationCode" not in df.columns
         assert "tradingDateAndTime" not in df.columns
+
+    # ------------------------------------------------------------------
+    # Integer contract: price_notation
+    # ------------------------------------------------------------------
+
+    def test_price_notation_is_nullable_integer(self, parser, mifid_json_multiple):
+        df = parser.parse(mifid_json_multiple)
+
+        assert str(df["price_notation"].dtype) == "Int64"
+        assert df["price_notation"].tolist() == [1, 1]
+        assert "contract_violations" not in df.attrs
+
+    def test_price_notation_missing_value_stays_integer(self, parser, mifid_trade):
+        without = {k: v for k, v in mifid_trade.items() if k != "priceNotation"}
+        df = parser.parse(json.dumps(mifid_trade) + "\n" + json.dumps(without))
+
+        assert str(df["price_notation"].dtype) == "Int64"
+        assert df["price_notation"].tolist()[0] == 1
+        assert df["price_notation"].isna().tolist() == [False, True]
+        assert "contract_violations" not in df.attrs
+
+    def test_price_notation_missing_in_every_record_is_integer(
+        self, parser, mifid_trade
+    ):
+        without = {k: v for k, v in mifid_trade.items() if k != "priceNotation"}
+        df = parser.parse(json.dumps(without))
+
+        assert str(df["price_notation"].dtype) == "Int64"
+        assert df["price_notation"].isna().all()
+
+    def test_price_notation_fraction_becomes_null_and_is_reported(
+        self, parser, mifid_trade
+    ):
+        fractional = {**mifid_trade, "priceNotation": 1.6}
+        df = parser.parse(json.dumps(mifid_trade) + "\n" + json.dumps(fractional))
+
+        assert str(df["price_notation"].dtype) == "Int64"
+        assert df["price_notation"].tolist()[0] == 1
+        assert df["price_notation"].isna().tolist() == [False, True]
+        assert df.attrs["contract_violations"] == {
+            "price_notation": {"rows": 1, "examples": ["1.6"]}
+        }
+
+    def test_price_notation_whole_number_as_float_is_accepted(
+        self, parser, mifid_trade
+    ):
+        df = parser.parse(json.dumps({**mifid_trade, "priceNotation": 1.0}))
+
+        assert df["price_notation"].tolist() == [1]
+        assert "contract_violations" not in df.attrs
+
+    def test_price_notation_text_becomes_null_and_is_reported(
+        self, parser, mifid_trade
+    ):
+        text = {**mifid_trade, "priceNotation": "MONE"}
+        df = parser.parse(json.dumps(text))
+
+        assert str(df["price_notation"].dtype) == "Int64"
+        assert df["price_notation"].isna().all()
+        assert df.attrs["contract_violations"]["price_notation"]["rows"] == 1
 
     def test_mifid_timestamp_conversion(self, parser, mifid_json_single):
         df = parser.parse(mifid_json_single)

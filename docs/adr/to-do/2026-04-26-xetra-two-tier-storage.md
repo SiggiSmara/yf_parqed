@@ -45,7 +45,7 @@ All remaining fields plus `transaction_id` as the join key. Schema evolves freel
 | `transaction_id` | `object` | Join key back to Tier 1 |
 | `distribution_time` | `datetime64[ns]` | Publication lag analysis |
 | `trading_system` | `object` | 2026-mifid only |
-| `price_notation` | `object` | 2026-mifid only |
+| `price_notation` | `Int64` (nullable integer) | 2026-mifid only |
 | `venue_publication` | `object` | 2026-mifid only |
 | `trading_mode` | `object` | MMT field, both schemas |
 | `modification_flag` | `object` | MMT field, both schemas |
