@@ -174,8 +174,10 @@ ProtectHome=true
 ReadWritePaths=/var/lib/yf_parqed /var/log/yf_parqed
 
 # Create PID directory at startup
+# (shared by all yf_parqed services, so it must not be removed when one of them stops)
 RuntimeDirectory=yf_parqed
 RuntimeDirectoryMode=0755
+RuntimeDirectoryPreserve=yes
 
 # Logging
 StandardOutput=journal
@@ -188,6 +190,8 @@ EOF
 ```
 
 #### Xetra ISIN Mapping Service
+
+> **Not ready to install (checked 2026-10-03).** The Deutsche Börse page this service reads the CSV link from has moved: the old address redirects to one that answers 404, so `xetra-parqed update-isin-mapping` fails on its first request. The page address in `src/yf_parqed/xetra/isin_mapping_updater.py` has to be found again first. The service has never run in production, nothing reads the mapping file yet, and `daemon-manage.sh` neither installs nor restarts this unit, so it would have to be kept up to date by hand.
 
 Create `/etc/systemd/system/xetra-isin-mapping.service`:
 
@@ -229,6 +233,7 @@ ReadWritePaths=/var/lib/yf_parqed /var/log/yf_parqed
 
 RuntimeDirectory=yf_parqed
 RuntimeDirectoryMode=0755
+RuntimeDirectoryPreserve=yes
 
 StandardOutput=journal
 StandardError=journal
@@ -299,8 +304,10 @@ ProtectHome=true
 ReadWritePaths=/var/lib/yf_parqed /var/log/yf_parqed
 
 # Use shared PID directory
+# (shared by all yf_parqed services, so it must not be removed when one of them stops)
 RuntimeDirectory=yf_parqed
 RuntimeDirectoryMode=0755
+RuntimeDirectoryPreserve=yes
 
 # Logging
 StandardOutput=journal
@@ -370,17 +377,23 @@ sudo tee /etc/logrotate.d/yf_parqed > /dev/null << 'EOF'
     delaycompress
     notifempty
     missingok
-    create 0640 yfparqed yfparqed
-    sharedscripts
-    postrotate
-        systemctl reload-or-restart yf-parqed 'xetra@*' 2>/dev/null || true
-    endscript
+    copytruncate
 }
 EOF
 
 # Test logrotate configuration
 sudo logrotate -d /etc/logrotate.d/yf_parqed
 ```
+
+`copytruncate` copies the live log file and empties it in place, so the daemons keep
+writing to the same file and nothing has to be restarted. Do not add a `postrotate`
+that restarts the services: neither unit has a reload action, so that would restart
+both at midnight and kill the cycle in progress. A line written between the copy and
+the truncate can be lost; that is accepted for a log file.
+
+The Xetra daemon also rotates its own log at 10 MB (`rotation` in `xetra_cli.py`);
+that is independent of this config. The Yahoo daemon writes to the journal only, so
+the `*.log` pattern matches the Xetra and ISIN logs.
 
 ## Post-Installation
 

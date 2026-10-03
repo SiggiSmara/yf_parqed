@@ -2,8 +2,6 @@ import typer
 from pathlib import Path
 from loguru import logger
 import sys
-import signal
-import time
 import os
 import atexit
 from datetime import datetime, timedelta, time as dtime
@@ -11,6 +9,8 @@ from zoneinfo import ZoneInfo
 from typing_extensions import Annotated
 
 from .common.config_service import ConfigService
+from .common.process_exit import exit_daemon_process
+from .common.shutdown import StopFlag
 from .xetra.trading_hours_checker import TradingHoursChecker
 from .xetra.xetra_service import XetraService
 from .xetra.isin_mapping_updater import ISINMappingUpdater
@@ -71,7 +71,9 @@ def _check_and_write_pid_file(pid_file: Path) -> None:
 
     logger.info(f"PID file created: {pid_file} (PID: {os.getpid()})")
 
-    # Register cleanup
+    # Covers exits before the daemon loop's own cleanup is reached (for example
+    # the preflight check). A normal daemon stop removes the file itself and
+    # then ends the process without running atexit handlers.
     def cleanup_pid():
         if pid_file.exists():
             pid_file.unlink()
@@ -225,24 +227,9 @@ def fetch_trades(
         _check_and_write_pid_file(pid_file)
 
     # Signal handler for graceful shutdown
-    shutdown_requested = {"flag": False}
-
-    def signal_handler(signum, frame):
-        logger.info(f"Received signal {signum}, shutting down gracefully...")
-        shutdown_requested["flag"] = True
-
+    stop = StopFlag()
     if daemon:
-        signal.signal(signal.SIGTERM, signal_handler)
-        signal.signal(signal.SIGINT, signal_handler)
-
-    def _sleep_with_shutdown(total_seconds: int, check_interval: int = 60) -> None:
-        """Sleep in small increments while honoring shutdown requests."""
-
-        remaining = total_seconds
-        while remaining > 0 and not shutdown_requested["flag"]:
-            sleep_chunk = min(check_interval, remaining)
-            time.sleep(sleep_chunk)
-            remaining -= sleep_chunk
+        stop.install()
 
     def run_fetch_once():
         """Execute one fetch cycle."""
@@ -251,7 +238,11 @@ def fetch_trades(
         root_path = wrk_dir / "data"
 
         def make_service() -> XetraService:
-            return XetraService(config=config, root_path=root_path)
+            return XetraService(
+                config=config,
+                root_path=root_path,
+                should_stop=stop,
+            )
 
         with make_service() as service:
             if no_store:
@@ -330,7 +321,11 @@ def fetch_trades(
             root_path = wrk_dir / "data"
 
             def make_service() -> XetraService:
-                return XetraService(config=config, root_path=root_path)
+                return XetraService(
+                    config=config,
+                    root_path=root_path,
+                    should_stop=stop,
+                )
 
             initial_fetch_performed = False
             with make_service() as service:
@@ -344,7 +339,13 @@ def fetch_trades(
                         )
                         run_fetch_once()
                         initial_fetch_performed = True
-                        logger.info("Initial data fetch completed successfully")
+                        if stop():
+                            logger.info(
+                                "Initial data fetch stopped early on a stop request; "
+                                "the next run resumes it"
+                            )
+                        else:
+                            logger.info("Initial data fetch completed successfully")
                     except Exception as e:
                         logger.error(
                             f"Error during initial data fetch: {e}", exc_info=True
@@ -352,13 +353,13 @@ def fetch_trades(
                         logger.info("Will retry on next cycle")
 
             run_count = 0
-            while not shutdown_requested["flag"]:
+            while not stop():
                 if initial_fetch_performed and run_count == 0:
                     logger.info(
                         "Initial fetch completed; waiting until next scheduled interval before daemon cycles"
                     )
-                    _sleep_with_shutdown(interval * 3600)
-                    if shutdown_requested["flag"]:
+                    stop.sleep(interval * 3600)
+                    if stop():
                         break
 
                 if not hours_checker.is_within_hours():
@@ -367,8 +368,8 @@ def fetch_trades(
                     logger.info(
                         f"Outside active hours. Waiting until {next_active.strftime('%Y-%m-%d %H:%M:%S %Z')}"
                     )
-                    _sleep_with_shutdown(int(wait_seconds), check_interval=60)
-                    if shutdown_requested["flag"]:
+                    stop.sleep(int(wait_seconds))
+                    if stop():
                         break
                     logger.info("Entering active hours, starting fetch cycle")
 
@@ -384,7 +385,7 @@ def fetch_trades(
                         f"Error in daemon run #{run_count}: {e}", exc_info=True
                     )
 
-                if shutdown_requested["flag"]:
+                if stop():
                     break
 
                 base_sleep_seconds = interval * 3600
@@ -400,8 +401,9 @@ def fetch_trades(
                     f"Next scheduled: {next_run_local.strftime('%Y-%m-%d %H:%M:%S %Z')} ==="
                 )
 
-                _sleep_with_shutdown(int(base_sleep_seconds), check_interval=10)
+                stop.sleep(int(base_sleep_seconds))
 
+            stop.log_request()
             logger.info("Daemon shutting down gracefully")
         else:
             summary = run_fetch_once()
@@ -432,6 +434,9 @@ def fetch_trades(
         if pid_file and pid_file.exists():
             pid_file.unlink()
             logger.info(f"PID file removed: {pid_file}")
+
+    if daemon:
+        exit_daemon_process()
 
 
 @app.command()
@@ -792,22 +797,9 @@ def update_isin_mapping(
     if pid_file and daemon:
         _check_and_write_pid_file(pid_file)
 
-    shutdown_requested = {"flag": False}
-
-    def signal_handler(signum, frame):
-        logger.info(f"Received signal {signum}, shutting down gracefully...")
-        shutdown_requested["flag"] = True
-
+    stop = StopFlag()
     if daemon:
-        signal.signal(signal.SIGTERM, signal_handler)
-        signal.signal(signal.SIGINT, signal_handler)
-
-    def _sleep_chunks(total_seconds: int) -> None:
-        remaining = total_seconds
-        while remaining > 0 and not shutdown_requested["flag"]:
-            chunk = min(60, remaining)
-            time.sleep(chunk)
-            remaining -= chunk
+        stop.install()
 
     def _run_once() -> None:
         if not force and not daemon and cache_path.exists():
@@ -839,7 +831,7 @@ def update_isin_mapping(
         if daemon:
             logger.info("Starting ISIN mapping daemon (updates daily at 00:05 CET)")
             run_count = 0
-            while not shutdown_requested["flag"]:
+            while not stop():
                 run_count += 1
                 logger.info(f"=== ISIN mapping run #{run_count} ===")
                 try:
@@ -850,7 +842,7 @@ def update_isin_mapping(
                         f"ISIN mapping run #{run_count} failed: {e}", exc_info=True
                     )
 
-                if shutdown_requested["flag"]:
+                if stop():
                     break
 
                 sleep_secs = _seconds_until_isin_next_run()
@@ -859,8 +851,9 @@ def update_isin_mapping(
                     f"Next ISIN update scheduled for "
                     f"{next_run_dt.strftime('%Y-%m-%d %H:%M %Z')} ({sleep_secs}s)"
                 )
-                _sleep_chunks(sleep_secs)
+                stop.sleep(sleep_secs)
 
+            stop.log_request()
             logger.info("ISIN mapping daemon shutting down")
         else:
             _run_once()
@@ -868,6 +861,9 @@ def update_isin_mapping(
         if pid_file and pid_file.exists():
             pid_file.unlink()
             logger.info(f"PID file removed: {pid_file}")
+
+    if daemon:
+        exit_daemon_process()
 
 
 @app.command()

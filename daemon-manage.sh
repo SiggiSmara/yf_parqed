@@ -188,8 +188,10 @@ ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=/var/lib/yf_parqed /var/log/yf_parqed
 
+# Shared by all yf_parqed services: must not be removed when one of them stops
 RuntimeDirectory=yf_parqed
 RuntimeDirectoryMode=0755
+RuntimeDirectoryPreserve=yes
 
 StandardOutput=journal
 StandardError=journal
@@ -237,8 +239,10 @@ ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=/var/lib/yf_parqed /var/log/yf_parqed
 
+# Shared by all yf_parqed services: must not be removed when one of them stops
 RuntimeDirectory=yf_parqed
 RuntimeDirectoryMode=0755
+RuntimeDirectoryPreserve=yes
 
 StandardOutput=journal
 StandardError=journal
@@ -263,15 +267,22 @@ install_logrotate() {
     delaycompress
     notifempty
     missingok
-    create 0640 yfparqed yfparqed
-    sharedscripts
-    postrotate
-        systemctl reload-or-restart yf-parqed 'xetra@*' 2>/dev/null || true
-    endscript
+    copytruncate
 }
 EOF
 
     log_info "Logrotate configured"
+}
+
+# Logrotate used to restart both services after every rotation, which killed a
+# running cycle each night. copytruncate rotates the file in place instead.
+# Reinstall the config when the installed copy still restarts the services.
+refresh_stale_logrotate() {
+    local conf=/etc/logrotate.d/yf_parqed
+    if [ -f "$conf" ] && grep -q postrotate "$conf"; then
+        log_info "Logrotate config still restarts the services after rotation; replacing it"
+        install_logrotate
+    fi
 }
 
 install_monitoring_script() {
@@ -630,6 +641,8 @@ do_update() {
             log_info "Keeping existing systemd service files"
             ;;
     esac
+
+    refresh_stale_logrotate
 
     # Check for Parquet files that need column migration before starting services
     check_pending_migrations

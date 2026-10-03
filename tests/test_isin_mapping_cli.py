@@ -193,6 +193,42 @@ def test_update_isin_mapping_dry_run_does_not_write(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# Daemon mode
+# ---------------------------------------------------------------------------
+
+
+def test_daemon_stop_request_removes_pid_file_then_ends_process(
+    tmp_path, stop_on_first_sleep, monkeypatch
+):
+    """After a stop request the PID file is removed first, then the process ends with code 0."""
+    mock_instance = _make_updater_mock(tmp_path)
+    pid_file = tmp_path / "isin.pid"
+    exits = []
+    monkeypatch.setattr(
+        "yf_parqed.common.process_exit._terminate",
+        lambda code: exits.append((code, pid_file.exists())),
+    )
+
+    with patch("yf_parqed.xetra_cli.ISINMappingUpdater", return_value=mock_instance):
+        result = runner.invoke(
+            app,
+            [
+                "--wrk-dir",
+                str(tmp_path),
+                "update-isin-mapping",
+                "--daemon",
+                "--pid-file",
+                str(pid_file),
+            ],
+            catch_exceptions=False,
+        )
+
+    assert result.exit_code == 0
+    mock_instance.run.assert_called_once()
+    assert exits == [(0, False)]
+
+
+# ---------------------------------------------------------------------------
 # wrk-dir wiring
 # ---------------------------------------------------------------------------
 

@@ -17,6 +17,7 @@ from ..common.storage_backend import StorageBackend
 from ..common.storage import StorageInterface, StorageRequest
 from ..common.storage_router import StorageRouter
 from ..common.rate_limiter import wrap_callable
+from ..common.shutdown import StopCheck
 from .data_fetcher import DataFetcher
 from .interval_scheduler import IntervalScheduler
 from .ticker_registry import TickerRegistry
@@ -499,9 +500,12 @@ class YFParqed:
         self,
         start_date: datetime | None = None,
         end_date: datetime | None = None,
+        should_stop: StopCheck | None = None,
     ):
         self.new_not_found = False
-        self.scheduler.run(start_date=start_date, end_date=end_date)
+        self.scheduler.run(
+            start_date=start_date, end_date=end_date, should_stop=should_stop
+        )
 
     def save_single_stock_data(
         self,

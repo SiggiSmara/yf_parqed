@@ -19,6 +19,7 @@ from .xetra_fetcher import XetraFetcher
 from .xetra_parser import XetraParser
 from .exceptions import XetraSchemaUnknownError
 from ..common.config_service import ConfigService
+from ..common.shutdown import ShutdownRequested, StopCheck
 
 
 class XetraService:
@@ -35,6 +36,7 @@ class XetraService:
         backend: Optional[PartitionedStorageBackend] = None,
         root_path: Optional[Path] = None,
         config: Optional[ConfigService] = None,
+        should_stop: Optional[StopCheck] = None,
     ):
         """
         Initialize XetraService with injected dependencies.
@@ -45,6 +47,8 @@ class XetraService:
             backend: Parquet storage backend (default: PartitionedStorageBackend)
             root_path: Root directory for data storage (default: Path("data"))
             config: Configuration service for rate limiting (default: ConfigService())
+            should_stop: Check for a daemon stop request. Fetch loops end after the
+                current item and the fetcher's rate-limit waits end early.
         """
         # Initialize config first to get rate limits
         self.config = config or ConfigService()
@@ -56,6 +60,9 @@ class XetraService:
             burst_size=burst_size,
             burst_cooldown=burst_cooldown,
         )
+        if should_stop is not None:
+            self.fetcher.should_stop = should_stop
+        self._should_stop = should_stop
         self.parser = parser or XetraParser()
         self.root_path = root_path or Path("data")
 
@@ -70,6 +77,9 @@ class XetraService:
             )
         else:
             self.backend = backend
+
+    def _stop_requested(self) -> bool:
+        return self._should_stop is not None and self._should_stop()
 
     def has_any_data(
         self, venue: str, market: str = "de", source: str = "xetra"
@@ -627,8 +637,8 @@ class XetraService:
             try:
                 df = self.fetch_and_parse_trades(venue, date, filename)
                 all_trades.append(df)
-            except XetraSchemaUnknownError:
-                raise  # All files share the same schema — no point continuing
+            except (XetraSchemaUnknownError, ShutdownRequested):
+                raise  # Same schema for all files / the daemon is stopping
             except Exception as e:
                 logger.error(f"Failed to process {filename}: {e}")
                 continue
@@ -716,8 +726,12 @@ class XetraService:
         dates_fetched = []
         dates_partial = []
         last_processed_month: tuple | None = None
+        stopped = False
 
         for date_str in missing_dates:
+            if self._stop_requested():
+                stopped = True
+                break
             try:
                 logger.info(f"Fetching {venue} trades for {date_str} (incremental)")
 
@@ -773,6 +787,9 @@ class XetraService:
 
                 # Process each file individually - store immediately after each file
                 for i, filename in enumerate(files_to_fetch, 1):
+                    if self._stop_requested():
+                        stopped = True
+                        break
                     try:
                         # Fetch and parse single file
                         df = self.fetch_and_parse_trades(venue, date_str, filename)
@@ -798,6 +815,9 @@ class XetraService:
                                 f"{date_trades:,} trades for {date_str}"
                             )
 
+                    except ShutdownRequested:
+                        stopped = True
+                        break
                     except Exception as e:
                         logger.error(f"Failed to process {filename}: {e}")
                         continue
@@ -824,12 +844,21 @@ class XetraService:
 
                 last_processed_month = this_month
 
+                if stopped:
+                    break
+
             except Exception as e:
                 logger.error(f"Failed to fetch {venue} on {date_str}: {e}")
                 continue
 
+        if stopped:
+            logger.info(
+                f"Stop requested, ending fetch cycle for {venue}; "
+                f"stored files are kept and the next run resumes"
+            )
+
         # H: consolidate last processed month if it's a fully past month
-        if consolidate and last_processed_month is not None:
+        if consolidate and not stopped and last_processed_month is not None:
             now = datetime.now()
             py, pm = last_processed_month
             if (py, pm) < (now.year, now.month):
@@ -1203,10 +1232,14 @@ class XetraService:
         total_trades = 0
         isins: set = set()
         days_included = []
+        stopped = False
         try:
             # One day in memory at a time: a whole month does not fit in RAM in production
             with pq.ParquetWriter(str(temp_file), schema, compression="gzip") as writer:
                 for daily_file in readable:
+                    if self._stop_requested():
+                        stopped = True
+                        break
                     try:
                         with pq.ParquetFile(daily_file) as daily:
                             table = self._conform_table(daily.read(), schema)
@@ -1229,6 +1262,13 @@ class XetraService:
                         self._DAYS_INCLUDED_KEY: json.dumps(days_included).encode(),
                     }
                 )
+            if stopped:
+                temp_file.unlink(missing_ok=True)
+                logger.info(
+                    f"Stop requested, abandoned consolidation of {venue} "
+                    f"{year}-{month_str}; run consolidate-month if it is not triggered again"
+                )
+                return
             if would_shrink(total_trades):
                 temp_file.unlink(missing_ok=True)
                 return
