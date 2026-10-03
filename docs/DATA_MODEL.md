@@ -239,7 +239,7 @@ Deutsche Börse renamed all posttrade JSON fields in March 2026 (MiFID-style API
 | Column | Type | Notes |
 |---|---|---|
 | `trading_system` | `string` | Trading system identifier |
-| `price_notation` | `string` | Price notation type |
+| `price_notation` | `int64` (nullable) | Code saying how `price` is expressed. MiFIR RTS 1 (Annex I, Table 3, field "Price notation") defines four values: `MONE` monetary value, `PERC` percentage, `YIEL` yield, `BAPO` basis points; for shares and ETFs it is `MONE`. Deutsche Börse's delayed JSON sends a number instead of the code, and every value received so far is `1`. That `1` means `MONE` is an inference from the instruments traded; Deutsche Börse publishes no mapping for the file. It is a category, not a quantity. A missing value is stored as null. See "Integer contract" in `.github/STORAGE_STRUCTURE.md`. |
 | `venue_publication` | `string` | Venue of publication |
 
 ### Partition Keys Available to DuckDB

@@ -79,9 +79,17 @@ class XetraParser:
         "schema_version": "object",
     }
 
+    # Columns that must hold whole numbers. A missing value stays null (nullable Int64).
+    # A value that is not a whole number is stored as null and reported in
+    # df.attrs["contract_violations"], so the caller can keep the original file.
+    INTEGER_FIELDS = ("price_notation",)
+
     def parse(self, json_str: str) -> pd.DataFrame:
         """
         Parse Xetra JSONL string into a validated DataFrame.
+
+        If a value breaks the integer contract (see INTEGER_FIELDS), the returned frame
+        carries the details in df.attrs["contract_violations"]; otherwise attrs is empty.
 
         Raises:
             XetraSchemaUnknownError: Field names match no registered schema.
@@ -118,6 +126,10 @@ class XetraParser:
 
             df["schema_version"] = schema_version
             df = self._ensure_complete_schema(df, field_mapping)
+
+            violations = self._enforce_integer_fields(df)
+            if violations:
+                df.attrs["contract_violations"] = violations
 
             logger.info(
                 f"Successfully parsed {len(df)} trades [{schema_version}] with {len(df.columns)} columns"
@@ -182,6 +194,34 @@ class XetraParser:
                 elif dtype == "int64":
                     df[col] = pd.to_numeric(df[col], errors="coerce").astype("Int64")
         return df
+
+    def _enforce_integer_fields(self, df: pd.DataFrame) -> dict:
+        """
+        Make every INTEGER_FIELDS column nullable Int64, in place.
+
+        Returns {column: {"rows": n, "examples": [...]}} for values that were not whole
+        numbers. They are stored as null: the columns are codes, so rounding would turn
+        an invalid value into a different, valid-looking one.
+        """
+        violations = {}
+        for col in self.INTEGER_FIELDS:
+            if col not in df.columns:
+                continue
+            numeric = pd.to_numeric(df[col], errors="coerce").astype("float64")
+            whole = numeric.where(numeric == numeric.round())
+            whole = whole.replace([float("inf"), float("-inf")], float("nan"))
+            broken = whole.isna() & df[col].notna()
+            if broken.any():
+                violations[col] = {
+                    "rows": int(broken.sum()),
+                    "examples": [str(v) for v in df.loc[broken, col].unique()[:5]],
+                }
+                logger.error(
+                    f"Column '{col}' must hold whole numbers; {violations[col]['rows']} "
+                    f"value(s) did not, e.g. {violations[col]['examples']}. Stored as null."
+                )
+            df[col] = whole.astype("Int64")
+        return violations
 
     def _ensure_complete_schema(
         self, df: pd.DataFrame, field_mapping: dict

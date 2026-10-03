@@ -226,6 +226,19 @@ xetra-parqed reprocess-raw-cache DETR 2026-04-30
 xetra-parqed reprocess-raw-cache DETR 2026-04-30 --force   # even if Parquet looks OK
 ```
 
+### Integer contract and kept originals
+
+`price_notation` is a code for how the price is expressed (see `docs/DATA_MODEL.md`). Deutsche Börse sends it as a whole number. The parser stores it as a nullable integer, so the column has the same type in every file:
+
+- A record without the field is stored with a null.
+- A value that is not a whole number (a fraction, text, infinity) is stored as null. It is not rounded: the column is a code, and rounding would turn an invalid value into a different, valid-looking one. A whole number written as a float (`1.0`) is accepted. A violation is logged as an error, and the original file is copied to `contract_violations/`, so the unaltered data can be re-examined later.
+
+```
+data/{market}/{source}/contract_violations/{venue}/year=YYYY/month=MM/day=DD/{original file name}
+```
+
+The copy is the raw `.json.gz` download or, for data staged before the contract was enforced, the mini-file `trades-*.parquet`. Nothing deletes this directory; clear it by hand once a case has been dealt with. To add a column to the contract, list it in `XetraParser.INTEGER_FIELDS`.
+
 #### Deprecated: `.download_log.parquet`
 
 The file `data/de/xetra/.download_log.parquet` was the previous resume mechanism. It is no longer written. Existing files on disk are ignored and can be removed manually.

@@ -138,6 +138,68 @@ class TestSaveToRawCache:
 
 
 # ---------------------------------------------------------------------------
+# Contract violations: the original file is kept outside the raw-cache TTL
+# ---------------------------------------------------------------------------
+
+
+def _violation_path(tmp_path, venue, year, month, day, filename):
+    return (
+        tmp_path
+        / "de"
+        / "xetra"
+        / "contract_violations"
+        / venue
+        / f"year={year}"
+        / f"month={month:02d}"
+        / f"day={day:02d}"
+        / filename
+    )
+
+
+class TestContractViolations:
+    FNAME = "DETR-posttrade-2026-04-30T09_00.json.gz"
+
+    def _service(self, tmp_path, frame):
+        fetcher = Mock()
+        fetcher.download_file.return_value = b"raw-bytes"
+        fetcher.decompress_gzip.return_value = "{}"
+        parser = Mock()
+        parser.parse.return_value = frame
+        return _make_service(tmp_path, fetcher=fetcher, parser=parser)
+
+    def test_original_kept_when_parser_reports_violation(self, tmp_path):
+        frame = pd.DataFrame({"isin": ["DE0001"], "price_notation": [2]})
+        frame.attrs["contract_violations"] = {"price_notation": {"rows": 1}}
+        svc = self._service(tmp_path, frame)
+
+        svc.fetch_and_parse_trades("DETR", "2026-04-30", self.FNAME)
+
+        kept = _violation_path(tmp_path, "DETR", 2026, 4, 30, self.FNAME)
+        assert kept.read_bytes() == b"raw-bytes"
+        assert list(kept.parent.glob("*.tmp")) == []
+
+    def test_nothing_kept_without_violation(self, tmp_path):
+        svc = self._service(tmp_path, pd.DataFrame({"isin": ["DE0001"]}))
+
+        svc.fetch_and_parse_trades("DETR", "2026-04-30", self.FNAME)
+
+        assert not (tmp_path / "de" / "xetra" / "contract_violations").exists()
+
+    def test_cleanup_does_not_touch_kept_originals(self, tmp_path):
+        svc = _make_service(tmp_path)
+        kept = _violation_path(tmp_path, "DETR", 2026, 4, 30, self.FNAME)
+        kept.parent.mkdir(parents=True)
+        kept.write_bytes(b"raw-bytes")
+        old = time.time() - 30 * 86400
+        os.utime(kept, (old, old))
+        _write_minimal_parquet(_daily_parquet(tmp_path, "DETR", 2026, 4, 30))
+
+        svc.cleanup_raw_cache("DETR", max_age_days=7)
+
+        assert kept.exists()
+
+
+# ---------------------------------------------------------------------------
 # fetch_and_parse_trades: save before parse, non-fatal on cache failure
 # ---------------------------------------------------------------------------
 

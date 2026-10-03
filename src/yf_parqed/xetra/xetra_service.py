@@ -1,3 +1,4 @@
+from collections import Counter
 from datetime import datetime
 from typing import List, Optional
 from pathlib import Path
@@ -8,6 +9,7 @@ import time
 
 import pandas as pd
 import pyarrow as pa
+import pyarrow.compute as pc
 import pyarrow.parquet as pq
 from loguru import logger
 
@@ -141,6 +143,50 @@ class XetraService:
             tmp_path.unlink(missing_ok=True)
             raise
         return cache_path
+
+    def _keep_contract_violation(
+        self,
+        original: bytes | Path,
+        violations: dict,
+        venue: str,
+        date_str: str,
+        filename: str,
+        market: str = "de",
+        source: str = "xetra",
+    ) -> None:
+        """
+        Keep the original of a file whose values broke the data contract.
+
+        The stored trades carry null for the offending values. The original goes to
+        contract_violations/, which no cleanup touches, so it can be re-examined later.
+        """
+        d = datetime.strptime(date_str, "%Y-%m-%d")
+        kept_path = (
+            self.root_path
+            / market
+            / source
+            / "contract_violations"
+            / venue
+            / f"year={d.year}"
+            / f"month={d.month:02d}"
+            / f"day={d.day:02d}"
+            / filename
+        )
+        tmp_path = kept_path.with_name(kept_path.name + ".tmp")
+        try:
+            kept_path.parent.mkdir(parents=True, exist_ok=True)
+            tmp_path.write_bytes(
+                original if isinstance(original, bytes) else original.read_bytes()
+            )
+            tmp_path.rename(kept_path)
+        except Exception as e:
+            tmp_path.unlink(missing_ok=True)
+            logger.error(f"Could not keep the original of {filename}: {e}")
+            return
+        logger.error(
+            f"Data contract violation in {filename} ({venue} {date_str}): {violations}. "
+            f"Those values were stored as null; original kept at {kept_path}"
+        )
 
     def _is_cached(
         self,
@@ -343,6 +389,17 @@ class XetraService:
                 compressed_data = raw_file.read_bytes()
                 json_str = self.fetcher.decompress_gzip(compressed_data)
                 df = self.parser.parse(json_str)
+                violations = getattr(df, "attrs", {}).get("contract_violations")
+                if violations:
+                    self._keep_contract_violation(
+                        compressed_data,
+                        violations,
+                        venue,
+                        date_str,
+                        raw_file.name,
+                        market,
+                        source,
+                    )
                 if not df.empty:
                     self.store_trades(df, venue, trade_date, market, source)
                     trades += len(df)
@@ -526,6 +583,12 @@ class XetraService:
                 f"Fields received: {sorted(e.actual_fields)}"
             )
             raise
+
+        violations = getattr(df, "attrs", {}).get("contract_violations")
+        if violations:
+            self._keep_contract_violation(
+                compressed_data, violations, venue, date, filename
+            )
 
         isin_count = df["isin"].nunique() if "isin" in df.columns else 0
         logger.debug(
@@ -856,20 +919,33 @@ class XetraService:
         tables = []
         for mini in mini_files:
             try:
-                tables.append(pq.read_table(str(mini)))
+                table = pq.read_table(str(mini))
             except Exception as e:
                 logger.warning(f"Skipping unreadable mini-file {mini.name}: {e}")
+                continue
+            tables.append(
+                self._enforce_integer_contract(
+                    table, mini, venue, date_str, market, source
+                )
+            )
 
         if not tables:
             return
 
-        if existing is None:
-            combined = pa.concat_tables(tables)
-        else:
-            # Partition columns come back from a mini-file dictionary-encoded, but plain
-            # from the daily file
-            tables = [self._align_types(t, existing.schema) for t in tables]
-            combined = pa.concat_tables([existing, *tables], promote_options="default")
+        # Mini-files do not always agree on types (partition columns are dictionary-encoded
+        # in mini-files but plain in the daily file, for one). Bring every table to the
+        # usual schema where that loses nothing; otherwise widen the column. Columns under
+        # the integer contract never get here as anything but int64.
+        usual = existing.schema if existing is not None else self._usual_schema(tables)
+        if existing is not None:
+            tables = [existing, *tables]
+        try:
+            combined = pa.concat_tables(
+                [self._align_types(t, usual) for t in tables],
+                promote_options="default",
+            )
+        except pa.ArrowInvalid:
+            combined = pa.concat_tables(tables, promote_options="permissive")
         merged_through = max(self._mini_staged_ns(m) for m in mini_files)
         combined = combined.replace_schema_metadata(
             {
@@ -908,6 +984,58 @@ class XetraService:
             return int(mini.stem.rsplit("-", 1)[1])
         except (IndexError, ValueError):
             return 0
+
+    def _enforce_integer_contract(
+        self,
+        table: pa.Table,
+        mini: Path,
+        venue: str,
+        date_str: str,
+        market: str = "de",
+        source: str = "xetra",
+    ) -> pa.Table:
+        """
+        Apply the parser's integer contract to a mini-file staged before it was enforced.
+
+        Such a file holds a contract column as double when a value was missing. Missing
+        values stay null; anything that is not a whole number becomes null and the
+        mini-file is kept as the original.
+        """
+        for name in XetraParser.INTEGER_FIELDS:
+            if name not in table.column_names:
+                continue
+            column = table.column(name)
+            if not pa.types.is_floating(column.type):
+                continue
+            is_whole = pc.and_(pc.is_finite(column), pc.equal(column, pc.round(column)))
+            whole = pc.if_else(is_whole, column, pa.scalar(None, column.type))
+            nulled = whole.null_count - column.null_count
+            if nulled:
+                self._keep_contract_violation(
+                    mini,
+                    {name: {"rows": nulled}},
+                    venue,
+                    date_str,
+                    mini.name,
+                    market,
+                    source,
+                )
+            table = table.set_column(
+                table.column_names.index(name),
+                pa.field(name, pa.int64()),
+                whole.cast(pa.int64()),
+            )
+        return table
+
+    @staticmethod
+    def _usual_schema(tables: List[pa.Table]) -> pa.Schema:
+        """The schema most of the tables have."""
+
+        def signature(schema: pa.Schema) -> tuple:
+            return tuple((field.name, str(field.type)) for field in schema)
+
+        usual = Counter(signature(t.schema) for t in tables).most_common(1)[0][0]
+        return next(t.schema for t in tables if signature(t.schema) == usual)
 
     @staticmethod
     def _align_types(table: pa.Table, schema: pa.Schema) -> pa.Table:
