@@ -11,6 +11,7 @@ import pandas as pd
 from loguru import logger
 
 from .common.config_service import ConfigService
+from .common.damage_log import DAMAGE_LOG_NAME, DamageLog
 from .common.migration_plan import MigrationInterval, MigrationPlan, MigrationVenue
 from .common.partition_path_builder import PartitionPathBuilder
 from .common.partitioned_storage_backend import PartitionedStorageBackend
@@ -50,6 +51,7 @@ class PartitionMigrationService:
             empty_frame_factory=self._empty_price_frame,
             normalizer=self._normalize_price_frame,
             column_provider=self._price_frame_columns,
+            damage_recorder=self._record_damaged_file,
         )
         self._partition_backend = PartitionedStorageBackend(
             empty_frame_factory=self._empty_price_frame,
@@ -61,6 +63,15 @@ class PartitionMigrationService:
             compression=compression,
             fsync=fsync,
             row_group_size=row_group_size,
+            damage_recorder=self._record_damaged_file,
+        )
+
+    def _record_damaged_file(
+        self, path: Path, moved_to: Path | None, error: BaseException
+    ) -> None:
+        """Called by the storage backends for a file they could not read."""
+        DamageLog(self._config_service.base_path / DAMAGE_LOG_NAME).record(
+            path=path, error=error, moved_to=moved_to, found_by="migration"
         )
 
     def _load_plan(self) -> MigrationPlan:

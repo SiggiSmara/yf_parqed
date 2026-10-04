@@ -1,5 +1,7 @@
 # Parquet Recovery Refactoring Summary
 
+> **Superseded in part (October 2026):** unreadable files are no longer deleted. They are renamed to `<name>.damaged-<UTC timestamp>` and recorded in `damaged_partitions.jsonl`. Wherever this document says "delete", read "move aside". See `.github/TROUBLESHOOTING.md` and ADR 2026-10-03, Decision 5.
+
 ## Overview
 
 Unified parquet file recovery logic across all storage backends to ensure consistent behavior:

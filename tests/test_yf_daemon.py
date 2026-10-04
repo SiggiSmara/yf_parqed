@@ -53,6 +53,9 @@ class StubYFParqedForDaemon:
     def save_tickers(self):
         self.calls.append(("save_tickers",))
 
+    def check_last_closed_month(self, should_stop=None):
+        self.calls.append(("check_last_closed_month",))
+
     def update_current_list_of_stocks(self):
         self.maintenance_calls["update_current_list_of_stocks"] += 1
         self.calls.append(("update_current_list_of_stocks",))

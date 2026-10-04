@@ -258,7 +258,7 @@ Quick fixes:
 - **Tests fail after pull**: `uv sync` then `rm -rf .pytest_cache && uv run pytest`
 - **Import errors**: `uv sync` then verify with `uv run python -c "import yf_parqed"`
 - **Rate limit (429)**: Increase delay `--limits 2 3` or wait 15-30 minutes
-- **Corrupt parquet**: Auto-recovers (check logs), or manually delete and re-fetch
+- **Corrupt parquet**: The file is renamed to `*.damaged-<timestamp>` and recorded in `damaged_partitions.jsonl`, never deleted; see TROUBLESHOOTING.md before touching it
 - **Daemon won't start**: Check for stale PID `cat /tmp/yf-parqed.pid` and remove if process not running
 
 ## Pre-Commit Checklist

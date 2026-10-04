@@ -214,7 +214,7 @@ def test_read_returns_empty_when_no_partitions(backend, tmp_path):
     assert result.empty
 
 
-def test_read_removes_corrupt_partition_and_fails(backend, tmp_path, empty_frame):
+def test_read_moves_corrupt_partition_aside_and_fails(backend, tmp_path, empty_frame):
     request = make_request(tmp_path)
     df = make_sample_df(["2024-01-05"])
     backend.save(request, df, empty_frame())
@@ -227,8 +227,10 @@ def test_read_removes_corrupt_partition_and_fails(backend, tmp_path, empty_frame
     with pytest.raises(RuntimeError, match="Failed to read.*partition"):
         backend.read(request)
 
-    # Corrupt file should be DELETED (truly unreadable)
+    # The unreadable file is kept under another name, never deleted
     assert not corrupt_path.exists()
+    (moved,) = corrupt_path.parent.glob("data.parquet.damaged-*")
+    assert moved.read_text() == "not parquet"
 
 
 def test_read_preserves_schema_mismatch_partition(backend, tmp_path, empty_frame):

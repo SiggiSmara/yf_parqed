@@ -81,6 +81,19 @@ data/us/yahoo/stocks_1m/ticker=TSLA/year=2025/month=12/data.parquet
 - **Single file per partition**: `data.parquet`
 - **Monthly partitions**: One file contains all trading days for that month
 - **Updates**: Only the monthly files that the new data falls into are read and merged with it (deduplicated by date). A file is rewritten only if the merged rows differ from the stored ones. An incoming row that holds fewer values than the stored row for the same date does not replace it. The other months of the ticker are not opened, so a file's modification time is the last time its content changed.
+- **Writes**: A new file is written next to the old one as `data.parquet.tmp-<pid>-<ms>-<id>`, synced, its footer read back and its row count compared with what was meant to be written, and only then renamed over `data.parquet`. A temp file that fails the read-back is removed and the stored file stays. A temp file left behind by a killed run becomes `data.parquet` only if no `data.parquet` exists and it reads back completely; one that does not is kept as `data.parquet.tmp-...damaged-<UTC timestamp>`.
+
+### Damaged files and checks
+
+Nothing in this tree is deleted because it looks broken. See `TROUBLESHOOTING.md` for what to do with a damaged file.
+
+| Name | Where | What it is |
+|------|-------|------------|
+| `data.parquet.damaged-<UTC timestamp>` | next to the `data.parquet` it was | A file the daemon could not read. It was renamed so that capture could continue into a new `data.parquet`. The name does not end in `.parquet`, so readers and `*.parquet` globs skip it. A second file in the same second gets `-1`, `-2`, ... appended. |
+| `damaged_partitions.jsonl` | working directory | One JSON object per line for every damaged file found: `when`, `path`, `ticker`, `interval`, `month`, `size` and `modified` (of the file), `error`, `action` (`moved aside` or `left in place`), `moved_to`, `found_by` (`read`, `month-close check`, `verify-partitions`, `migration`). Append-only. A check that finds the same unchanged file again adds no line. |
+| `partition_checks.json` | working directory | Which closed months have been read completely and what was found: `checked_at`, `files`, `rows`, `damaged` per `YYYY-MM`. |
+
+**Month-close check.** The Yahoo daemon opens only the month it is writing to, so it would never notice a file going bad in an older month. After a cycle that ran to its end, when the last closed month has no entry in `partition_checks.json`, the daemon reads every ticker's file of that month completely (one file in memory at a time, read-only) and writes the entry. A file that cannot be decoded, or that holds no rows, is logged, recorded in `damaged_partitions.jsonl` and left in place. Older months are checked only on request: `yf-parqed verify-partitions [--month YYYY-MM | --all]`.
 
 ---
 

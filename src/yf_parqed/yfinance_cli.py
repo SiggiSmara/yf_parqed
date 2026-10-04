@@ -11,6 +11,7 @@ import atexit
 from yf_parqed.yahoo.primary_class import all_intervals as default_all_intervals
 
 from yf_parqed.yahoo.primary_class import YFParqed
+from .common.partition_check import last_closed_month, parse_month
 from .common.process_exit import exit_daemon_process
 from .common.run_lock import GlobalRunLock
 from .common.shutdown import StopFlag
@@ -372,8 +373,8 @@ def update_data(
         except Exception as e:
             logger.error(f"Error during ticker maintenance: {e}", exc_info=True)
 
-    def run_update_once():
-        """Execute one update cycle with locking."""
+    def run_update_once() -> bool:
+        """Execute one update cycle with locking; True when it ran to its end."""
         logger.debug("Updating stock data.")
 
         # Acquire a global run lock to avoid overlapping updater runs
@@ -404,7 +405,7 @@ def update_data(
                     logger.info("Removed stale lock; continuing.")
                 except Exception:
                     logger.warning("Could not remove lock; aborting this run.")
-                    return
+                    return False
             else:
                 # Prompt operator
                 should = typer.confirm(
@@ -435,7 +436,7 @@ def update_data(
                     logger.error(
                         "Both start and end date must be provided if not updating a current snapshot."
                     )
-                    return
+                    return False
                 # Convert string dates to datetime objects
                 # Support both "YYYY-MM-DD" and "YYYY-MM-DDTHH:MM:SS" formats
                 if isinstance(start_date, str):
@@ -486,6 +487,7 @@ def update_data(
                             logger.info("Tickers file updated with not found entries.")
                         else:
                             logger.info("Tickers file not updated.")
+            return not stop()
         finally:
             # Always release lock
             try:
@@ -530,8 +532,9 @@ def update_data(
                     run_ticker_maintenance()
 
                 # Run the update
+                cycle_completed = False
                 try:
-                    run_update_once()
+                    cycle_completed = run_update_once()
                 except Exception as e:
                     logger.error(
                         f"Error in daemon run #{run_count}: {e}", exc_info=True
@@ -539,6 +542,18 @@ def update_data(
 
                 if stop():
                     break
+
+                # Once per month, after a cycle that ran to its end (so the
+                # month's last bars are stored): read the files of the month
+                # that just closed. Does nothing when already done.
+                if cycle_completed:
+                    try:
+                        yf_parqed.check_last_closed_month(should_stop=stop)
+                    except Exception as e:
+                        logger.error(f"Error in the month-close check: {e}")
+
+                    if stop():
+                        break
 
                 # Calculate next run time, capped so we do not oversleep past close
                 base_sleep_seconds = interval * 3600
@@ -568,6 +583,54 @@ def update_data(
 
     if daemon:
         exit_daemon_process()
+
+
+@app.command("verify-partitions")
+def verify_partitions(
+    month: Annotated[
+        str | None,
+        typer.Option(help="Month to check, YYYY-MM (default: the last closed month)"),
+    ] = None,
+    all_months: Annotated[
+        bool, typer.Option("--all", help="Check every stored month")
+    ] = False,
+):
+    """
+    Read every stored partition file of a month and report the damaged ones.
+
+    Read-only on the data, so it can run next to the daemon. Damaged files are
+    left where they are and written to damaged_partitions.jsonl; the result for
+    each closed month goes to partition_checks.json. Exits with code 1 when a
+    damaged file was found.
+    """
+    global yf_parqed
+
+    if month is not None and all_months:
+        raise typer.BadParameter("--month cannot be combined with --all")
+    if month is not None:
+        try:
+            parse_month(month)
+        except ValueError as exc:
+            raise typer.BadParameter(str(exc))
+    elif not all_months:
+        month = last_closed_month(datetime.now())
+
+    result = yf_parqed.verify_partitions(month)
+
+    for key in sorted(result.months):
+        check = result.months[key]
+        typer.echo(
+            f"{key}: {check.files} files, {check.rows} rows, "
+            f"{len(check.damaged)} damaged"
+        )
+    for path, error in result.damaged:
+        typer.echo(f"DAMAGED {path}: {error}")
+    typer.echo(
+        f"Checked {result.files} files in {result.seconds:.0f} seconds, "
+        f"{len(result.damaged)} damaged."
+    )
+    if result.damaged:
+        raise typer.Exit(code=1)
 
 
 @app.command()

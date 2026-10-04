@@ -12,7 +12,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from .partition_path_builder import PartitionPathBuilder
-from .parquet_recovery import ParquetRecoveryError, safe_read_parquet
+from .parquet_recovery import DamageRecorder, ParquetRecoveryError, safe_read_parquet
 from .storage import StorageInterface, StorageRequest
 
 
@@ -96,7 +96,9 @@ class PartitionedStorageBackend(StorageInterface):
         compression: str | None = "gzip",
         fsync: bool = True,
         row_group_size: int | None = None,
+        damage_recorder: DamageRecorder | None = None,
     ) -> None:
+        self._damage_recorder = damage_recorder
         self._empty_frame_factory = empty_frame_factory
         self._normalizer = normalizer
         self._column_provider = column_provider
@@ -153,7 +155,8 @@ class PartitionedStorageBackend(StorageInterface):
         sides the row with the higher ``sequence`` wins; without sequence
         numbers, the new row. Rows without a date are dropped. An unreadable
         file in a touched month raises ``RuntimeError`` before that month is
-        written.
+        written; it has then been moved aside, so the next call starts a new
+        file for that month.
 
         Captured data is not replaced by less: an incoming row that holds
         fewer values than the stored row for the same date is ignored, and a
@@ -247,6 +250,7 @@ class PartitionedStorageBackend(StorageInterface):
                 required_columns=set(self._column_provider()),
                 normalizer=self._normalizer,
                 empty_frame_factory=self._empty_frame_factory,
+                on_damaged=self._damage_recorder,
             )
         except ParquetRecoveryError as exc:
             logger.error(f"Failed to read partition {path}: {exc}")
@@ -286,10 +290,11 @@ class PartitionedStorageBackend(StorageInterface):
                     required_columns=required,
                     normalizer=self._normalizer,
                     empty_frame_factory=self._empty_frame_factory,
+                    on_damaged=self._damage_recorder,
                 )
                 frames.append(df)
             except ParquetRecoveryError as exc:
-                # Recovery failed - file either deleted (if corrupt) or preserved (if schema issue)
+                # Recovery failed - file either moved aside (if unreadable) or preserved (if schema issue)
                 # Log the error and track the failure
                 logger.error(f"Failed to read partition {path}: {exc}")
                 failed_files.append((path, str(exc)))
@@ -406,6 +411,13 @@ class PartitionedStorageBackend(StorageInterface):
                         # best-effort: if fsync fails, proceed to replace anyway
                         logger.debug("fsync failed for {path}", path=str(temp_path))
 
+                # a bad write must not replace a good file
+                try:
+                    self._verify_temp_file(temp_path, len(partition_df))
+                except Exception:
+                    temp_path.unlink(missing_ok=True)
+                    raise
+
                 # atomic replace
                 try:
                     # use pathlib.Path.replace for a cleaner, idiomatic atomic rename
@@ -439,6 +451,21 @@ class PartitionedStorageBackend(StorageInterface):
         #     )
         #     path.parent.mkdir(parents=True, exist_ok=True)
         #     partition_df.to_parquet(path, index=False, compression=self._compression)
+
+    @staticmethod
+    def _verify_temp_file(temp_path: Path, expected_rows: int) -> None:
+        """Read the footer of a freshly written temp file back and compare its row count."""
+        try:
+            rows = pq.read_metadata(temp_path).num_rows
+        except Exception as exc:
+            raise RuntimeError(
+                f"{temp_path.name} cannot be read back after writing: {exc}"
+            ) from exc
+        if rows != expected_rows:
+            raise RuntimeError(
+                f"{temp_path.name} holds {rows} rows after writing, "
+                f"{expected_rows} were meant to be written"
+            )
 
     def _validate_partition_metadata(self, request: StorageRequest) -> None:
         if not request.market or not request.source:

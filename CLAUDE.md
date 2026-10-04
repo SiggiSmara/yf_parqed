@@ -6,7 +6,7 @@ Agent instructions for this codebase. Read this before doing anything else.
 
 - **Always run Python via `uv run`** — never `python`, `python3`, or direct venv activation. Example: `uv run pytest`, `uv run python3 -c "..."`, `uv run xetra-parqed ...`
 - **Never edit `pyproject.toml` manually** — use `uv add` / `uv remove` for dependency changes
-- **All tests must pass before finishing any task**: `uv run pytest` — currently 611 passed, 1 skipped
+- **All tests must pass before finishing any task**: `uv run pytest` — currently 656 passed, 1 skipped
 - **Data safety**: existing Parquet files are the primary record. Never delete or overwrite without explicit user confirmation. See `.github/DATA_SAFETY_STRATEGY.md` for the full ruleset.
 
 ## Project layout
@@ -43,6 +43,7 @@ docs/adr/               # Architecture Decision Records
 | `yf-parqed` | Yahoo Finance data collector |
 | `yf-parqed add-ticker TICKER` | Add or resurrect a ticker as manually managed (exempt from auto-pruning) |
 | `yf-parqed remove-ticker TICKER` | Permanently deactivate a ticker; not reactivated by CSV updates |
+| `yf-parqed verify-partitions [--month YYYY-MM \| --all]` | Read every stored Yahoo partition file of a month (default: last closed) and report damaged ones; read-only |
 | `uv run pytest` | Run full test suite |
 
 ## Production environment

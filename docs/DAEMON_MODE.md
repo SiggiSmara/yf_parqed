@@ -115,7 +115,8 @@ kill $(cat /tmp/yf-parqed.pid)
 - **Per-ticker errors**: Logs errors for individual tickers, continues with others
 - **Network failures**: Retries on next scheduled run
 - **Rate limiting**: Built-in rate limiting (3 requests per 2 seconds default)
-- **Corruption recovery**: Automatically handles corrupt parquet files
+- **Damaged files**: An unreadable Parquet file is renamed (`data.parquet.damaged-<timestamp>`), never deleted, and recorded in `damaged_partitions.jsonl`; the next cycle starts a new file
+- **Month-close check**: Once per month, after a cycle, every stored file of the month that just closed is read back; the result goes to `partition_checks.json`
 
 ## Production Deployment
 
