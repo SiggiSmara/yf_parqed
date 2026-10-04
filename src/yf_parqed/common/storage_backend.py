@@ -5,7 +5,7 @@ from typing import Callable
 import pandas as pd
 from loguru import logger
 
-from .parquet_recovery import ParquetRecoveryError, safe_read_parquet
+from .parquet_recovery import DamageRecorder, ParquetRecoveryError, safe_read_parquet
 from .storage import StorageInterface, StorageRequest
 
 
@@ -17,6 +17,7 @@ class StorageBackend(StorageInterface):
         empty_frame_factory: Callable[[], pd.DataFrame],
         normalizer: Callable[[pd.DataFrame], pd.DataFrame],
         column_provider: Callable[[], list[str]],
+        damage_recorder: DamageRecorder | None = None,
     ) -> None:
         """
         Initialize storage backend with injected dependencies.
@@ -25,7 +26,9 @@ class StorageBackend(StorageInterface):
             empty_frame_factory: Creates an empty DataFrame with correct schema
             normalizer: Normalizes DataFrame columns and types
             column_provider: Returns list of required column names
+            damage_recorder: Told about every file that could not be read
         """
+        self._damage_recorder = damage_recorder
         self._empty_frame_factory = empty_frame_factory
         self._normalizer = normalizer
         self._column_provider = column_provider
@@ -54,13 +57,17 @@ class StorageBackend(StorageInterface):
                 required_columns=required,
                 normalizer=self._normalizer,
                 empty_frame_factory=self._empty_frame_factory,
+                on_damaged=self._damage_recorder,
             )
             df.set_index(["stock", "date"], inplace=True)
             return df
         except ParquetRecoveryError as exc:
             # Recovery failed - log details and return empty
-            # File is either deleted (if corrupt) or preserved (if schema mismatch)
+            # File is either moved aside (if unreadable) or preserved (if schema mismatch)
             logger.error(f"Failed to read {data_path}: {exc}")
+            if exc.unreadable_in_place:
+                # An empty result would let the caller write a new file over it.
+                raise RuntimeError(f"Failed to read {data_path}: {exc}") from exc
             return empty_df
 
     def save(

@@ -245,12 +245,14 @@ def test_corruption_recovery(tmp_path):
     corrupt_path.parent.mkdir(parents=True)
     corrupt_path.write_bytes(b"not a valid parquet file")
     
-    # Backend should detect and delete corrupt file
+    # Backend should detect the corrupt file and move it aside (never delete it)
     result = backend.read(interval="1d", ticker="AAPL")
     
-    # Returns empty DataFrame, corrupt file is deleted
+    # Returns empty DataFrame; the file is kept under another name
     assert result.empty
     assert not corrupt_path.exists()
+    (moved,) = corrupt_path.parent.glob("AAPL.parquet.damaged-*")
+    assert moved.read_bytes() == b"not a valid parquet file"
 ```
 
 ### 6. Testing CLI Commands
@@ -302,7 +304,7 @@ def test_daemon_shutdown():
 def test_ticker_registry_activates_not_found_ticker_when_data_found():
     pass
 
-def test_storage_backend_deletes_corrupt_parquet_file():
+def test_storage_backend_moves_corrupt_parquet_file_aside():
     pass
 
 def test_data_fetcher_respects_rate_limit_between_requests():

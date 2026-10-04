@@ -2,7 +2,7 @@
 
 This module ensures both StorageBackend and PartitionedStorageBackend implement
 identical recovery and fail-safe behavior:
-- Only delete truly corrupt/unreadable files
+- Move truly corrupt/unreadable files aside; never delete them
 - Preserve files with schema mismatches
 - Attempt safe column recovery before failing
 """
@@ -144,12 +144,12 @@ def make_partition_request(root: Path, ticker: str = "TEST") -> StorageRequest:
 
 
 class TestCorruptFileHandling:
-    """Test that both backends delete truly corrupt files."""
+    """Test that both backends move truly corrupt files aside and keep their bytes."""
 
-    def test_legacy_backend_deletes_corrupt_file(
+    def test_legacy_backend_moves_corrupt_file_aside(
         self, tmp_path, legacy_backend, empty_frame_factory
     ):
-        """Legacy backend should delete unreadable corrupt files."""
+        """Legacy backend should rename an unreadable file, not delete it."""
         request = make_legacy_request(tmp_path, ticker="CORRUPT")
         path = request.legacy_path()
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -159,14 +159,16 @@ class TestCorruptFileHandling:
 
         result = legacy_backend.read(request)
 
-        # Should return empty and delete corrupt file
+        # Should return empty; the corrupt file is kept under another name
         assert result.empty
         assert not path.exists()
+        (moved,) = path.parent.glob("CORRUPT.parquet.damaged-*")
+        assert moved.read_text() == "this is not a parquet file"
 
-    def test_partitioned_backend_deletes_corrupt_file(
+    def test_partitioned_backend_moves_corrupt_file_aside(
         self, tmp_path, partitioned_backend, empty_frame_factory
     ):
-        """Partitioned backend should delete unreadable corrupt files."""
+        """Partitioned backend should rename an unreadable file, not delete it."""
         request = make_partition_request(tmp_path, ticker="CORRUPT")
 
         # First save valid data
@@ -192,11 +194,13 @@ class TestCorruptFileHandling:
         )
         corrupt_path.write_text("this is not a parquet file")
 
-        # Should fail with RuntimeError and delete corrupt file
+        # Should fail with RuntimeError; the corrupt file is kept under another name
         with pytest.raises(RuntimeError, match="Failed to read.*partition"):
             partitioned_backend.read(request)
 
         assert not corrupt_path.exists()
+        (moved,) = corrupt_path.parent.glob("data.parquet.damaged-*")
+        assert moved.read_text() == "this is not a parquet file"
 
 
 class TestSchemaMismatchPreservation:

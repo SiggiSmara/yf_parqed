@@ -269,6 +269,14 @@ yf-parqed-migrate migrate --venue us:yahoo --interval 1d --batch-size 100
 
 **Rule:** Regular automated checks to detect corruption or inconsistencies.
 
+**Implemented for Yahoo partitioned data (October 2026):**
+- **Readability of closed months.** The Yahoo daemon reads every file of the last closed month once (the month-close check) and notes the result in `partition_checks.json`. `yf-parqed verify-partitions [--month YYYY-MM | --all]` does the same on request. Both only read.
+- **A damaged file is kept, never deleted.** A file the daemon cannot read (after a second attempt) is renamed to `data.parquet.damaged-<UTC timestamp>`; a file found by a check is left in place. Either way it is written to `damaged_partitions.jsonl`. There is no backup of the collected data and Yahoo serves 1-minute bars for seven days, so deleting a file that merely looked broken (a passing disk error is enough) would lose a month of a ticker for good.
+- **A new file is verified before it replaces the old one.** The temp file's footer is read back and its row count compared before the rename.
+- **A leftover temp file becomes `data.parquet` only if it reads back completely.** An incomplete one is kept under a `.damaged-` name.
+
+Not implemented: the gap, row-count and schema checks described below.
+
 **Implementation:**
 - Daily cron job runs integrity checks
 - Validates parquet file readability

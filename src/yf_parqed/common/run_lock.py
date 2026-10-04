@@ -9,6 +9,9 @@ from typing import Any
 
 from loguru import logger
 
+from .parquet_recovery import DAMAGED_MARKER, move_aside
+from .partition_check import read_completely
+
 
 class GlobalRunLock:
     """Simple global run lock using an atomic mkdir as the lock primitive.
@@ -79,7 +82,11 @@ class GlobalRunLock:
         Rules:
         - For each file matching "data.parquet.tmp-*":
             - If final "data.parquet" exists: remove the tmp file.
-            - Else: atomically replace tmp -> final.
+            - Else, if the tmp file reads back completely: atomically
+              replace tmp -> final.
+            - Else: move the tmp file aside (``.damaged-<timestamp>``). It
+              is most likely a write that was cut short, but it may be the
+              only copy of the fetch that was being stored.
 
         Returns the number of tmp files processed.
         """
@@ -89,6 +96,8 @@ class GlobalRunLock:
             return 0
 
         for tmp in data_root.rglob("data.parquet.tmp-*"):
+            if DAMAGED_MARKER in tmp.name:
+                continue
             try:
                 final = tmp.with_name("data.parquet")
                 if final.exists():
@@ -96,6 +105,14 @@ class GlobalRunLock:
                         tmp.unlink()
                     except Exception:
                         logger.debug("Failed to remove tmp file {path}", path=str(tmp))
+                elif not self._reads_completely(tmp):
+                    moved_to = move_aside(tmp)
+                    logger.warning(
+                        "Tmp file {path} does not read back completely and was not "
+                        "made the data file; kept as {moved}",
+                        path=str(tmp),
+                        moved=moved_to.name if moved_to is not None else tmp.name,
+                    )
                 else:
                     try:
                         os.replace(str(tmp), str(final))
@@ -112,3 +129,14 @@ class GlobalRunLock:
                 )
 
         return processed
+
+    @staticmethod
+    def _reads_completely(path: Path) -> bool:
+        """Whether a leftover tmp file is a whole Parquet file (full decode)."""
+        try:
+            read_completely(path)
+            return True
+        except MemoryError:
+            raise
+        except Exception:
+            return False

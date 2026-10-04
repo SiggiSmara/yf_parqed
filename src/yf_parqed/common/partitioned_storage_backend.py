@@ -12,7 +12,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from .partition_path_builder import PartitionPathBuilder
-from .parquet_recovery import ParquetRecoveryError, safe_read_parquet
+from .parquet_recovery import DamageRecorder, ParquetRecoveryError, safe_read_parquet
 from .storage import StorageInterface, StorageRequest
 
 
@@ -96,7 +96,9 @@ class PartitionedStorageBackend(StorageInterface):
         compression: str | None = "gzip",
         fsync: bool = True,
         row_group_size: int | None = None,
+        damage_recorder: DamageRecorder | None = None,
     ) -> None:
+        self._damage_recorder = damage_recorder
         self._empty_frame_factory = empty_frame_factory
         self._normalizer = normalizer
         self._column_provider = column_provider
@@ -117,6 +119,13 @@ class PartitionedStorageBackend(StorageInterface):
         new_data: pd.DataFrame,
         existing_data: pd.DataFrame,
     ) -> pd.DataFrame:
+        """Write every month present in ``new_data`` or ``existing_data``.
+
+        The caller supplies the stored rows, and a month is replaced by
+        exactly what the two frames hold for it. Used by the legacy
+        migration, which may overwrite on purpose. The daemon uses
+        :meth:`merge`, which reads the stored rows itself.
+        """
         self._validate_partition_metadata(request)
 
         if new_data.empty and existing_data.empty:
@@ -132,6 +141,122 @@ class PartitionedStorageBackend(StorageInterface):
         self._write_partitions(request, combined)
 
         return combined.set_index(["stock", "date"])
+
+    def merge(self, request: StorageRequest, new_data: pd.DataFrame) -> list[pd.Period]:
+        """Merge ``new_data`` into the stored partitions, one month at a time.
+
+        This is the daemon's write path. Each month that has a row in
+        ``new_data`` is read from disk, merged with those rows and written
+        back only if the result differs from what is stored. Months without
+        a row in ``new_data`` are not opened. Returns the months written.
+
+        The stored rows come from disk, never from the caller, so a month
+        cannot lose rows to an incomplete read. For a date present on both
+        sides the row with the higher ``sequence`` wins; without sequence
+        numbers, the new row. Rows without a date are dropped. An unreadable
+        file in a touched month raises ``RuntimeError`` before that month is
+        written; it has then been moved aside, so the next call starts a new
+        file for that month.
+
+        Captured data is not replaced by less: an incoming row that holds
+        fewer values than the stored row for the same date is ignored, and a
+        month is not written if any stored date would be missing from it.
+        """
+        self._validate_partition_metadata(request)
+
+        if new_data.empty:
+            return []
+
+        new = self._normalizer(new_data.reset_index())
+        new = new[new["date"].notna()]
+        if new.empty:
+            return []
+        self._assert_single_ticker(new, request)
+
+        new_months = new["date"].dt.to_period("M")
+        written: list[pd.Period] = []
+        for month in sorted(new_months.unique()):
+            rows = new[new_months == month]
+            stored = self._read_month(request, month)
+            if stored is None:
+                merged = self._dedupe(rows)
+            else:
+                rows = self._without_emptier_rows(request, month, stored, rows)
+                merged = self._dedupe(pd.concat([stored, rows], ignore_index=True))
+                if merged.reset_index(drop=True).equals(stored.reset_index(drop=True)):
+                    continue
+                lost = int((~stored["date"].isin(merged["date"])).sum())
+                if lost:
+                    logger.error(
+                        f"Not writing {request.ticker} {month} ({request.interval}): "
+                        f"the merge would drop {lost} of {len(stored)} stored rows. "
+                        "The stored file is kept as it is."
+                    )
+                    continue
+            self._write_partitions(request, merged)
+            written.append(month)
+        return written
+
+    def _without_emptier_rows(
+        self,
+        request: StorageRequest,
+        month: pd.Period,
+        stored: pd.DataFrame,
+        rows: pd.DataFrame,
+    ) -> pd.DataFrame:
+        """Drop incoming rows that hold fewer values than the stored row for their date."""
+        overlap = rows["date"].isin(stored["date"])
+        if not overlap.any():
+            return rows
+        value_columns = [
+            column
+            for column in rows.columns
+            if column not in ("stock", "date", "sequence")
+        ]
+        stored_filled = (
+            stored.drop_duplicates(subset="date", keep="last")
+            .set_index("date")[value_columns]
+            .notna()
+            .sum(axis=1)
+        )
+        incoming_filled = rows[value_columns].notna().sum(axis=1)
+        emptier = incoming_filled < rows["date"].map(stored_filled).fillna(0)
+        if not emptier.any():
+            return rows
+        logger.warning(
+            f"Ignoring {int(emptier.sum())} incoming rows for {request.ticker} {month} "
+            f"({request.interval}) that hold fewer values than the stored rows "
+            "for the same dates"
+        )
+        return rows[~emptier]
+
+    def _read_month(
+        self, request: StorageRequest, month: pd.Period
+    ) -> pd.DataFrame | None:
+        """Normalized rows of one monthly partition, or None if it has no file."""
+        path = self._path_builder.build(
+            market=request.market,
+            source=request.source,
+            dataset=request.dataset,
+            interval=request.interval,
+            ticker=request.ticker,
+            timestamp=month.start_time.to_pydatetime(),
+        )
+        if not path.is_file():
+            return None
+        try:
+            return safe_read_parquet(
+                path=path,
+                required_columns=set(self._column_provider()),
+                normalizer=self._normalizer,
+                empty_frame_factory=self._empty_frame_factory,
+                on_damaged=self._damage_recorder,
+            )
+        except ParquetRecoveryError as exc:
+            logger.error(f"Failed to read partition {path}: {exc}")
+            raise RuntimeError(
+                f"Failed to read partition {month} for {request.ticker}: {exc}"
+            ) from exc
 
     def read(self, request: StorageRequest) -> pd.DataFrame:
         self._validate_partition_metadata(request)
@@ -165,10 +290,11 @@ class PartitionedStorageBackend(StorageInterface):
                     required_columns=required,
                     normalizer=self._normalizer,
                     empty_frame_factory=self._empty_frame_factory,
+                    on_damaged=self._damage_recorder,
                 )
                 frames.append(df)
             except ParquetRecoveryError as exc:
-                # Recovery failed - file either deleted (if corrupt) or preserved (if schema issue)
+                # Recovery failed - file either moved aside (if unreadable) or preserved (if schema issue)
                 # Log the error and track the failure
                 logger.error(f"Failed to read partition {path}: {exc}")
                 failed_files.append((path, str(exc)))
@@ -203,7 +329,10 @@ class PartitionedStorageBackend(StorageInterface):
         return self._normalize_and_dedupe(combined)
 
     def _normalize_and_dedupe(self, frame: pd.DataFrame) -> pd.DataFrame:
-        normalized = self._normalizer(frame)
+        return self._dedupe(self._normalizer(frame))
+
+    @staticmethod
+    def _dedupe(normalized: pd.DataFrame) -> pd.DataFrame:
         normalized = normalized.sort_values(
             ["stock", "date", "sequence"], kind="mergesort"
         )
@@ -282,6 +411,13 @@ class PartitionedStorageBackend(StorageInterface):
                         # best-effort: if fsync fails, proceed to replace anyway
                         logger.debug("fsync failed for {path}", path=str(temp_path))
 
+                # a bad write must not replace a good file
+                try:
+                    self._verify_temp_file(temp_path, len(partition_df))
+                except Exception:
+                    temp_path.unlink(missing_ok=True)
+                    raise
+
                 # atomic replace
                 try:
                     # use pathlib.Path.replace for a cleaner, idiomatic atomic rename
@@ -315,6 +451,21 @@ class PartitionedStorageBackend(StorageInterface):
         #     )
         #     path.parent.mkdir(parents=True, exist_ok=True)
         #     partition_df.to_parquet(path, index=False, compression=self._compression)
+
+    @staticmethod
+    def _verify_temp_file(temp_path: Path, expected_rows: int) -> None:
+        """Read the footer of a freshly written temp file back and compare its row count."""
+        try:
+            rows = pq.read_metadata(temp_path).num_rows
+        except Exception as exc:
+            raise RuntimeError(
+                f"{temp_path.name} cannot be read back after writing: {exc}"
+            ) from exc
+        if rows != expected_rows:
+            raise RuntimeError(
+                f"{temp_path.name} holds {rows} rows after writing, "
+                f"{expected_rows} were meant to be written"
+            )
 
     def _validate_partition_metadata(self, request: StorageRequest) -> None:
         if not request.market or not request.source:

@@ -1,12 +1,14 @@
 """Shared parquet file recovery logic for all storage backends.
 
 This module provides unified recovery strategies for parquet files with schema issues.
-Only truly corrupt/unreadable files are deleted; files with schema mismatches are
-preserved for operator inspection while clear errors are raised.
+No file is deleted. A file that cannot be read at all is moved aside (renamed in
+its directory) so that capture can continue into a new file; files with schema
+mismatches stay where they are for operator inspection while clear errors are raised.
 """
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
@@ -14,10 +16,43 @@ import pandas as pd
 from loguru import logger
 
 
+# Part of the name an unreadable file is given when it is moved aside:
+# data.parquet -> data.parquet.damaged-20261004T101500Z. The new name no longer
+# ends in .parquet, so no reader or glob in this project picks it up.
+DAMAGED_MARKER = ".damaged-"
+
+#: Told about every unreadable file: its path, where it was moved (None if it
+#: could not be moved and is still in place) and the error that was raised.
+DamageRecorder = Callable[[Path, "Path | None", BaseException], None]
+
+
 class ParquetRecoveryError(Exception):
     """Raised when a parquet file cannot be recovered through safe transformations."""
 
-    pass
+    #: True when the file is unreadable and could not be moved aside either.
+    #: It is still at its path, and nothing may be written over it.
+    unreadable_in_place = False
+
+
+def move_aside(path: Path) -> Path | None:
+    """
+    Rename a damaged file to ``<name>.damaged-<UTC timestamp>`` in its directory.
+
+    Returns the new path, or None when the rename failed and the file is still
+    where it was. Renaming the file back undoes a false alarm.
+    """
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    target = path.with_name(f"{path.name}{DAMAGED_MARKER}{stamp}")
+    attempt = 1
+    while target.exists():
+        target = path.with_name(f"{path.name}{DAMAGED_MARKER}{stamp}-{attempt}")
+        attempt += 1
+    try:
+        path.rename(target)
+    except OSError as exc:
+        logger.error(f"Could not move {path} aside: {exc}. It is left in place.")
+        return None
+    return target
 
 
 def safe_read_parquet(
@@ -25,6 +60,7 @@ def safe_read_parquet(
     required_columns: set[str],
     normalizer: Callable[[pd.DataFrame], pd.DataFrame],
     empty_frame_factory: Callable[[], pd.DataFrame],
+    on_damaged: DamageRecorder | None = None,
 ) -> pd.DataFrame:
     """
     Read a parquet file with comprehensive recovery strategies.
@@ -34,13 +70,15 @@ def safe_read_parquet(
     2. If successful but empty, raise ParquetRecoveryError (preserve file)
     3. If missing required columns, attempt safe promotions
     4. If recovery fails, raise ParquetRecoveryError (preserve file)
-    5. If file is truly corrupt/unreadable, delete it and raise ParquetRecoveryError
+    5. If the file cannot be read at all, move it aside, tell ``on_damaged``
+       and raise ParquetRecoveryError
 
     Args:
         path: Path to the parquet file
         required_columns: Set of column names that must be present
         normalizer: Function to normalize DataFrame types/columns
         empty_frame_factory: Function to create an empty DataFrame with correct schema
+        on_damaged: Called with (path, moved_to, error) for an unreadable file
 
     Returns:
         Normalized DataFrame if successful
@@ -48,18 +86,39 @@ def safe_read_parquet(
     Raises:
         ParquetRecoveryError: If file cannot be recovered (with details about why)
     """
-    # Stage 1: Attempt to read the file
-    try:
-        df = pd.read_parquet(path)
-    except (ValueError, FileNotFoundError, OSError) as exc:
-        # File is truly corrupt/unreadable - safe to delete
-        logger.warning(
-            f"Unable to read parquet file {path.name}: {exc}. Deleting corrupt file."
+    # Stage 1: Attempt to read the file. A second attempt lets an error that
+    # passes (too many open files, a disk hiccup) go by without consequences.
+    exc: Exception | None = None
+    for _attempt in range(2):
+        try:
+            df = pd.read_parquet(path)
+            exc = None
+            break
+        except FileNotFoundError as missing:
+            raise ParquetRecoveryError(
+                f"Parquet file {path} does not exist."
+            ) from missing
+        except (ValueError, OSError) as failure:
+            exc = failure
+    if exc is not None:
+        # Unreadable twice. The bars in the file can rarely be fetched again,
+        # so the file is kept under another name and the next write starts a
+        # new one.
+        moved_to = move_aside(path)
+        outcome = (
+            f"File moved aside to {moved_to.name}."
+            if moved_to is not None
+            else "File could not be moved aside and is left in place."
         )
-        _safe_remove(path)
-        raise ParquetRecoveryError(
-            f"Parquet file {path} is corrupt and unreadable. File has been deleted."
-        ) from exc
+        logger.error(f"Unable to read parquet file {path}: {exc}. {outcome}")
+        if on_damaged is not None:
+            try:
+                on_damaged(path, moved_to, exc)
+            except Exception as record_exc:
+                logger.error(f"Could not record damaged file {path}: {record_exc}")
+        error = ParquetRecoveryError(f"Parquet file {path} is unreadable. {outcome}")
+        error.unreadable_in_place = moved_to is None
+        raise error from exc
 
     # Stage 2: Check for empty DataFrame
     if df.empty:
@@ -217,13 +276,3 @@ def _attempt_column_recovery(
             logger.debug(f"Column promotion failed: {exc}")
 
     return df
-
-
-def _safe_remove(path: Path) -> None:
-    """Safely remove a file, handling both old and new pathlib APIs."""
-    try:
-        path.unlink(missing_ok=True)
-    except TypeError:
-        # Older Python versions don't have missing_ok parameter
-        if path.exists():
-            path.unlink()

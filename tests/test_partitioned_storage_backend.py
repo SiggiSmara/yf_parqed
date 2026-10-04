@@ -1,8 +1,10 @@
+import os
 from pathlib import Path
 
 import pandas as pd
 import pyarrow.parquet as pq
 import pytest
+from loguru import logger
 
 from yf_parqed.common.partition_path_builder import PartitionPathBuilder
 from yf_parqed.common.partitioned_storage_backend import PartitionedStorageBackend
@@ -212,7 +214,7 @@ def test_read_returns_empty_when_no_partitions(backend, tmp_path):
     assert result.empty
 
 
-def test_read_removes_corrupt_partition_and_fails(backend, tmp_path, empty_frame):
+def test_read_moves_corrupt_partition_aside_and_fails(backend, tmp_path, empty_frame):
     request = make_request(tmp_path)
     df = make_sample_df(["2024-01-05"])
     backend.save(request, df, empty_frame())
@@ -225,8 +227,10 @@ def test_read_removes_corrupt_partition_and_fails(backend, tmp_path, empty_frame
     with pytest.raises(RuntimeError, match="Failed to read.*partition"):
         backend.read(request)
 
-    # Corrupt file should be DELETED (truly unreadable)
+    # The unreadable file is kept under another name, never deleted
     assert not corrupt_path.exists()
+    (moved,) = corrupt_path.parent.glob("data.parquet.damaged-*")
+    assert moved.read_text() == "not parquet"
 
 
 def test_read_preserves_schema_mismatch_partition(backend, tmp_path, empty_frame):
@@ -254,3 +258,231 @@ def test_read_preserves_schema_mismatch_partition(backend, tmp_path, empty_frame
 
     # File with schema mismatch should be PRESERVED for inspection
     assert bad_schema_path.exists()
+
+
+# --- merge: the daemon's write path (ADR 2026-10-03, Steps B and C) ----------
+
+
+def _month_file(root: Path, year: int, month: int, ticker: str = "AAPL") -> Path:
+    return (
+        root
+        / f"us/yahoo/stocks_1d/ticker={ticker}/year={year}/month={month:02d}/data.parquet"
+    )
+
+
+@pytest.fixture()
+def seeded(backend, tmp_path):
+    """One row each in January, February and March 2024, files aged by an hour.
+
+    The old modification time makes "was this file rewritten?" independent of
+    the filesystem's timestamp granularity.
+    """
+    request = make_request(tmp_path)
+    backend.merge(request, make_sample_df(["2024-01-10", "2024-02-10", "2024-03-04"]))
+    files = {m: _month_file(tmp_path, 2024, m) for m in (1, 2, 3)}
+    for path in files.values():
+        aged = path.stat().st_mtime - 3600
+        os.utime(path, (aged, aged))
+    snapshot = {m: (p.stat().st_mtime_ns, p.read_bytes()) for m, p in files.items()}
+    return request, files, snapshot
+
+
+def _unchanged(files, snapshot, month: int) -> bool:
+    path = files[month]
+    return (path.stat().st_mtime_ns, path.read_bytes()) == snapshot[month]
+
+
+def test_merge_writes_one_file_per_month_of_new_data(backend, tmp_path):
+    request = make_request(tmp_path)
+
+    written = backend.merge(request, make_sample_df(["2024-05-01", "2024-06-01"]))
+
+    assert written == [pd.Period("2024-05"), pd.Period("2024-06")]
+    assert _month_file(tmp_path, 2024, 5).exists()
+    assert _month_file(tmp_path, 2024, 6).exists()
+    assert len(backend.read(request)) == 2
+
+
+def test_merge_leaves_untouched_months_alone(backend, seeded):
+    request, files, snapshot = seeded
+
+    written = backend.merge(request, make_sample_df(["2024-03-05"]))
+
+    assert written == [pd.Period("2024-03")]
+    assert _unchanged(files, snapshot, 1)
+    assert _unchanged(files, snapshot, 2)
+    assert not _unchanged(files, snapshot, 3)
+
+
+def test_merge_keeps_the_stored_rows_of_a_touched_month(backend, seeded):
+    """The stored rows are read from disk, so the caller cannot leave any out."""
+    request, files, _ = seeded
+
+    backend.merge(request, make_sample_df(["2024-03-05"]))
+
+    march = pd.read_parquet(files[3])
+    assert sorted(march["date"]) == [
+        pd.Timestamp("2024-03-04"),
+        pd.Timestamp("2024-03-05"),
+    ]
+    assert len(backend.read(request)) == 4
+
+
+def test_merge_replaces_a_stored_row_with_the_same_date(backend, seeded):
+    request, files, _ = seeded
+    new = make_sample_df(["2024-03-04", "2024-03-05"])
+    new["close"] = [999.0, 998.0]
+    new["sequence"] = [5, 6]
+
+    backend.merge(request, new)
+
+    march = pd.read_parquet(files[3]).set_index("date")
+    assert len(march) == 2
+    assert march.loc[pd.Timestamp("2024-03-04"), "close"] == 999.0
+
+
+def test_merge_touches_both_months_at_a_month_boundary(backend, seeded):
+    request, files, snapshot = seeded
+
+    written = backend.merge(request, make_sample_df(["2024-02-29", "2024-03-01"]))
+
+    assert written == [pd.Period("2024-02"), pd.Period("2024-03")]
+    assert _unchanged(files, snapshot, 1)
+    assert not _unchanged(files, snapshot, 2)
+    assert not _unchanged(files, snapshot, 3)
+    assert len(backend.read(request)) == 5
+
+
+def test_merge_does_not_rewrite_a_month_that_would_not_change(backend, seeded):
+    """Refetching bars that are already stored, as every weekend cycle does."""
+    request, files, snapshot = seeded
+
+    written = backend.merge(request, make_sample_df(["2024-03-04"]))
+
+    assert written == []
+    assert all(_unchanged(files, snapshot, m) for m in (1, 2, 3))
+
+
+def test_merge_rewrites_only_the_month_that_changed(backend, seeded):
+    request, files, snapshot = seeded
+    # February comes back exactly as stored, March with a revised close.
+    new = backend.read(request).drop(("AAPL", pd.Timestamp("2024-01-10")))
+    new.loc[("AAPL", pd.Timestamp("2024-03-04")), "close"] = 555.0
+
+    written = backend.merge(request, new)
+
+    assert written == [pd.Period("2024-03")]
+    assert _unchanged(files, snapshot, 2)
+
+
+def test_merge_ignores_an_incoming_row_with_fewer_values(backend, seeded):
+    """A bar that comes back without prices does not replace the captured one."""
+    request, files, snapshot = seeded
+    new = make_sample_df(["2024-03-04"])
+    new[["open", "high", "low", "close"]] = float("nan")
+    new["sequence"] = 99
+
+    written = backend.merge(request, new)
+
+    assert written == []
+    assert _unchanged(files, snapshot, 3)
+
+
+def test_merge_stores_the_good_rows_next_to_an_ignored_one(backend, seeded):
+    request, files, _ = seeded
+    stored_close = pd.read_parquet(files[3])["close"].iloc[0]
+    new = make_sample_df(["2024-03-04", "2024-03-05"])
+    new.loc[("AAPL", pd.Timestamp("2024-03-04")), "close"] = float("nan")
+
+    written = backend.merge(request, new)
+
+    assert written == [pd.Period("2024-03")]
+    march = pd.read_parquet(files[3]).set_index("date")
+    assert len(march) == 2
+    assert march.loc[pd.Timestamp("2024-03-04"), "close"] == stored_close
+
+
+def test_merge_lets_a_fuller_row_replace_an_emptier_stored_one(backend, tmp_path):
+    request = make_request(tmp_path)
+    partial = make_sample_df(["2024-03-04"])
+    partial["close"] = float("nan")
+    backend.merge(request, partial)
+
+    written = backend.merge(request, make_sample_df(["2024-03-04"]))
+
+    assert written == [pd.Period("2024-03")]
+    assert pd.read_parquet(_month_file(tmp_path, 2024, 3))["close"].notna().all()
+
+
+def test_merge_refuses_to_write_a_month_that_lost_a_stored_row(
+    backend, seeded, monkeypatch
+):
+    """Cannot happen by construction; the guard is there for the day it does."""
+    request, files, snapshot = seeded
+    dedupe = backend._dedupe
+    monkeypatch.setattr(
+        backend,
+        "_dedupe",
+        lambda frame: dedupe(frame[frame["date"] != pd.Timestamp("2024-03-04")]),
+    )
+    errors = []
+    sink = logger.add(lambda message: errors.append(str(message)), level="ERROR")
+    try:
+        written = backend.merge(request, make_sample_df(["2024-03-05"]))
+    finally:
+        logger.remove(sink)
+
+    assert written == []
+    assert _unchanged(files, snapshot, 3)
+    assert any("would drop 1 of 1 stored rows" in line for line in errors)
+
+
+def test_merge_drops_rows_without_a_date(backend, seeded):
+    request, files, snapshot = seeded
+    new = make_sample_df(["2024-03-05", "2024-03-06"])
+    new.index = pd.MultiIndex.from_tuples(
+        [("AAPL", pd.Timestamp("2024-03-05")), ("AAPL", pd.NaT)],
+        names=["stock", "date"],
+    )
+
+    written = backend.merge(request, new)
+
+    assert written == [pd.Period("2024-03")]
+    assert len(pd.read_parquet(files[3])) == 2
+    assert backend.merge(request, new.iloc[[1]]) == []
+
+
+def test_merge_ignores_a_damaged_file_in_an_untouched_month(backend, seeded):
+    request, files, _ = seeded
+    files[1].write_bytes(b"not a parquet file")
+
+    written = backend.merge(request, make_sample_df(["2024-03-05"]))
+
+    assert written == [pd.Period("2024-03")]
+    assert files[1].read_bytes() == b"not a parquet file"
+
+
+def test_merge_fails_on_a_damaged_file_in_a_touched_month(backend, seeded, tmp_path):
+    """A schema problem keeps the file; nothing is written over it."""
+    request, files, _ = seeded
+    pd.DataFrame({"unexpected": [1]}).to_parquet(files[3])
+    damaged = files[3].read_bytes()
+
+    with pytest.raises(RuntimeError, match="2024-03"):
+        backend.merge(request, make_sample_df(["2024-03-05"]))
+
+    assert files[3].read_bytes() == damaged
+
+
+def test_merge_rejects_another_ticker(backend, tmp_path):
+    request = make_request(tmp_path, ticker="AAPL")
+
+    with pytest.raises(ValueError):
+        backend.merge(request, make_sample_df(["2024-03-05"], ticker="MSFT"))
+
+
+def test_merge_of_empty_frame_writes_nothing(backend, tmp_path, empty_frame):
+    request = make_request(tmp_path)
+
+    assert backend.merge(request, empty_frame()) == []
+    assert not (tmp_path / "us").exists()

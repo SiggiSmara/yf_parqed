@@ -12,6 +12,16 @@ import time
 
 
 from ..common.config_service import ConfigService
+from ..common.damage_log import DAMAGE_LOG_NAME, DamageLog
+from ..common.partition_check import (
+    CHECK_STATE_NAME,
+    PartitionCheck,
+    PartitionCheckState,
+    check_partitions,
+    last_closed_month,
+    month_of,
+    stock_datasets,
+)
 from ..common.partitioned_storage_backend import PartitionedStorageBackend
 from ..common.storage_backend import StorageBackend
 from ..common.storage import StorageInterface, StorageRequest
@@ -194,6 +204,7 @@ class YFParqed:
             empty_frame_factory=self._empty_price_frame,
             normalizer=self._normalize_price_frame,
             column_provider=self._price_frame_columns,
+            damage_recorder=self._record_damaged_file,
         )
 
     def _create_partition_backend(self) -> PartitionedStorageBackend:
@@ -204,7 +215,88 @@ class YFParqed:
             normalizer=self._normalize_price_frame,
             column_provider=self._price_frame_columns,
             path_builder=self._storage_router.path_builder,
+            damage_recorder=self._record_damaged_file,
         )
+
+    @property
+    def damage_log(self) -> DamageLog:
+        return DamageLog(self.my_path / DAMAGE_LOG_NAME)
+
+    @property
+    def partition_check_state(self) -> PartitionCheckState:
+        return PartitionCheckState(self.my_path / CHECK_STATE_NAME)
+
+    def _record_damaged_file(
+        self, path: Path, moved_to: Path | None, error: BaseException
+    ) -> None:
+        """Called by the storage backends for a file they could not read."""
+        self.damage_log.record(
+            path=path, error=error, moved_to=moved_to, found_by="read"
+        )
+
+    def verify_partitions(
+        self,
+        month: str | None = None,
+        should_stop: StopCheck | None = None,
+        found_by: str = "verify-partitions",
+    ) -> PartitionCheck:
+        """
+        Read every stored partition file of ``month`` (all months when None).
+
+        Read-only on the data. Each damaged file is logged and written to the
+        damage record once; the file itself is left where it is. A run that
+        was not cut short notes its result for every closed month it covered.
+        The result is returned even if those two files cannot be written.
+        """
+        result = check_partitions(
+            stock_datasets(self.my_path / "data"), month, should_stop
+        )
+
+        # The record and the note are written independently: a record that
+        # cannot be written must not make the daemon read the month again in
+        # every cycle. The log line and the damaged count in the note remain.
+        for path, error in result.damaged:
+            logger.error(f"Damaged partition file {path}: {error}")
+            try:
+                self.damage_log.record(
+                    path=path, error=error, found_by=found_by, once=True
+                )
+            except (OSError, ValueError) as exc:
+                logger.error(f"Could not record damaged file {path}: {exc}")
+
+        if result.complete:
+            # An open month still changes; an entry for it would make the
+            # daemon skip that month's check once it closes.
+            current = month_of(datetime.now())
+            closed = {k: v for k, v in result.months.items() if k < current}
+            try:
+                self.partition_check_state.record(closed)
+            except (OSError, ValueError) as exc:
+                logger.error(f"Could not note the partition check: {exc}")
+        return result
+
+    def check_last_closed_month(
+        self, should_stop: StopCheck | None = None
+    ) -> PartitionCheck | None:
+        """Check the last closed month once; None when it has been checked before."""
+        month = last_closed_month(datetime.now())
+        if self.partition_check_state.has(month):
+            return None
+
+        logger.info(f"Month-close check: reading every stored file of {month}")
+        result = self.verify_partitions(month, should_stop, "month-close check")
+        if not result.complete:
+            logger.info(
+                f"Month-close check of {month} stopped after {result.files} files; "
+                "it starts again in a later cycle"
+            )
+            return result
+        check = result.months[month]
+        logger.info(
+            f"Month-close check of {month}: {check.files} files, {check.rows} rows, "
+            f"{len(check.damaged)} damaged, {result.seconds:.0f} seconds"
+        )
+        return result
 
     def set_limiter(self, max_requests: int = 3, duration: int = 2):
         max_requests, duration = self.config.configure_limits(max_requests, duration)
@@ -429,6 +521,22 @@ class YFParqed:
         backend = self._select_storage_backend(request)
         return backend.save(request, new_data, existing_data)
 
+    def merge_yf(
+        self, new_data: pd.DataFrame, target: StorageRequest | Path | str
+    ) -> None:
+        """Store freshly fetched bars for one ticker and interval.
+
+        Partitioned storage opens and rewrites only the months the new bars
+        fall into. The legacy layout is one file per ticker, read and
+        rewritten whole; it gets none of that.
+        """
+        request = self._ensure_storage_request(target)
+        backend = self._select_storage_backend(request)
+        if backend is self._partition_storage:
+            self._partition_storage.merge(request, new_data)
+        else:
+            backend.save(request, new_data, backend.read(request))
+
     def read_yf(self, target: StorageRequest | Path | str) -> pd.DataFrame:
         request = self._ensure_storage_request(target)
         backend = self._select_storage_backend(request)
@@ -534,8 +642,6 @@ class YFParqed:
 
         last_data_date = self.registry.get_last_data_date(stock, interval)
 
-        df2 = self.read_yf(storage_request)
-
         if end_date is None:
             end_date = self.get_today()
 
@@ -568,7 +674,7 @@ class YFParqed:
                 last_data_date = (
                     df1.index.get_level_values("date").max().to_pydatetime()
                 )
-                self.save_yf(df1, df2, storage_request)
+                self.merge_yf(df1, storage_request)
 
                 # Update ticker status - data found for this interval
                 # Also record storage backend information

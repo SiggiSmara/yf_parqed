@@ -98,16 +98,11 @@ class TestUpdateLoopHarness:
             index=sample_index,
         )
 
-        captured_reads = []
-        captured_saves = []
+        captured_merges = []
 
-        def record_read(request):
-            captured_reads.append(request)
-            return YFParqed._empty_price_frame()
-
-        def record_save(request, new_data, existing_data):
-            captured_saves.append(request)
-            return new_data
+        def record_merge(request, new_data):
+            captured_merges.append(request)
+            return []
 
         def fail_legacy_read(_request):
             raise AssertionError(
@@ -122,16 +117,15 @@ class TestUpdateLoopHarness:
         monkeypatch.setattr(instance, "load_tickers", lambda: None)
         monkeypatch.setattr(instance, "enforce_limits", lambda: None)
         monkeypatch.setattr(instance.data_fetcher, "fetch", lambda **__: sample_df)
-        monkeypatch.setattr(instance._partition_storage, "read", record_read)
-        monkeypatch.setattr(instance._partition_storage, "save", record_save)
+        monkeypatch.setattr(instance._partition_storage, "merge", record_merge)
         monkeypatch.setattr(instance._legacy_storage, "read", fail_legacy_read)
         monkeypatch.setattr(instance._legacy_storage, "save", fail_legacy_save)
         monkeypatch.setattr(instance, "save_tickers", lambda: None)
 
         instance.save_single_stock_data("PART", interval="1d")
 
-        assert captured_reads and captured_saves
-        request = captured_saves[0]
+        assert captured_merges
+        request = captured_merges[0]
         assert request.market == "us"
         assert request.source == "yahoo"
 
@@ -169,17 +163,15 @@ class TestUpdateLoopHarness:
 
         saved_payloads = {}
 
-        def fake_save_yf(df1, df2, request):
+        def fake_merge_yf(df1, request):
             saved_payloads["df1"] = df1
-            saved_payloads["df2"] = df2
             saved_payloads["request"] = request
             saved_payloads["path"] = request.legacy_path()
-            return df1
 
         monkeypatch.setattr(instance, "load_tickers", lambda: None)
         monkeypatch.setattr(instance, "enforce_limits", lambda: None)
         monkeypatch.setattr(instance.data_fetcher, "fetch", fake_fetch)
-        monkeypatch.setattr(instance, "save_yf", fake_save_yf)
+        monkeypatch.setattr(instance, "merge_yf", fake_merge_yf)
         monkeypatch.setattr(instance, "save_tickers", lambda: None)
 
         instance.update_stock_data()
@@ -188,7 +180,6 @@ class TestUpdateLoopHarness:
         assert saved_payloads["path"].name == "ACTIVE.parquet"
         assert saved_payloads["path"].parent.name == "stocks_1d"
         assert list(saved_payloads["df1"].index.names) == ["stock", "date"]
-        assert saved_payloads["df2"].empty
 
         interval_meta = instance.tickers["ACTIVE"]["intervals"]["1d"]
         assert interval_meta["status"] == "active"
@@ -332,7 +323,7 @@ class TestUpdateLoopHarness:
         monkeypatch.setattr(instance, "load_tickers", lambda: None)
         monkeypatch.setattr(instance, "enforce_limits", lambda: None)
         monkeypatch.setattr(instance.data_fetcher, "fetch", fake_fetch)
-        monkeypatch.setattr(instance, "save_yf", lambda df1, df2, path: df2)
+        monkeypatch.setattr(instance, "merge_yf", lambda df1, path: None)
         monkeypatch.setattr(instance, "save_tickers", lambda: None)
 
         instance.update_stock_data()
@@ -377,14 +368,13 @@ class TestUpdateLoopHarness:
 
         save_calls: list[str] = []
 
-        def fake_save_yf(df1, df2, request):
+        def fake_merge_yf(df1, request):
             save_calls.append(request.legacy_path().name)
-            return df1
 
         monkeypatch.setattr(instance, "load_tickers", lambda: None)
         monkeypatch.setattr(instance, "enforce_limits", lambda: None)
         monkeypatch.setattr(instance.data_fetcher, "fetch", fake_fetch)
-        monkeypatch.setattr(instance, "save_yf", fake_save_yf)
+        monkeypatch.setattr(instance, "merge_yf", fake_merge_yf)
         monkeypatch.setattr(instance, "save_tickers", lambda: None)
 
         instance.update_stock_data()
@@ -426,7 +416,7 @@ class TestUpdateLoopHarness:
         monkeypatch.setattr(instance, "load_tickers", lambda: None)
         monkeypatch.setattr(instance, "enforce_limits", lambda: None)
         monkeypatch.setattr(instance.data_fetcher, "fetch", lambda **_: sample_df)
-        monkeypatch.setattr(instance, "save_yf", lambda df1, df2, path: df1)
+        monkeypatch.setattr(instance, "merge_yf", lambda df1, path: None)
 
         save_ticker_calls = {"count": 0}
 
@@ -487,7 +477,7 @@ class TestUpdateLoopHarness:
         monkeypatch.setattr(instance, "load_tickers", lambda: None)
         monkeypatch.setattr(instance, "enforce_limits", track_limits)
         monkeypatch.setattr(instance.data_fetcher, "fetch", fake_fetch)
-        monkeypatch.setattr(instance, "save_yf", lambda df1, df2, path: df1)
+        monkeypatch.setattr(instance, "merge_yf", lambda df1, path: None)
         monkeypatch.setattr(instance, "save_tickers", lambda: None)
 
         instance.update_stock_data()
@@ -535,11 +525,8 @@ class TestUpdateLoopHarness:
             return sample_df
 
         monkeypatch.setattr(instance, "get_today", lambda: datetime(2024, 2, 6, 17, 0))
-        monkeypatch.setattr(
-            instance, "read_yf", lambda _path: instance._empty_price_frame()
-        )
         monkeypatch.setattr(instance.data_fetcher, "fetch", fake_fetch)
-        monkeypatch.setattr(instance, "save_yf", lambda df1, df2, path: df1)
+        monkeypatch.setattr(instance, "merge_yf", lambda df1, path: None)
 
         instance.save_single_stock_data("REG", interval="1d")
 
@@ -581,10 +568,7 @@ class TestUpdateLoopHarness:
             return sample_df
 
         monkeypatch.setattr(instance, "get_today", lambda: datetime(2024, 2, 11, 17, 0))
-        monkeypatch.setattr(
-            instance, "read_yf", lambda _path: instance._empty_price_frame()
-        )
-        monkeypatch.setattr(instance, "save_yf", lambda df1, df2, path: df1)
+        monkeypatch.setattr(instance, "merge_yf", lambda df1, path: None)
         monkeypatch.setattr(instance.data_fetcher, "fetch", fake_fetch)
 
         instance.save_single_stock_data("NEW", interval="1d")

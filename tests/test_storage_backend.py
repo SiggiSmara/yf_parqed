@@ -155,8 +155,8 @@ class TestStorageBackendRead:
         assert result.index.names == ["stock", "date"]
         assert result.loc[("TEST", pd.Timestamp("2024-01-01")), "close"] == 100.5
 
-    def test_read_deletes_corrupt_file(self, storage, temp_dir):
-        """read() should delete corrupt parquet files."""
+    def test_read_moves_corrupt_file_aside(self, storage, temp_dir):
+        """read() should rename a corrupt parquet file, not delete it."""
         request = make_request(temp_dir, ticker="CORRUPT")
         path = request.legacy_path()
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -168,6 +168,8 @@ class TestStorageBackendRead:
 
         assert result.empty
         assert not path.exists()
+        (moved,) = path.parent.glob("CORRUPT.parquet.damaged-*")
+        assert moved.read_text() == "not a parquet file"
 
     def test_read_deletes_file_with_missing_columns(self, storage, temp_dir):
         """read() should preserve files with missing columns for operator inspection."""

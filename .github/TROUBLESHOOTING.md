@@ -246,31 +246,92 @@ uv run which yf-parqed
 ### Problem: Corrupt Parquet Files
 
 **Symptoms:**
-- Error: "Invalid Parquet file"
-- Error: "ArrowInvalid"
+- Log: `Unable to read parquet file ...: ... File moved aside to data.parquet.damaged-<timestamp>.`
+- Log: `Damaged partition file ...` (from the month-close check or `verify-partitions`)
+- A line in `damaged_partitions.jsonl` in the working directory
+- Error: "Invalid Parquet file", "ArrowInvalid"
 
-**Expected Behavior:**
-Storage backends automatically delete corrupt files and retry. Check logs for warnings.
+**What the code does (Yahoo data):**
 
-**Manual Recovery:**
+Nothing is deleted. Yahoo serves 1-minute bars for seven days only and the data has no backup, so a file that looks broken is kept.
+
+- A file the daemon cannot read while storing new bars (it tries twice) is **renamed** in its directory to `data.parquet.damaged-<UTC timestamp>` (legacy layout: `<TICKER>.parquet.damaged-...`). With partitioned storage that ticker's update fails for the cycle, and the cycle ends there; the next cycle starts a new `data.parquet` for the month from what Yahoo still serves.
+- A file found by the month-close check or by `yf-parqed verify-partitions` is **left where it is**. These checks only read.
+- Every such file gets one line in `damaged_partitions.jsonl`: when, path, ticker, interval, month, error, what was done (`moved aside` or `left in place`), the new path, and who found it.
+- A file with a schema problem or no rows is not renamed; the daemon logs the error and fails that ticker until the file is dealt with.
+
+**Finding damaged files:**
 
 ```bash
-# 1. Find corrupt file
-find data/ -name "*.parquet" -exec python -c "
-import sys
-import pyarrow.parquet as pq
-try:
-    pq.read_table(sys.argv[1])
-except Exception as e:
-    print(f'{sys.argv[1]}: {e}')
-" {} \;
+# What has been recorded
+cat damaged_partitions.jsonl
 
-# 2. Delete corrupt file
-rm path/to/corrupt.parquet
+# Files that were moved aside (a name with .tmp- in it is a write that a kill cut short)
+find data/ -name '*.damaged-*'
 
-# 3. Re-fetch data
-uv run yf-parqed update-data --ticker AAPL --interval 1d
+# Read every file of a month (default: the last closed month), or of all months.
+# Read-only; can run next to the daemon. Exit code 1 means damage was found.
+uv run yf-parqed verify-partitions --month 2026-09
+uv run yf-parqed verify-partitions --all        # about an hour of disk on production
+
+# On the production host, as the service user, so that the two files it writes
+# stay writable for the daemon:
+cd /var/lib/yf_parqed && sudo -u yfparqed /opt/yf_parqed/.venv/bin/yf-parqed verify-partitions
 ```
+
+**What to do with a `.damaged-*` file:**
+
+1. **Inspect it.** The error may have been a passing one (a disk or memory hiccup), in which case the file is fine:
+
+   ```bash
+   uv run python3 -c "
+   import sys, pyarrow.parquet as pq
+   t = pq.ParquetFile(sys.argv[1]).read()
+   print(t.num_rows, 'rows,', t.schema.names)
+   " 'data/us/yahoo/stocks_1m/ticker=AAPL/year=2026/month=09/data.parquet.damaged-20261004T101500Z'
+   ```
+
+2. **If it reads (false alarm) and no new `data.parquet` exists next to it:** rename it back. Do this while the Yahoo daemon is between cycles or stopped.
+
+   ```bash
+   mv data.parquet.damaged-20261004T101500Z data.parquet
+   ```
+
+3. **If it reads and a new `data.parquet` exists** (capture continued), merge the two. Stop the Yahoo daemon first so that nothing writes the file meanwhile.
+
+   ```bash
+   uv run python3 -c "
+   import sys, pandas as pd
+   old, new = pd.read_parquet(sys.argv[1]), pd.read_parquet(sys.argv[2])
+   merged = (pd.concat([old, new]).sort_values(['date', 'sequence'])
+             .drop_duplicates('date', keep='last').sort_values('date'))
+   assert set(old['date']) | set(new['date']) == set(merged['date'])
+   merged.to_parquet(sys.argv[2] + '.merged', index=False, compression='gzip')
+   print(len(old), '+', len(new), '->', len(merged), 'rows')
+   " data.parquet.damaged-20261004T101500Z data.parquet
+   mv data.parquet.merged data.parquet      # only after checking the row counts
+   ```
+
+   Keep the `.damaged-*` file until the merged file has been read back.
+
+4. **If it does not read,** try to salvage what is left. A file with an intact footer can be read one row group and one column at a time:
+
+   ```bash
+   uv run python3 -c "
+   import sys, pyarrow.parquet as pq
+   f = pq.ParquetFile(sys.argv[1])          # fails here if the footer is gone
+   for g in range(f.num_row_groups):
+       for c in f.schema_arrow.names:
+           try: f.read_row_group(g, columns=[c])
+           except Exception as e: print('row group', g, 'column', c, ':', e)
+   " data.parquet.damaged-20261004T101500Z
+   ```
+
+   Yahoo partition files usually hold a single row group, so this tells you which columns survive rather than which rows. If the footer is gone, nothing can be read; keep the file anyway and note it. Bars from the last seven days come back by themselves at the next cycle. Older bars cannot be fetched again.
+
+**Do not delete a damaged file** unless you have decided that nothing in it is worth keeping. The line in `damaged_partitions.jsonl` stays either way.
+
+**Xetra files** are not covered by this: daily Parquet files can be rebuilt from the raw cache within its retention (`xetra-parqed reprocess-raw-cache`).
 
 ---
 
@@ -570,7 +631,7 @@ A service's `MemoryPeak` includes the page cache of the files it read and wrote,
 
 1. **Xetra monthly consolidation at the start of a month.** The log shows `Month rolled over ... consolidating` on every cycle, and swap follows a sawtooth with the same period. Each run loads the whole previous month into memory. It stops by itself after two or three days. Tracked in [ADR 2026-10-03](../docs/adr/in-progress/2026-10-03-daemon-resource-footprint.md), Step A.
 
-2. **Yahoo daemon rewriting every partition each cycle.** This shows as steady CPU and iowait rather than memory: the process stays around 250 MB. Tracked in the same ADR, Steps B to D.
+2. **Yahoo daemon rewriting every partition each cycle.** This shows as steady CPU and iowait rather than memory: the process stays around 250 MB. Check whether the installed code has the fix: `grep -c 'def merge' /opt/yf_parqed/src/yf_parqed/common/partitioned_storage_backend.py` prints 1 when it does (ADR Steps B and C: a cycle opens only the months its new bars fall into and rewrites a file only when it changes). The daemon still refetches every ticker each cycle until Step D (saving the ticker registry) is deployed. Tracked in the same ADR.
 
 3. **A one-off migration or backfill using pandas on a large month.** Use Polars or PyArrow and process one file at a time.
 
