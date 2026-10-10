@@ -112,11 +112,28 @@ kill $(cat /tmp/yf-parqed.pid)
 ```
 
 ### 5. Error Resilience
-- **Per-ticker errors**: Logs errors for individual tickers, continues with others
-- **Network failures**: Retries on next scheduled run
+- **Per-ticker errors**: Logs the error, leaves the ticker's saved state as it was, continues with the others; after 20 failures in a row it checks whether Yahoo is answering and ends the cycle if not
+- **Network failures**: The failed tickers are asked again in the next cycle of the same night (see section 6)
 - **Rate limiting**: Built-in rate limiting (3 requests per 2 seconds default)
 - **Damaged files**: An unreadable Parquet file is renamed (`data.parquet.damaged-<timestamp>`), never deleted, and recorded in `damaged_partitions.jsonl`; the next cycle starts a new file
 - **Month-close check**: Once per month, after a cycle, every stored file of the month that just closed is read back; the result goes to `partition_checks.json`
+
+### 6. Nightly Collection and the Ticker Registry
+
+In daemon mode the Yahoo collector fetches every ticker **once per night**. The data is for historical analysis, so nothing is gained by fetching during the session; what protects a bar is that it is asked for on every night Yahoo still serves it (7 nights for 1-minute bars).
+
+- **The night starts at 22:00 UTC.** That is after the US close all year (20:00 UTC in summer, 21:00 UTC in winter), so no market calendar or time zone is involved. A ticker is fetched when Yahoo has not answered for it since the most recent 22:00 UTC. Weekend nights run like any other.
+- **The daemon still wakes every `--interval` hours.** A later cycle of the same night asks only for the tickers whose request failed; the log line reads `Processing 3 tickers for interval 1m (9275 already fetched tonight)`. The wait between cycles ends at 22:00 UTC, so the night's first cycle starts on time.
+- **A failed request is not "no data".** A rate limit, a network error or a storage error is logged (`<TICKER> failed for interval 1m: ...`), nothing is recorded for the ticker, and the next cycle asks again. The cycle goes on with the next ticker. Yahoo's answer "no price data" is a result: the ticker is done for the night and asked again the next. An error response that yfinance words the same way (an invalid crumb, a status code) is recognised and counted as a failure.
+- **A ticker that goes quiet stays open for the night.** When a ticker that had bars at its last answer returns nothing, every later cycle of that night asks again (`<n> tickers that had bars at their last fetch returned nothing; they are asked again in the next cycle of this night`). From the next night on its empty answers stand.
+- **Twenty in a row: is Yahoo answering?** After 20 tickers in a row that failed or went quiet, the daemon asks Yahoo for a ticker it knows has bars. If bars come back, the cycle goes on (`... but Yahoo answers for a ticker that has bars; going on`); if not, the cycle ends and the next one tries again. A hundred failures in a row end the cycle in any case.
+- **No ticker is paused or dropped by a count of empty answers.** Every ticker in the registry is asked every night. Only `remove-ticker` and `tools/prune_registry.py` stop one.
+- **The registry is saved during the cycle.** `tickers.json` is written every 500 tickers and at the end of each cycle (`Tickers file saved.`), through a temp file that is synced before the rename. After a kill, the next start fetches only the tickers not yet done that night. `--save-not-founds` applies to single runs only.
+- **Writers do not overwrite each other.** The daemon writes only what it changed, onto a fresh read of the file, holding `tickers.json.lock`; a ticker changed by both sides is merged key by key. `add-ticker` and `remove-ticker` can be run while the daemon is in a cycle. An unreadable `tickers.json` is never written over (`Could not save the ticker registry: ...`), and an empty registry never replaces one with content.
+
+A single run (`update-data` without `--daemon`) is not held back by the night: it fetches every time it is called. It does not close the night either, so the daemon still does its own fetch afterwards. It exits with code 1 when a ticker failed or the cycle was ended early.
+
+See [ADR 2026-10-03](adr/in-progress/2026-10-03-daemon-resource-footprint.md), Decision 6.
 
 ## Production Deployment
 

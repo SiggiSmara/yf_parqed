@@ -201,7 +201,8 @@ YFParqed (façade) → ConfigService, TickerRegistry, IntervalScheduler,
       "1d": {
         "status": "active",
         "last_found_date": "2024-01-20",
-        "last_data_date": "2024-01-19",
+        "newest_bar_date": "2024-01-19",
+        "last_fetch_at": "2024-01-20T22:04:11+00:00",
         "last_checked": "2024-01-20",
         "storage": {"backend": "partitioned", "market": "us", "source": "yahoo"}
       }

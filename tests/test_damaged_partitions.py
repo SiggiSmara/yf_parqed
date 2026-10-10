@@ -605,6 +605,18 @@ class _DaemonStub:
         self.fail_in_cycle = fail_in_cycle
         self.calls: list[str] = []
 
+    # The nightly schedule the daemon switches on (ADR 2026-10-03, Decision 6).
+    night_start_hour_utc = 22
+
+    def use_nightly_schedule(self):
+        pass
+
+    def seconds_until_next_night(self):
+        return 10**9
+
+    def save_ticker_changes(self):
+        return False
+
     def set_working_path(self, path):
         return path
 

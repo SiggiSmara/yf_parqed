@@ -142,7 +142,12 @@ class PartitionedStorageBackend(StorageInterface):
 
         return combined.set_index(["stock", "date"])
 
-    def merge(self, request: StorageRequest, new_data: pd.DataFrame) -> list[pd.Period]:
+    def merge(
+        self,
+        request: StorageRequest,
+        new_data: pd.DataFrame,
+        refused: list[pd.Period] | None = None,
+    ) -> list[pd.Period]:
         """Merge ``new_data`` into the stored partitions, one month at a time.
 
         This is the daemon's write path. Each month that has a row in
@@ -160,7 +165,9 @@ class PartitionedStorageBackend(StorageInterface):
 
         Captured data is not replaced by less: an incoming row that holds
         fewer values than the stored row for the same date is ignored, and a
-        month is not written if any stored date would be missing from it.
+        month is not written if any stored date would be missing from it. Such
+        a month is logged and, when the caller passes ``refused``, added to it:
+        the bars fetched for it are then not on disk.
         """
         self._validate_partition_metadata(request)
 
@@ -192,6 +199,8 @@ class PartitionedStorageBackend(StorageInterface):
                         f"the merge would drop {lost} of {len(stored)} stored rows. "
                         "The stored file is kept as it is."
                     )
+                    if refused is not None:
+                        refused.append(month)
                     continue
             self._write_partitions(request, merged)
             written.append(month)

@@ -19,8 +19,7 @@ def test_run_filters_active_tickers_and_invokes_processor(tmp_path, monkeypatch)
             "intervals": {
                 "1h": {
                     "status": "not_found",
-                    "not_found_streak_days": 3,
-                    "cooling_since": "2025-01-13",  # in cooling window: 2 workdays before 2025-01-15
+                    "permanently_dead": True,  # set by remove-ticker or the prune tool
                     "last_not_found_date": "2025-01-13",
                     "last_checked": "2025-01-13",
                 }

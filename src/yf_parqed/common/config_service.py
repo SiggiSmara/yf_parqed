@@ -1,14 +1,22 @@
 from __future__ import annotations
 
 import json
+import os
+import time
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Iterator
 
 
 from loguru import logger
 
 from .migration_plan import MigrationPlan
+
+try:
+    import fcntl
+except ImportError:  # no flock on Windows; the daemons run on Linux
+    fcntl = None  # type: ignore[assignment]
 
 
 class ConfigService:
@@ -78,10 +86,97 @@ class ConfigService:
                 )
         return {}
 
-    def save_tickers(self, tickers: dict) -> None:
-        tmp = self.tickers_path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(tickers, indent=4))
-        tmp.rename(self.tickers_path)
+    def read_tickers_strict(self) -> dict:
+        """
+        Read tickers.json for a writer: a missing file is an empty registry, an
+        unreadable one raises ``ValueError``.
+
+        ``load_tickers`` answers "empty" for both, which is right for a reader
+        and wrong for a writer: merging onto that answer would replace a file
+        that may still be repairable by hand.
+        """
+        if not self.tickers_path.is_file():
+            return {}
+        try:
+            data = json.loads(self.tickers_path.read_text())
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise ValueError(f"{self.tickers_path} cannot be decoded: {exc}") from exc
+        if not isinstance(data, dict):
+            raise ValueError(f"{self.tickers_path} does not hold a JSON object")
+        return data
+
+    def save_tickers(self, tickers: dict) -> bool:
+        """
+        Write tickers.json through a temp file that is synced before the rename.
+
+        An empty registry never replaces a file that has content: an unreadable
+        tickers.json loads as empty, and writing that back would wipe it.
+        Returns False when the write was refused for that reason.
+        """
+        path = self.tickers_path
+        if not tickers and path.is_file() and path.stat().st_size > len("{}"):
+            logger.error(
+                f"Refusing to replace {path} with an empty registry; the file is kept"
+            )
+            return False
+
+        tmp = path.with_suffix(".tmp")
+        with tmp.open("w") as handle:
+            handle.write(json.dumps(tickers, indent=4))
+            handle.flush()
+            os.fsync(handle.fileno())
+        tmp.rename(path)
+        try:
+            dir_fd = os.open(path.parent, os.O_RDONLY)
+        except OSError:
+            return True
+        try:
+            os.fsync(dir_fd)
+        except OSError:
+            pass
+        finally:
+            os.close(dir_fd)
+        return True
+
+    @property
+    def tickers_lock_path(self) -> Path:
+        return self._base_path / "tickers.json.lock"
+
+    @contextmanager
+    def tickers_lock(self, timeout: float = 30.0) -> Iterator[None]:
+        """
+        Hold the lock that every writer of tickers.json takes around its
+        read-modify-write, so that the daemon's saves during a cycle and a
+        command such as add-ticker do not write over each other.
+
+        The lock file is opened read-only, so a lock file created by another
+        user (a tool run with sudo) can still be locked by the daemon. Raises
+        ``TimeoutError`` when the lock is not free within ``timeout`` seconds.
+        Where the platform has no ``flock`` the writers are not serialised.
+        """
+        if fcntl is None:
+            yield
+            return
+
+        fd = os.open(self.tickers_lock_path, os.O_RDONLY | os.O_CREAT, 0o644)
+        try:
+            deadline = time.monotonic() + timeout
+            while True:
+                try:
+                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except BlockingIOError:
+                    if time.monotonic() >= deadline:
+                        raise TimeoutError(
+                            f"{self.tickers_lock_path} is held by another process"
+                        ) from None
+                    time.sleep(0.05)
+            try:
+                yield
+            finally:
+                fcntl.flock(fd, fcntl.LOCK_UN)
+        finally:
+            os.close(fd)
 
     def load_storage_config(self) -> dict:
         default = self._default_storage_config()

@@ -758,63 +758,67 @@ class PartitionMigrationService:
         intervals: Sequence[str],
         verified_at: str,
     ) -> None:
-        tickers_data = self._config_service.load_tickers()
-        if not tickers_data:
-            return
+        # Held across the read and the write, like every writer of tickers.json.
+        with self._config_service.tickers_lock():
+            tickers_data = self._config_service.load_tickers()
+            if not tickers_data:
+                return
 
-        normalized_market = venue.market.strip().lower()
-        normalized_source = venue.source.strip().lower()
-        root_token = "data"
-        dataset = DATASET_NAME
-        normalized_intervals = [interval.strip() for interval in intervals if interval]
+            normalized_market = venue.market.strip().lower()
+            normalized_source = venue.source.strip().lower()
+            root_token = "data"
+            dataset = DATASET_NAME
+            normalized_intervals = [
+                interval.strip() for interval in intervals if interval
+            ]
 
-        changed = False
-        for interval_name in normalized_intervals:
-            if not interval_name:
-                continue
-            tickers = self._collect_partitioned_tickers_for_interval(
-                venue, interval_name
-            )
-            if not tickers:
-                continue
-
-            for ticker in tickers:
-                entry = tickers_data.get(ticker)
-                if not isinstance(entry, dict):
+            changed = False
+            for interval_name in normalized_intervals:
+                if not interval_name:
+                    continue
+                tickers = self._collect_partitioned_tickers_for_interval(
+                    venue, interval_name
+                )
+                if not tickers:
                     continue
 
-                interval_map = entry.setdefault("intervals", {})
-                interval_entry = interval_map.setdefault(interval_name, {})
-                storage = interval_entry.setdefault("storage", {})
+                for ticker in tickers:
+                    entry = tickers_data.get(ticker)
+                    if not isinstance(entry, dict):
+                        continue
 
-                entry_changed = False
-                if storage.get("mode") != "partitioned":
-                    storage["mode"] = "partitioned"
-                    entry_changed = True
-                if storage.get("venue") != venue.id:
-                    storage["venue"] = venue.id
-                    entry_changed = True
-                if storage.get("market") != normalized_market:
-                    storage["market"] = normalized_market
-                    entry_changed = True
-                if storage.get("source") != normalized_source:
-                    storage["source"] = normalized_source
-                    entry_changed = True
-                if storage.get("dataset") != dataset:
-                    storage["dataset"] = dataset
-                    entry_changed = True
-                if storage.get("root") != root_token:
-                    storage["root"] = root_token
-                    entry_changed = True
-                if storage.get("verified_at") != verified_at:
-                    storage["verified_at"] = verified_at
-                    entry_changed = True
+                    interval_map = entry.setdefault("intervals", {})
+                    interval_entry = interval_map.setdefault(interval_name, {})
+                    storage = interval_entry.setdefault("storage", {})
 
-                if entry_changed:
-                    changed = True
+                    entry_changed = False
+                    if storage.get("mode") != "partitioned":
+                        storage["mode"] = "partitioned"
+                        entry_changed = True
+                    if storage.get("venue") != venue.id:
+                        storage["venue"] = venue.id
+                        entry_changed = True
+                    if storage.get("market") != normalized_market:
+                        storage["market"] = normalized_market
+                        entry_changed = True
+                    if storage.get("source") != normalized_source:
+                        storage["source"] = normalized_source
+                        entry_changed = True
+                    if storage.get("dataset") != dataset:
+                        storage["dataset"] = dataset
+                        entry_changed = True
+                    if storage.get("root") != root_token:
+                        storage["root"] = root_token
+                        entry_changed = True
+                    if storage.get("verified_at") != verified_at:
+                        storage["verified_at"] = verified_at
+                        entry_changed = True
 
-        if changed:
-            self._config_service.save_tickers(tickers_data)
+                    if entry_changed:
+                        changed = True
+
+            if changed:
+                self._config_service.save_tickers(tickers_data)
 
     @staticmethod
     def _existing_path_for_usage(path: Path) -> Path:

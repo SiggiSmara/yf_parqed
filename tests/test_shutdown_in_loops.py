@@ -390,6 +390,16 @@ class TestSignalHandlers:
             my_path = tmp_path
             work_path = tmp_path
             config = MagicMock()
+            night_start_hour_utc = 22
+
+            def use_nightly_schedule(self):
+                pass
+
+            def seconds_until_next_night(self):
+                return 10**9
+
+            def save_ticker_changes(self):
+                return False
 
             def set_working_path(self, path):
                 return path

@@ -1,7 +1,7 @@
 import csv
 import re
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Sequence
 
 import yfinance as yf
@@ -28,8 +28,8 @@ from ..common.storage import StorageInterface, StorageRequest
 from ..common.storage_router import StorageRouter
 from ..common.rate_limiter import wrap_callable
 from ..common.shutdown import StopCheck
-from .data_fetcher import DataFetcher
-from .interval_scheduler import IntervalScheduler
+from .data_fetcher import SHORT_LIVED_INTERVALS, DataFetcher
+from .interval_scheduler import BARS, EMPTY, WENT_QUIET, CycleResult, IntervalScheduler
 from .ticker_registry import TickerRegistry
 
 
@@ -50,6 +50,11 @@ all_intervals = [
 ]
 
 DATASET_NAME = "stocks"
+
+# A collection night starts at this hour, UTC. The US close is 20:00 UTC in
+# summer and 21:00 UTC in winter, so 22:00 is after it all year, half-day
+# sessions included, and no market calendar or time zone is needed.
+NIGHT_START_HOUR_UTC = 22
 
 
 class YFParqed:
@@ -82,6 +87,9 @@ class YFParqed:
             raise ValueError("No intervals found.  Please set the intervals.")
 
         self.new_not_found = False
+        # False: every run fetches. Switched on by use_nightly_schedule (the daemon).
+        self.nightly = False
+        self.night_start_hour_utc = NIGHT_START_HOUR_UTC
         self.set_limiter()
         # Wrap a lambda so monkeypatching enforce_limits in tests still affects the limiter
         self.rate_limiter = wrap_callable(lambda: self.enforce_limits())
@@ -92,7 +100,10 @@ class YFParqed:
             initial_tickers=self.registry.tickers,  # Preserve loaded tickers
             limiter=self.rate_limiter.enforce_limits,
             fetch_callback=self._fetch_for_not_found_check,
+            clock=lambda: self.utc_now(),
         )
+        # These are the tickers just read from disk, not a change to write.
+        self.registry.mark_clean()
 
         self.data_fetcher = DataFetcher(
             limiter=self.rate_limiter.enforce_limits,
@@ -107,7 +118,7 @@ class YFParqed:
         self.scheduler = IntervalScheduler(
             registry=self.registry,
             intervals=lambda: list(self.my_intervals),
-            loader=lambda: self.load_tickers(),
+            loader=lambda: self._load_for_cycle(),
             limiter=self.rate_limiter.enforce_limits,
             processor=lambda stock,
             start_date,
@@ -120,6 +131,108 @@ class YFParqed:
             ),
             today_provider=lambda: self.get_today(),
         )
+
+    def utc_now(self) -> datetime:
+        return datetime.now(timezone.utc)
+
+    def use_nightly_schedule(self, start_hour_utc: int = NIGHT_START_HOUR_UTC) -> None:
+        """
+        Collect once per night instead of in every run (the daemon's mode).
+
+        A ticker is fetched when Yahoo has not answered for it since the most
+        recent ``start_hour_utc``; a run later in the same night asks only for
+        the tickers whose request failed. For the intervals Yahoo keeps only
+        for days (``SHORT_LIVED_INTERVALS``) the fetch is always the full
+        period, and the registry is saved during the cycle.
+        """
+        self.nightly = True
+        self.night_start_hour_utc = start_hour_utc
+        self.scheduler.is_due = self.is_due_tonight
+        self.scheduler.checkpoint = self.save_ticker_changes
+        self.scheduler.health_check = self.yahoo_answers
+
+    def night_start(self, now: datetime | None = None) -> datetime:
+        """The start of the collection night that ``now`` falls into."""
+        now = now or self.utc_now()
+        start = now.replace(
+            hour=self.night_start_hour_utc, minute=0, second=0, microsecond=0
+        )
+        if start > now:
+            start -= timedelta(days=1)
+        return start
+
+    def seconds_until_next_night(self, now: datetime | None = None) -> float:
+        now = now or self.utc_now()
+        return (self.night_start(now) + timedelta(days=1) - now).total_seconds()
+
+    def is_due_tonight(self, ticker: str, interval: str) -> bool:
+        return not self.registry.fetched_since(ticker, interval, self.night_start())
+
+    def yahoo_answers(self, interval: str, reference: str | None = None) -> bool:
+        """
+        Find out whether Yahoo is answering properly: ask for a ticker that is
+        known to have bars. ``reference`` is one that had bars a moment ago;
+        without it, a ticker that had bars tonight, or in the last few days.
+        False when no such ticker is known: then nothing can be said.
+        """
+        reference = reference or self._reference_ticker(interval)
+        if reference is None:
+            return False
+        try:
+            answered = self.data_fetcher.has_recent_bars(reference, interval)
+        except Exception as exc:
+            logger.warning(
+                f"Yahoo did not answer for {reference}: {type(exc).__name__}: {exc}"
+            )
+            return False
+        if not answered:
+            logger.warning(f"Yahoo returned no bars for {reference}")
+        return answered
+
+    def _reference_ticker(self, interval: str) -> str | None:
+        night = self.night_start()
+        recent = self.config.format_date(self.get_today() - timedelta(days=5))
+        fallback = None
+        for ticker, data in self.registry.tickers.items():
+            meta = data.get("intervals", {}).get(interval) or {}
+            if meta.get("status") != "active":
+                continue
+            if self.registry.fetched_since(ticker, interval, night):
+                return ticker
+            if fallback is None and str(meta.get("newest_bar_date", "")) >= recent:
+                fallback = ticker
+        return fallback
+
+    def save_ticker_changes(self) -> bool:
+        """
+        Save what changed in the registry since it was read, keeping what other
+        writers of tickers.json did in the meantime. A save that fails is
+        logged; the changes stay in memory and go out with the next save. In
+        the nightly schedule that holds across cycles too: see ``_load_for_cycle``.
+        """
+        try:
+            return self.registry.save_changes()
+        except (OSError, ValueError) as exc:
+            logger.error(f"Could not save the ticker registry: {exc}")
+            return False
+
+    def _load_for_cycle(self) -> None:
+        """
+        Read tickers.json at the start of a cycle.
+
+        In the nightly schedule, what an earlier save could not write is saved
+        first. If that fails again, the registry in memory is kept for this
+        cycle: reading the file would forget which tickers were fetched
+        tonight, and every cycle would fetch all of them again.
+        """
+        if self.nightly and self.registry.has_unsaved_changes():
+            if not self.save_ticker_changes():
+                logger.error(
+                    "The ticker registry is still unsaved; this cycle works from "
+                    "memory and does not read tickers.json"
+                )
+                return
+        self.load_tickers()
 
     def _sync_paths(self):
         self.my_path = self.config.base_path
@@ -462,12 +575,32 @@ class YFParqed:
         self.registry.load()
 
     def save_tickers(self):
-        self.registry.save()
+        """
+        Save the registry, keeping what other writers of tickers.json did since
+        it was read here (see ``TickerRegistry.save_changes``). A registry
+        without a file yet is written even when it is empty.
+        """
+        if not self.registry.save_changes() and not self.tickers_path.is_file():
+            self.registry.save()
+
+    def refresh_tickers(self) -> None:
+        """
+        Read tickers.json again unless there is something here still to save.
+
+        Ticker maintenance in the daemon starts from the registry the last
+        cycle left in memory, which can be hours old; a command may have
+        changed the file since.
+        """
+        if not self.registry.has_unsaved_changes():
+            self.load_tickers()
 
     def update_current_list_of_stocks(self):
         new_tickers = self.get_new_list_of_stocks()
+        self.refresh_tickers()
         self.registry.update_current_list(new_tickers)
-        self.save_tickers()
+        # Only the added and pruned entries are written, so a change another
+        # process made to tickers.json since it was read here is kept.
+        self.registry.save_changes()
 
     def is_ticker_active_for_interval(self, ticker: str, interval: str) -> bool:
         """
@@ -484,6 +617,7 @@ class YFParqed:
         found_data: bool,
         last_date: datetime | None = None,
         storage_info: dict | None = None,
+        record_fetch: bool = True,
     ):
         """
         Update the status of a ticker for a specific interval.
@@ -494,6 +628,8 @@ class YFParqed:
             found_data: Whether data was found for this ticker/interval
             last_date: Last date with data (if found_data is True)
             storage_info: Storage backend information (for partitioned storage)
+            record_fetch: Whether this answer is the night's collection for the
+                ticker (see TickerRegistry.update_ticker_interval_status)
         """
         self.registry.update_ticker_interval_status(
             ticker=ticker,
@@ -501,6 +637,7 @@ class YFParqed:
             found_data=found_data,
             last_date=last_date,
             storage_info=storage_info,
+            record_fetch=record_fetch,
         )
 
     def confirm_not_founds(self):
@@ -528,12 +665,21 @@ class YFParqed:
 
         Partitioned storage opens and rewrites only the months the new bars
         fall into. The legacy layout is one file per ticker, read and
-        rewritten whole; it gets none of that.
+        rewritten whole; it gets none of that. Raises when the backend refused
+        to write a month: its bars are not on disk, so the ticker must not be
+        recorded as stored.
         """
         request = self._ensure_storage_request(target)
         backend = self._select_storage_backend(request)
         if backend is self._partition_storage:
-            self._partition_storage.merge(request, new_data)
+            refused: list = []
+            self._partition_storage.merge(request, new_data, refused=refused)
+            if refused:
+                months = ", ".join(str(month) for month in refused)
+                raise RuntimeError(
+                    f"{request.ticker} ({request.interval}): {months} not written, "
+                    "the stored file was kept; see the error above"
+                )
         else:
             backend.save(request, new_data, backend.read(request))
 
@@ -609,9 +755,9 @@ class YFParqed:
         start_date: datetime | None = None,
         end_date: datetime | None = None,
         should_stop: StopCheck | None = None,
-    ):
+    ) -> CycleResult:
         self.new_not_found = False
-        self.scheduler.run(
+        return self.scheduler.run(
             start_date=start_date, end_date=end_date, should_stop=should_stop
         )
 
@@ -621,15 +767,26 @@ class YFParqed:
         start_date: datetime | None = None,
         end_date: datetime | None = None,
         interval: str = "1d",
-    ):
+    ) -> str | None:
+        """
+        Fetch and store one ticker for one interval.
+
+        Returns what Yahoo answered (``BARS``, ``EMPTY`` or ``WENT_QUIET``) or
+        None when nothing was asked. A failed request or a failed write
+        raises, and nothing is recorded for the ticker.
+        """
         logger.debug(stock)
+        # Only the nightly collection closes a ticker's night. A single run, or
+        # a window given on the command line, fetches something else and must
+        # not make the daemon skip the ticker.
+        closes_the_night = self.nightly and start_date is None
         storage_request = self._build_storage_request(stock, interval)
         backend = self._select_storage_backend(storage_request)
 
         # Check if stock should be processed for this interval
         if not self.is_ticker_active_for_interval(stock, interval):
             logger.debug(f"{stock} is not active for interval {interval}, skipping")
-            return
+            return None
 
         if backend is self._legacy_storage:
             logger.debug(f"Data path: {storage_request.legacy_path()}")
@@ -641,13 +798,19 @@ class YFParqed:
             )
 
         last_data_date = self.registry.get_last_data_date(stock, interval)
+        interval_meta = self.registry.get_interval_metadata(stock, interval)
+        had_bars = bool(interval_meta) and interval_meta.get("status") == "active"
 
         if end_date is None:
             end_date = self.get_today()
 
         load_all = False
         if start_date is None:
-            if last_data_date is not None:
+            # In the nightly schedule a short-lived interval is always fetched
+            # for its full period: each bar is then asked for on every night
+            # Yahoo still serves it.
+            full_period = self.nightly and interval in SHORT_LIVED_INTERVALS
+            if last_data_date is not None and not full_period:
                 start_date = min(last_data_date, end_date)
             else:
                 load_all = True
@@ -657,6 +820,9 @@ class YFParqed:
             start_date is not None
             and end_date is not None
             and self.business_days_between(start=start_date, end=end_date) > 0
+            # A window with nothing in it is not sent to Yahoo, so there is
+            # no answer to record either.
+            and self.data_fetcher.has_window(start_date, end_date, interval)
         )
 
         if should_fetch:
@@ -687,19 +853,42 @@ class YFParqed:
                         "dataset": storage_request.dataset,
                     }
                 self.update_ticker_interval_status(
-                    stock, interval, True, last_data_date, storage_info
+                    stock,
+                    interval,
+                    True,
+                    last_data_date,
+                    storage_info,
+                    record_fetch=closes_the_night,
                 )
+                return BARS
 
             else:
                 logger.debug(
                     f"{stock} returned no results for the date range of {start_date} to {end_date} and load_all:{load_all} for interval {interval}."
                 )
 
-                # Update ticker status - no data found for this interval
-                self.update_ticker_interval_status(stock, interval, False)
+                # Update ticker status - no data found for this interval.
+                # In the nightly collection, a ticker that had bars at its last
+                # answer is not done for the night on an empty one: every later
+                # cycle of this night asks again. The night is remembered in the
+                # registry, so a second empty answer does not close it either.
                 self.new_not_found = True
+                if closes_the_night:
+                    night = self.night_start().isoformat(timespec="seconds")
+                    if had_bars or self.registry.went_quiet_in(stock, interval, night):
+                        self.registry.note_went_quiet(stock, interval, night)
+                        return WENT_QUIET
+                self.update_ticker_interval_status(
+                    stock, interval, False, record_fetch=closes_the_night
+                )
+                return EMPTY
         else:
             logger.debug(f"{stock} is up to date for interval {interval}.")
+            if closes_the_night:
+                # Otherwise every later cycle of the night would walk through
+                # this ticker again, limiter wait included, to fetch nothing.
+                self.registry.mark_done_for_the_night(stock, interval)
+            return None
 
     def get_today(self) -> datetime:
         # get the now datetime

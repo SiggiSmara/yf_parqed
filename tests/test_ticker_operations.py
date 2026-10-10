@@ -183,8 +183,8 @@ class TestTickerOperations:
             mock_datetime.strptime = datetime.strptime
             assert not yf_parqed.is_ticker_active_for_interval("INVALID", "1d")
 
-    def test_is_ticker_active_for_interval_respects_cooldown_window(self):
-        """Tickers in cooling window (cooling_since set, < 7 workdays) are skipped."""
+    def test_is_ticker_active_for_interval_ignores_cooldown_window(self):
+        """A cooling window written by an earlier release no longer pauses a ticker."""
         yf_parqed = self.create_yf_parqed_instance()
         current_date = datetime(2024, 2, 1)
         # cooling_since 3 days ago — well within 7-workday window
@@ -211,7 +211,7 @@ class TestTickerOperations:
             "yf_parqed.common.config_service.ConfigService.get_now",
             return_value=current_date,
         ):
-            assert yf_parqed.is_ticker_active_for_interval("COOLDOWN", "1d") is False
+            assert yf_parqed.is_ticker_active_for_interval("COOLDOWN", "1d") is True
 
     def test_is_ticker_active_for_interval_allows_retry_after_cooldown(self):
         """Ticker should become eligible once 7-workday cooling window has elapsed."""

@@ -99,7 +99,7 @@ def test_cli_initialize_and_update_flow(cli_environment):
     # Verify ticker was updated successfully
     interval_meta = instance.tickers["SYN"]["intervals"]["1m"]
     assert interval_meta["status"] == "active"
-    assert interval_meta["last_data_date"] == "2024-01-02"
+    assert interval_meta["newest_bar_date"] == "2024-01-02"
 
     # Verify storage_config.json was created with partitioned mode
     storage_config_path = tmp_path / "storage_config.json"

@@ -31,4 +31,5 @@ Canonical docs (operator & contributor guidance):
 For the historical refactor notes and the automated coverage map that used to be in `AGENTS.md`, see `.github/AGENTS_SUMMARY.md`.
 
 ````
-        "last_data_date": "2024-01-19",
+        "newest_bar_date": "2024-01-19",
+        "last_fetch_at": "2024-01-20T22:04:11+00:00",

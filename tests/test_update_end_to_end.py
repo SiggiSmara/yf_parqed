@@ -96,7 +96,7 @@ def test_update_stock_data_end_to_end(monkeypatch, seeded_workspace: Path):
     assert aaa_meta["status"] == "active"
     aaa_1d = aaa_meta["intervals"]["1d"]
     assert aaa_1d["status"] == "active"
-    assert aaa_1d["last_data_date"] == "2024-01-02"
+    assert aaa_1d["newest_bar_date"] == "2024-01-02"
 
     aaa_1h = aaa_meta["intervals"]["1h"]
     assert aaa_1h["status"] == "not_found"

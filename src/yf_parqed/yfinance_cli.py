@@ -15,6 +15,7 @@ from .common.partition_check import last_closed_month, parse_month
 from .common.process_exit import exit_daemon_process
 from .common.run_lock import GlobalRunLock
 from .common.shutdown import StopFlag
+from .yahoo.interval_scheduler import CycleResult
 from .xetra.trading_hours_checker import TradingHoursChecker
 
 
@@ -373,8 +374,11 @@ def update_data(
         except Exception as e:
             logger.error(f"Error during ticker maintenance: {e}", exc_info=True)
 
-    def run_update_once() -> bool:
-        """Execute one update cycle with locking; True when it ran to its end."""
+    def run_update_once() -> CycleResult | None:
+        """
+        Execute one update cycle with locking and say what it did; None when
+        the cycle could not start (the lock, the arguments).
+        """
         logger.debug("Updating stock data.")
 
         # Acquire a global run lock to avoid overlapping updater runs
@@ -405,7 +409,7 @@ def update_data(
                     logger.info("Removed stale lock; continuing.")
                 except Exception:
                     logger.warning("Could not remove lock; aborting this run.")
-                    return False
+                    return None
             else:
                 # Prompt operator
                 should = typer.confirm(
@@ -430,13 +434,13 @@ def update_data(
             )
 
             if all([start_date is None, end_date is None]):
-                yf_parqed.update_stock_data(should_stop=stop)
+                cycle = yf_parqed.update_stock_data(should_stop=stop)
             else:
                 if any([start_date is None, end_date is None]):
                     logger.error(
                         "Both start and end date must be provided if not updating a current snapshot."
                     )
-                    return False
+                    return None
                 # Convert string dates to datetime objects
                 # Support both "YYYY-MM-DD" and "YYYY-MM-DDTHH:MM:SS" formats
                 if isinstance(start_date, str):
@@ -454,20 +458,46 @@ def update_data(
                         end_dt = datetime.strptime(end_date, "%Y-%m-%d")
                 else:
                     end_dt = end_date
-                yf_parqed.update_stock_data(
+                cycle = yf_parqed.update_stock_data(
                     start_date=start_dt,
                     end_date=end_dt,
                     should_stop=stop,
                 )
 
+            if cycle is None:
+                cycle = CycleResult()
             if stop():
+                cycle.stopped = True
+            failed = cycle.failed
+            went_quiet = cycle.went_quiet
+
+            if cycle.stopped:
                 logger.info("Stop requested during the update cycle.")
+            elif cycle.aborted:
+                logger.error("The update cycle was ended early; see the errors above.")
             else:
                 logger.info("All tickers were processed.")
 
-            if yf_parqed.new_not_found:
+            if failed:
+                shown = ", ".join(failed[:50]) + (" ..." if len(failed) > 50 else "")
+                logger.warning(
+                    f"{len(failed)} tickers failed and are left for a later cycle: {shown}"
+                )
+
+            if went_quiet:
+                logger.info(
+                    f"{went_quiet} tickers that had bars at their last fetch returned "
+                    "nothing; they are asked again in the next cycle of this night"
+                )
+
+            if daemon:
+                # The daemon saves what every cycle learned, whether or not it
+                # ran to its end; --save-not-founds is for single runs.
+                if yf_parqed.save_ticker_changes():
+                    logger.info("Tickers file saved.")
+            elif yf_parqed.new_not_found:
                 logger.info("Some tickers did not return any data.")
-                if non_interactive or daemon:
+                if non_interactive:
                     if save_not_founds:
                         yf_parqed.save_tickers()
                         logger.info("Tickers file updated with not found entries.")
@@ -487,7 +517,7 @@ def update_data(
                             logger.info("Tickers file updated with not found entries.")
                         else:
                             logger.info("Tickers file not updated.")
-            return not stop()
+            return cycle
         finally:
             # Always release lock
             try:
@@ -505,6 +535,14 @@ def update_data(
             logger.info(f"Ticker maintenance: {ticker_maintenance}")
             logger.info(
                 f"PID: {Path('/proc/self').resolve().name if Path('/proc/self').exists() else os.getpid()}"
+            )
+
+            # Collect once per night: a ticker is fetched when Yahoo has not
+            # answered for it since 22:00 UTC, and the registry is saved
+            # during each cycle.
+            yf_parqed.use_nightly_schedule()
+            logger.info(
+                f"Collection night starts at {yf_parqed.night_start_hour_utc:02d}:00 UTC"
             )
 
             run_count = 0
@@ -534,7 +572,8 @@ def update_data(
                 # Run the update
                 cycle_completed = False
                 try:
-                    cycle_completed = run_update_once()
+                    cycle = run_update_once()
+                    cycle_completed = cycle is not None and cycle.ran_to_end
                 except Exception as e:
                     logger.error(
                         f"Error in daemon run #{run_count}: {e}", exc_info=True
@@ -562,6 +601,12 @@ def update_data(
                     if close_remaining > 0:
                         base_sleep_seconds = min(base_sleep_seconds, close_remaining)
 
+                # The night's first cycle starts on time: never sleep past the
+                # start of the next collection night.
+                base_sleep_seconds = min(
+                    base_sleep_seconds, yf_parqed.seconds_until_next_night() + 1
+                )
+
                 next_run = datetime.now() + timedelta(seconds=base_sleep_seconds)
                 logger.info(
                     f"=== Daemon run #{run_count} completed. "
@@ -573,8 +618,11 @@ def update_data(
             stop.log_request()
             logger.info("Daemon shutdown complete.")
         else:
-            # Single run mode
-            run_update_once()
+            # Single run mode. A ticker that fails no longer ends the run with
+            # a traceback, so the exit code has to say that something failed.
+            cycle = run_update_once()
+            if cycle is not None and (cycle.aborted or cycle.failed):
+                raise typer.Exit(code=1)
     finally:
         # Cleanup PID file if daemon
         if daemon and pid_file and pid_file.exists():

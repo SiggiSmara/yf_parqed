@@ -252,8 +252,10 @@ def test_is_active_streak_phase_still_active(registry: TickerRegistry) -> None:
     assert registry.is_active_for_interval("S", "1d") is True
 
 
-def test_is_active_cooling_window_inactive(registry: TickerRegistry) -> None:
-    """Ticker in cooling window (< 7 workdays elapsed) is not retried."""
+def test_is_active_ignores_a_pause_left_by_an_earlier_release(
+    registry: TickerRegistry,
+) -> None:
+    """A cooling_since written by an earlier release no longer pauses the ticker."""
     registry.replace(
         {
             "C": {
@@ -269,62 +271,32 @@ def test_is_active_cooling_window_inactive(registry: TickerRegistry) -> None:
             }
         }
     )
-    # 3 days later — still within 7-workday cooldown
     with patch.object(registry._config, "get_now", return_value=datetime(2024, 2, 8)):
-        assert registry.is_active_for_interval("C", "1d") is False
-
-
-def test_is_active_after_cooling_expires(registry: TickerRegistry) -> None:
-    """After 7 work days, ticker becomes active again for single retry."""
-    registry.replace(
-        {
-            "C": {
-                "ticker": "C",
-                "status": "active",
-                "intervals": {
-                    "1d": {
-                        "status": "not_found",
-                        "cooling_since": "2024-02-05",
-                    },
-                },
-            }
-        }
-    )
-    # 2026-02-05 is a Thursday; 7 workdays later = 2026-02-14 (Friday)
-    # Use a Monday 10 workdays out to be safely past the window
-    with patch.object(registry._config, "get_now", return_value=datetime(2024, 2, 19)):
         assert registry.is_active_for_interval("C", "1d") is True
 
 
 # ── update_ticker_interval_status — failure path ─────────────────────────────
 
 
-def test_failure_increments_streak_once_per_day(registry: TickerRegistry) -> None:
-    day1 = datetime(2024, 3, 1)
-    with patch.object(registry._config, "get_now", return_value=day1):
-        registry.update_ticker_interval_status("T", "1d", False)
-        registry.update_ticker_interval_status(
-            "T", "1d", False
-        )  # same day, no increment
-
-    interval = registry.tickers["T"]["intervals"]["1d"]
-    assert interval["not_found_streak_days"] == 1
-    assert interval["status"] == "not_found"
-    assert "cooling_since" not in interval
-
-
-def test_failure_streak_across_days_triggers_cooling(registry: TickerRegistry) -> None:
-    for offset in range(3):
+def test_empty_answers_never_pause_or_kill_a_ticker(registry: TickerRegistry) -> None:
+    """However many days a ticker returns nothing, it stays active and is only noted."""
+    for offset in range(15):
         day = datetime(2024, 3, 1) + timedelta(days=offset)
         with patch.object(registry._config, "get_now", return_value=day):
             registry.update_ticker_interval_status("T", "1d", False)
 
     interval = registry.tickers["T"]["intervals"]["1d"]
-    assert interval["not_found_streak_days"] == 3
-    assert "cooling_since" in interval
+    assert interval["status"] == "not_found"
+    assert interval["last_not_found_date"] == "2024-03-15"
+    assert "not_found_streak_days" not in interval
+    assert "cooling_since" not in interval
+    assert "permanently_dead" not in interval
+    assert registry.is_active_for_interval("T", "1d") is True
 
 
-def test_failure_post_cooling_marks_permanently_dead(registry: TickerRegistry) -> None:
+def test_empty_answer_clears_the_streak_and_pause_of_an_earlier_release(
+    registry: TickerRegistry,
+) -> None:
     registry.replace(
         {
             "T": {
@@ -340,14 +312,13 @@ def test_failure_post_cooling_marks_permanently_dead(registry: TickerRegistry) -
             }
         }
     )
-    # 10 workdays after cooling_since = past the 7-workday window
-    post_cooling = datetime(2024, 2, 15)
-    with patch.object(registry._config, "get_now", return_value=post_cooling):
+    with patch.object(registry._config, "get_now", return_value=datetime(2024, 2, 15)):
         registry.update_ticker_interval_status("T", "1d", False)
 
     interval = registry.tickers["T"]["intervals"]["1d"]
-    assert interval.get("permanently_dead") is True
+    assert "permanently_dead" not in interval
     assert "cooling_since" not in interval
+    assert "not_found_streak_days" not in interval
 
 
 def test_failure_skipped_for_permanently_dead_interval(
@@ -459,7 +430,10 @@ def test_update_interval_status_found_data(registry: TickerRegistry) -> None:
     assert ticker["last_checked"] == stamp
     assert interval["status"] == "active"
     assert interval["last_found_date"] == stamp
-    assert interval["last_data_date"] == stamp
+    assert interval["newest_bar_date"] == stamp
+    # The key of earlier releases is not written: a release that finds it
+    # stops fetching everything (ADR 2026-10-03, Decision 6).
+    assert "last_data_date" not in interval
 
 
 # ── add_ticker / remove_ticker ────────────────────────────────────────────────
@@ -555,25 +529,6 @@ def test_remove_ticker_not_reactivated_by_csv_update(registry: TickerRegistry) -
 
 def test_remove_ticker_missing_logs_warning(registry: TickerRegistry, caplog) -> None:
     registry.remove_ticker("GHOST")  # should not raise
-
-
-# ── business_days_since ───────────────────────────────────────────────────────
-
-
-def test_business_days_since_skips_weekends() -> None:
-    # 2024-02-05 is Monday; 2024-02-12 is Monday — 5 workdays between them
-    now = datetime(2024, 2, 12)
-    count = TickerRegistry._business_days_since("2024-02-05", now)
-    assert count == 5
-
-
-def test_business_days_since_handles_invalid_date() -> None:
-    assert TickerRegistry._business_days_since("not-a-date", datetime(2024, 3, 1)) == 0
-
-
-def test_business_days_since_same_day_is_zero() -> None:
-    now = datetime(2024, 2, 5)
-    assert TickerRegistry._business_days_since("2024-02-05", now) == 0
 
 
 # ── misc ──────────────────────────────────────────────────────────────────────

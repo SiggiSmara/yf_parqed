@@ -38,6 +38,19 @@ class StubYFParqedForDaemon:
         self.work_path = Path("/tmp/test")
         self.config = StubConfig()  # Add config stub
 
+    # The nightly schedule the daemon switches on (ADR 2026-10-03, Decision 6).
+    night_start_hour_utc = 22
+
+    def use_nightly_schedule(self):
+        self.calls.append(("use_nightly_schedule",))
+
+    def seconds_until_next_night(self):
+        return 10**9
+
+    def save_ticker_changes(self):
+        self.calls.append(("save_ticker_changes",))
+        return True
+
     def set_working_path(self, path: Path):
         self.calls.append(("set_working_path", Path(path)))
         self.work_path = Path(path)

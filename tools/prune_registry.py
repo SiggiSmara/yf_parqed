@@ -26,10 +26,11 @@ Production:
 from __future__ import annotations
 
 import argparse
-import json
 import re
 import sys
 from pathlib import Path
+
+from yf_parqed.common.config_service import ConfigService
 
 # Symbol suffixes that identify non-stock instruments
 _DEAD_SUFFIX = re.compile(r"\.(?:W[STI]?|R[T]?|U)$", re.IGNORECASE)
@@ -51,7 +52,17 @@ def migrate(wrk_dir: Path, apply: bool) -> None:
         print(f"ERROR: {tickers_path} not found", file=sys.stderr)
         sys.exit(1)
 
-    tickers: dict = json.loads(tickers_path.read_text())
+    # The lock every writer of tickers.json takes, held from the read to the
+    # write, so a save by a running daemon cannot fall in between and be
+    # written over.
+    config = ConfigService(wrk_dir)
+    with config.tickers_lock():
+        _migrate(config, apply)
+
+
+def _migrate(config: ConfigService, apply: bool) -> None:
+    tickers_path = config.tickers_path
+    tickers: dict = config.read_tickers_strict()
 
     globally_dead: list[str] = []
     dead_suffix: list[str] = []
@@ -95,9 +106,9 @@ def migrate(wrk_dir: Path, apply: bool) -> None:
         print("to trigger update_current_list, which will prune absent dead tickers.")
         return
 
-    tmp = tickers_path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(tickers, indent=4))
-    tmp.rename(tickers_path)
+    if not config.save_tickers(tickers):
+        print(f"ERROR: {tickers_path} was not written", file=sys.stderr)
+        sys.exit(1)
     print(f"\nWritten to {tickers_path}")
 
 

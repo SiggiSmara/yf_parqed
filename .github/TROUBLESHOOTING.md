@@ -255,10 +255,10 @@ uv run which yf-parqed
 
 Nothing is deleted. Yahoo serves 1-minute bars for seven days only and the data has no backup, so a file that looks broken is kept.
 
-- A file the daemon cannot read while storing new bars (it tries twice) is **renamed** in its directory to `data.parquet.damaged-<UTC timestamp>` (legacy layout: `<TICKER>.parquet.damaged-...`). With partitioned storage that ticker's update fails for the cycle, and the cycle ends there; the next cycle starts a new `data.parquet` for the month from what Yahoo still serves.
+- A file the daemon cannot read while storing new bars (it tries twice) is **renamed** in its directory to `data.parquet.damaged-<UTC timestamp>` (legacy layout: `<TICKER>.parquet.damaged-...`). With partitioned storage that ticker's update fails for the cycle (`<TICKER> failed for interval 1m: ...`) and the cycle goes on with the next ticker; the next cycle starts a new `data.parquet` for the month from what Yahoo still serves.
 - A file found by the month-close check or by `yf-parqed verify-partitions` is **left where it is**. These checks only read.
 - Every such file gets one line in `damaged_partitions.jsonl`: when, path, ticker, interval, month, error, what was done (`moved aside` or `left in place`), the new path, and who found it.
-- A file with a schema problem or no rows is not renamed; the daemon logs the error and fails that ticker until the file is dealt with.
+- A file with a schema problem or no rows is not renamed; the daemon logs the error and fails that ticker in every cycle until the file is dealt with. The other tickers are not affected.
 
 **Finding damaged files:**
 

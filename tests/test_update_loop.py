@@ -100,7 +100,7 @@ class TestUpdateLoopHarness:
 
         captured_merges = []
 
-        def record_merge(request, new_data):
+        def record_merge(request, new_data, refused=None):
             captured_merges.append(request)
             return []
 
@@ -183,12 +183,13 @@ class TestUpdateLoopHarness:
 
         interval_meta = instance.tickers["ACTIVE"]["intervals"]["1d"]
         assert interval_meta["status"] == "active"
-        assert interval_meta["last_data_date"] == "2024-01-02"
+        assert interval_meta["newest_bar_date"] == "2024-01-02"
 
-    def test_cooldown_interval_skips_fetch_calls(self, monkeypatch):
+    def test_pause_of_an_earlier_release_does_not_skip_the_fetch(self, monkeypatch):
         instance = YFParqed(my_path=self.temp_dir, my_intervals=["1d"])
         today_str = datetime.now().strftime("%Y-%m-%d")
-        # Ticker in cooling window: cooling_since set to today, < 7 workdays elapsed
+        # An earlier release paused a ticker for 7 workdays after three days
+        # without data. Nothing pauses a ticker any more.
         instance.tickers = {
             "COOLDOWN": {
                 "ticker": "COOLDOWN",
@@ -220,7 +221,7 @@ class TestUpdateLoopHarness:
 
         instance.update_stock_data()
 
-        assert save_single_calls["count"] == 0
+        assert save_single_calls["count"] == 1
         interval_meta = instance.tickers["COOLDOWN"]["intervals"]["1d"]
         assert interval_meta["status"] == "not_found"
         assert interval_meta["last_not_found_date"] == today_str
@@ -228,9 +229,9 @@ class TestUpdateLoopHarness:
     @pytest.mark.parametrize(
         "days_since, expected_invocations",
         [
-            (3, 0),  # still inside 7-workday cooling window
-            (14, 1),  # past 7 workdays (2 full weeks = 10 workdays)
-            (20, 1),  # comfortably outside window
+            (3, 1),  # inside the 7-workday pause of an earlier release
+            (14, 1),  # past it
+            (20, 1),
         ],
     )
     def test_cooldown_boundary_behavior(
@@ -384,7 +385,7 @@ class TestUpdateLoopHarness:
 
         intervals = instance.tickers["MULTI"]["intervals"]
         assert intervals["1d"]["status"] == "active"
-        assert intervals["1d"]["last_data_date"] == "2024-03-01"
+        assert intervals["1d"]["newest_bar_date"] == "2024-03-01"
         assert intervals["1h"]["status"] == "not_found"
 
     def test_save_tickers_not_called_during_update_loop(self, monkeypatch):

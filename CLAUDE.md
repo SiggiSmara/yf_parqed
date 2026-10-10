@@ -6,7 +6,7 @@ Agent instructions for this codebase. Read this before doing anything else.
 
 - **Always run Python via `uv run`** — never `python`, `python3`, or direct venv activation. Example: `uv run pytest`, `uv run python3 -c "..."`, `uv run xetra-parqed ...`
 - **Never edit `pyproject.toml` manually** — use `uv add` / `uv remove` for dependency changes
-- **All tests must pass before finishing any task**: `uv run pytest` — currently 656 passed, 1 skipped
+- **All tests must pass before finishing any task**: `uv run pytest` — currently 747 passed, 1 skipped
 - **Data safety**: existing Parquet files are the primary record. Never delete or overwrite without explicit user confirmation. See `.github/DATA_SAFETY_STRATEGY.md` for the full ruleset.
 
 ## Project layout
@@ -89,6 +89,10 @@ The parser supports two schemas:
 Both schemas produce a DataFrame with MiFIR column names: `isin`, `price`, `quantity`, `price_currency`, `trading_date_time`, `execution_venue`, `transaction_id`, plus `schema_version`. All on-disk Parquet files use these column names — legacy files were migrated in May 2026.
 
 If the parser encounters an unknown schema it raises `XetraSchemaUnknownError`. The raw `.json.gz` bytes are already in the raw cache before parsing is attempted, so no data is lost.
+
+## Yahoo daemon — current state (as of 2026-10-10)
+
+In daemon mode the Yahoo collector fetches every ticker once per collection night, which starts at 22:00 UTC, always for the last 7 days of 1-minute bars; later cycles of a night only retry tickers whose request failed. It saves `tickers.json` every 500 tickers and at the end of each cycle. No ticker is paused or marked dead by a count of empty answers. Every writer of `tickers.json` takes `tickers.json.lock` (`ConfigService.tickers_lock`) around its read-modify-write, and the daemon never writes `last_data_date`. The reasons are in ADR 2026-10-03, Decision 6. **Written on 2026-10-10, not deployed yet**: check `docs/adr/in-progress/2026-10-03-daemon-resource-footprint.md` for the state.
 
 ## ADR process
 

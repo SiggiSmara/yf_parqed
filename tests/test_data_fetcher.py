@@ -6,6 +6,11 @@ from unittest.mock import Mock
 import pandas as pd
 import pytest
 from curl_cffi.requests.exceptions import HTTPError
+from yfinance.exceptions import (
+    YFPricesMissingError,
+    YFRateLimitError,
+    YFTzMissingError,
+)
 
 from yf_parqed.yahoo.data_fetcher import DataFetcher
 
@@ -125,19 +130,48 @@ class TestFetchWindow:
         assert call_kwargs["end"] == end
         assert call_kwargs["interval"] == "1d"
 
-    def test_fetch_window_returns_empty_on_exception(
-        self, fetcher, mock_ticker_factory, mock_empty_frame
+    def test_fetch_window_raises_when_the_request_fails(
+        self, fetcher, mock_ticker_factory
     ):
-        """If ticker.history raises, fetch should return an empty frame."""
+        """A failed request is not an answer: it raises, so the ticker is asked again."""
         mock_ticker = mock_ticker_factory("ERROR")
         mock_ticker.history.side_effect = ValueError("API error")
 
+        with pytest.raises(ValueError, match="API error"):
+            fetcher.fetch("ERROR", datetime(2024, 1, 1), datetime(2024, 1, 31), "1d")
+
+    def test_fetch_window_returns_empty_when_yahoo_has_no_data(
+        self, fetcher, mock_ticker_factory, mock_empty_frame
+    ):
+        """Yahoo's "no price data" is an answer: an empty frame."""
+        mock_ticker = mock_ticker_factory("GONE")
+        mock_ticker.history.side_effect = YFPricesMissingError("GONE", "")
+        # the response carried the symbol's details and no bars
+        mock_ticker._price_history._history_metadata = {"symbol": "GONE"}
+
         result = fetcher.fetch(
-            "ERROR", datetime(2024, 1, 1), datetime(2024, 1, 31), "1d"
+            "GONE", datetime(2024, 1, 1), datetime(2024, 1, 31), "1d"
         )
 
         assert result.empty
         assert list(result.columns) == ["open", "high", "low", "close", "volume"]
+
+    def test_fetch_asks_yfinance_to_raise_its_errors(
+        self, fetcher, mock_ticker_factory
+    ):
+        """Without raise_errors yfinance logs a failure and returns an empty frame."""
+        mock_ticker = mock_ticker_factory("GOOG")
+        mock_ticker.history.return_value = pd.DataFrame()
+
+        fetcher.fetch("GOOG", datetime(2024, 5, 1), datetime(2024, 5, 31), "1d")
+        fetcher.fetch(
+            "GOOG", datetime(2024, 5, 1), datetime(2024, 5, 31), "1m", get_all=True
+        )
+
+        assert [c[1]["raise_errors"] for c in mock_ticker.history.call_args_list] == [
+            True,
+            True,
+        ]
 
 
 class TestFetchAll:
@@ -183,15 +217,34 @@ class TestFetchAll:
         call_kwargs = mock_ticker.history.call_args[1]
         assert call_kwargs["period"] == "7d"
 
-    def test_fetch_all_returns_empty_on_http_error(
-        self, fetcher, mock_ticker_factory, mock_empty_frame
-    ):
-        """If ticker.history raises HTTPError during get_all, should return empty frame."""
+    def test_fetch_all_raises_on_http_error(self, fetcher, mock_ticker_factory):
+        """An HTTP error is a failed request, not "no data"."""
         mock_ticker = mock_ticker_factory("FAIL")
         mock_ticker.history.side_effect = HTTPError("404 Not Found")
 
+        with pytest.raises(HTTPError):
+            fetcher.fetch(
+                "FAIL", datetime(2024, 1, 1), datetime(2024, 1, 31), "1d", get_all=True
+            )
+
+    def test_fetch_all_raises_on_rate_limit(self, fetcher, mock_ticker_factory):
+        """A throttled request must not look like a ticker without data."""
+        mock_ticker = mock_ticker_factory("BUSY")
+        mock_ticker.history.side_effect = YFRateLimitError()
+
+        with pytest.raises(YFRateLimitError):
+            fetcher.fetch(
+                "BUSY", datetime(2024, 1, 1), datetime(2024, 1, 31), "1m", get_all=True
+            )
+
+    def test_fetch_all_returns_empty_when_yahoo_has_no_data(
+        self, fetcher, mock_ticker_factory
+    ):
+        mock_ticker = mock_ticker_factory("GONE")
+        mock_ticker.history.side_effect = YFTzMissingError("GONE")
+
         result = fetcher.fetch(
-            "FAIL", datetime(2024, 1, 1), datetime(2024, 1, 31), "1d", get_all=True
+            "GONE", datetime(2024, 1, 1), datetime(2024, 1, 31), "1m", get_all=True
         )
 
         assert result.empty
