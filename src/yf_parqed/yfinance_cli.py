@@ -399,7 +399,7 @@ def update_data(
             if non_interactive or daemon:
                 # Attempt automatic recovery
                 processed = lock.cleanup_tmp_files()
-                logger.info("Recovered %d tmp files", processed)
+                logger.info(f"Recovered {processed} tmp files")
                 try:
                     lock.release()
                     logger.info("Removed stale lock; continuing.")
@@ -413,7 +413,7 @@ def update_data(
                 )
                 if should:
                     processed = lock.cleanup_tmp_files()
-                    logger.info("Recovered %d tmp files", processed)
+                    logger.info(f"Recovered {processed} tmp files")
                     try:
                         lock.release()
                         logger.info("Removed stale lock; continuing.")
