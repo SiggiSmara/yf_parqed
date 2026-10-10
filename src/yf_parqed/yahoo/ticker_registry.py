@@ -18,8 +18,6 @@ from ..common.config_service import ConfigService
 LAST_FETCH_KEY = "last_fetch_at"
 NEWEST_BAR_KEY = "newest_bar_date"
 LEGACY_LAST_DATA_KEY = "last_data_date"
-# The collection night in which a ticker that had bars first returned nothing.
-QUIET_SINCE_KEY = "quiet_since"
 
 
 def utc_now() -> datetime:
@@ -306,22 +304,6 @@ class TickerRegistry:
             moment = moment.replace(tzinfo=timezone.utc)
         return fetched >= moment
 
-    def went_quiet_in(self, ticker: str, interval: str, night: str) -> bool:
-        interval_meta = self.get_interval_metadata(ticker, interval)
-        return bool(interval_meta) and interval_meta.get(QUIET_SINCE_KEY) == night
-
-    def note_went_quiet(self, ticker: str, interval: str, night: str) -> None:
-        """
-        Note an empty answer from a ticker that had bars at its last answer.
-
-        The fetch stamp is left alone, so every later cycle of ``night`` asks
-        again: one empty answer after bars is as likely Yahoo not answering
-        properly as the ticker having stopped trading. From the next night on
-        its empty answers stand.
-        """
-        self.update_ticker_interval_status(ticker, interval, False, record_fetch=False)
-        self._tickers[ticker]["intervals"][interval][QUIET_SINCE_KEY] = night
-
     def mark_done_for_the_night(self, ticker: str, interval: str) -> None:
         """
         Note that nothing more is to be fetched for this ticker tonight, without
@@ -352,7 +334,7 @@ class TickerRegistry:
         notes the empty answer and nothing else; no count of empty answers
         pauses a ticker or marks it dead. ``record_fetch=False`` leaves the
         fetch stamp alone, so the nightly schedule asks for the ticker again:
-        for an answer that is not the night's collection, or not trusted yet.
+        for an answer that is not the night's collection.
         """
         current_date = self._config.format_date()
         fetch_stamp = (fetched_at or self._clock()).isoformat(timespec="seconds")
@@ -376,7 +358,6 @@ class TickerRegistry:
             interval_entry["last_checked"] = current_date
             if record_fetch:
                 interval_entry[LAST_FETCH_KEY] = fetch_stamp
-            interval_entry.pop(QUIET_SINCE_KEY, None)
             interval_entry.pop("not_found_streak_days", None)
             interval_entry.pop("cooling_since", None)
             # permanently_dead is intentionally NOT cleared — only add_ticker() does that
@@ -399,7 +380,6 @@ class TickerRegistry:
             # Left over from the streak and pause of earlier releases.
             interval_entry.pop("not_found_streak_days", None)
             interval_entry.pop("cooling_since", None)
-            interval_entry.pop(QUIET_SINCE_KEY, None)
 
             interval_entry["status"] = "not_found"
             interval_entry["last_not_found_date"] = today_str

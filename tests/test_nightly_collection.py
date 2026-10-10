@@ -32,7 +32,6 @@ from yf_parqed.common.config_service import ConfigService
 from yf_parqed.yahoo.data_fetcher import DataFetcher, FetchFailed, is_no_data_answer
 from yf_parqed.yahoo.interval_scheduler import (
     MAX_CONSECUTIVE_FAILURES,
-    MAX_FAILURES_WITHOUT_SUCCESS,
     CycleResult,
     IntervalScheduler,
 )
@@ -88,8 +87,6 @@ class FakeFetcher:
         self.empty: set[str] = set()
         self.failing: dict[str, BaseException] = {}
         self.before_fetch = None
-        self.reference_calls: list[str] = []
-        self.yahoo_down = False
 
     def fetch(self, stock, start_date, end_date, interval, get_all=False):
         if self.before_fetch is not None:
@@ -107,13 +104,6 @@ class FakeFetcher:
 
     def has_window(self, start_date, end_date, interval) -> bool:
         return True
-
-    def has_recent_bars(self, stock, interval) -> bool:
-        """The health check: does Yahoo return bars for a ticker known to have them?"""
-        self.reference_calls.append(stock)
-        if self.yahoo_down:
-            raise ConnectionError("Yahoo is not answering")
-        return stock not in self.empty and stock not in self.failing
 
 
 class Clock:
@@ -366,6 +356,33 @@ class TestAnswersAndFailures:
         assert result.ran_to_end
         assert len(result.failed) == 30
         assert result.processed == 30
+
+
+def test_the_cycle_counts_bars_empty_answers_failures_and_skips(
+    tmp_path, clock, monkeypatch
+):
+    write_registry(tmp_path, "AAA", "BBB", "CCC", "DDD", "EEE")
+    instance, fetcher = make(tmp_path, clock, monkeypatch)
+    fetcher.empty.update({"CCC", "DDD"})
+    fetcher.failing["EEE"] = FetchFailed("Yahoo error")
+
+    first = instance.update_stock_data()
+    instance.save_ticker_changes()
+    clock.now = NIGHT + timedelta(hours=2)
+    second = instance.update_stock_data()
+
+    assert (first.with_bars, first.empty, len(first.failed), first.skipped) == (
+        2,
+        2,
+        1,
+        0,
+    )
+    assert (second.with_bars, second.empty, len(second.failed), second.skipped) == (
+        0,
+        0,
+        1,
+        4,
+    )
 
 
 def test_scheduler_goes_on_after_a_ticker_that_raises(tmp_path):
@@ -697,6 +714,26 @@ class TestDaemonLoop:
 
         assert stub.calls == ["nightly", "cycle", "save", "check"]
 
+    def test_every_cycle_logs_one_line_of_counts(
+        self, tmp_path, monkeypatch, stop_on_first_sleep
+    ):
+        """A jump in the empty answers is how an outage worded as "no data" shows."""
+        stub = DaemonStub(
+            tmp_path,
+            CycleResult(
+                processed=9, skipped=4, with_bars=6, empty=3, failed=["AAA", "BBB"]
+            ),
+        )
+
+        result = run_daemon(
+            stub, tmp_path, monkeypatch, "--ticker-maintenance", "never"
+        )
+
+        assert (
+            "Cycle counts: 6 with bars, 3 with an empty answer, 2 failed, "
+            "4 already fetched"
+        ) in result.output
+
     def test_a_cycle_ended_by_failures_is_saved_but_not_followed_by_the_check(
         self, tmp_path, monkeypatch, stop_on_first_sleep
     ):
@@ -940,99 +977,6 @@ class TestNoDataOrFailure:
             fetcher.fetch(
                 "AAPL", datetime(2026, 10, 19), datetime(2026, 10, 19), "1m", True
             )
-
-
-class TestTickersThatGoQuiet:
-    def test_an_empty_answer_after_bars_does_not_close_the_night(
-        self, tmp_path, clock, monkeypatch
-    ):
-        """Asked again in every later cycle of that night; from the next night its empty answer stands."""
-        write_registry(
-            tmp_path,
-            "AAA",
-            WAS=entry("WAS", status="active", newest_bar_date="2026-10-12"),
-        )
-        instance, fetcher = make(tmp_path, clock, monkeypatch)
-        fetcher.empty.add("WAS")
-
-        first = instance.update_stock_data()
-        instance.save_ticker_changes()
-        meta = stored(tmp_path)["WAS"]["intervals"]["1m"]
-        assert first.went_quiet == 1
-        assert "last_fetch_at" not in meta
-        assert meta["status"] == "not_found"
-        assert meta["quiet_since"] == "2026-10-19T22:00:00+00:00"
-
-        for hours in (2, 4):
-            clock.now = NIGHT + timedelta(hours=hours)
-            later = instance.update_stock_data()
-            instance.save_ticker_changes()
-            assert (later.processed, later.went_quiet) == (1, 1)
-        assert fetcher.calls == ["AAA", "WAS", "WAS", "WAS"]
-        assert "last_fetch_at" not in stored(tmp_path)["WAS"]["intervals"]["1m"]
-
-        # the next night: one empty answer, and the night is closed for it
-        clock.now = NIGHT + timedelta(days=1)
-        next_night = instance.update_stock_data()
-        instance.save_ticker_changes()
-        clock.now = NIGHT + timedelta(days=1, hours=2)
-        instance.update_stock_data()
-
-        assert next_night.went_quiet == 0
-        assert fetcher.calls.count("WAS") == 4
-        meta = stored(tmp_path)["WAS"]["intervals"]["1m"]
-        assert "quiet_since" not in meta and "last_fetch_at" in meta
-
-    def test_the_second_opinion_can_bring_the_bars(self, tmp_path, clock, monkeypatch):
-        write_registry(tmp_path, WAS=entry("WAS", status="active"))
-        instance, fetcher = make(tmp_path, clock, monkeypatch)
-        fetcher.empty.add("WAS")
-        instance.update_stock_data()
-        instance.save_ticker_changes()
-
-        fetcher.empty.clear()  # Yahoo answers properly again
-        clock.now = NIGHT + timedelta(hours=2)
-        instance.update_stock_data()
-        instance.save_ticker_changes()
-
-        meta = stored(tmp_path)["WAS"]["intervals"]["1m"]
-        assert meta["status"] == "active"
-        assert meta["newest_bar_date"] == "2026-10-19"
-
-    def test_twenty_tickers_going_quiet_in_a_row_end_the_cycle(
-        self, tmp_path, clock, monkeypatch
-    ):
-        """An outage that looks like "no data" for everyone must not close the night."""
-        names = [f"T{i:02d}" for i in range(40)]
-        write_registry(tmp_path, **{n: entry(n, status="active") for n in names})
-        instance, fetcher = make(tmp_path, clock, monkeypatch)
-        fetcher.empty.update(names)
-
-        result = instance.update_stock_data()
-        instance.save_ticker_changes()
-
-        assert result.aborted and result.went_quiet == 20
-        assert fetcher.calls == names[:20]
-        assert "last_fetch_at" not in (tmp_path / "tickers.json").read_text()
-
-        # Yahoo is back two hours later: everything is fetched, nothing was lost
-        fetcher.empty.clear()
-        clock.now = NIGHT + timedelta(hours=2)
-        again = instance.update_stock_data()
-        assert again.ran_to_end and again.processed == 40
-
-    def test_quiet_tickers_among_ones_with_bars_do_not_end_the_cycle(
-        self, tmp_path, clock, monkeypatch
-    ):
-        names = [f"T{i:02d}" for i in range(60)]
-        write_registry(tmp_path, **{n: entry(n, status="active") for n in names})
-        instance, fetcher = make(tmp_path, clock, monkeypatch)
-        fetcher.empty.update(n for i, n in enumerate(names) if i % 20 != 0)  # 57 quiet
-
-        result = instance.update_stock_data()
-
-        assert result.ran_to_end
-        assert result.went_quiet == 57
 
 
 class TestOtherIntervals:
@@ -1412,84 +1356,6 @@ def active(*names: str) -> dict:
     return {name: entry(name, status="active") for name in names}
 
 
-class TestOutagesThatLookLikeNoData:
-    def test_an_outage_over_several_cycles_closes_nobodys_night(
-        self, tmp_path, clock, monkeypatch
-    ):
-        """Every ticker returns nothing for two cycles; when Yahoo is back all are fetched."""
-        names = [f"T{i:02d}" for i in range(60)]
-        write_registry(tmp_path, **active(*names))
-        instance, fetcher = make(tmp_path, clock, monkeypatch)
-        fetcher.empty.update(names)
-        fetcher.yahoo_down = True
-
-        for hours in (0, 2):
-            clock.now = NIGHT + timedelta(hours=hours)
-            result = instance.update_stock_data()
-            instance.save_ticker_changes()
-            assert result.aborted and result.went_quiet == 20
-        assert "last_fetch_at" not in (tmp_path / "tickers.json").read_text()
-
-        fetcher.empty.clear()
-        fetcher.yahoo_down = False
-        clock.now = NIGHT + timedelta(hours=4)
-        back = instance.update_stock_data()
-
-        assert back.ran_to_end and back.processed == 60 and back.went_quiet == 0
-
-    def test_many_quiet_tickers_do_not_end_the_cycle_while_yahoo_answers(
-        self, tmp_path, clock, monkeypatch
-    ):
-        """In a later cycle only the quiet tickers are due, so they always come in a row."""
-        quiet = [f"Q{i:02d}" for i in range(45)]
-        write_registry(tmp_path, **active("GOOD", *quiet))
-        instance, fetcher = make(tmp_path, clock, monkeypatch)
-        fetcher.empty.update(quiet)
-
-        first = instance.update_stock_data()
-        instance.save_ticker_changes()
-        clock.now = NIGHT + timedelta(hours=2)
-        second = instance.update_stock_data()
-
-        assert first.ran_to_end and second.ran_to_end
-        assert second.processed == 45 and second.went_quiet == 45
-        # Yahoo was asked for a ticker that had bars, every 20 quiet ones
-        assert fetcher.reference_calls == ["GOOD"] * 4
-
-    def test_the_health_check_uses_a_ticker_that_had_bars_tonight(
-        self, tmp_path, clock, monkeypatch
-    ):
-        write_registry(
-            tmp_path,
-            OLD=entry("OLD", status="active", newest_bar_date="2026-01-05"),
-            RECENT=entry("RECENT", status="active", newest_bar_date="2026-10-16"),
-            **active("AAA"),
-        )
-        instance, fetcher = make(tmp_path, clock, monkeypatch)
-        monkeypatch.setattr(instance, "get_today", lambda: datetime(2026, 10, 19, 17))
-
-        assert instance.yahoo_answers("1m") is True
-        assert fetcher.reference_calls == ["RECENT"]  # bars in the last days
-
-        instance.update_ticker_interval_status(
-            "AAA", "1m", True, datetime(2026, 10, 19)
-        )
-        instance.yahoo_answers("1m")
-        assert fetcher.reference_calls[-1] == "AAA"  # bars tonight
-
-        fetcher.yahoo_down = True
-        assert instance.yahoo_answers("1m") is False
-
-    def test_without_a_ticker_known_to_have_bars_nothing_can_be_said(
-        self, tmp_path, clock, monkeypatch
-    ):
-        write_registry(tmp_path, "AAA")
-        instance, fetcher = make(tmp_path, clock, monkeypatch)
-
-        assert instance.yahoo_answers("1m") is False
-        assert fetcher.reference_calls == []
-
-
 class TestFailuresInLaterCycles:
     def test_tickers_that_keep_failing_do_not_end_the_retry_cycle(
         self, tmp_path, clock, monkeypatch
@@ -1497,13 +1363,12 @@ class TestFailuresInLaterCycles:
         """25 failing tickers are 25 in a row once everything else is done for the night."""
         good = [f"G{i:02d}" for i in range(30)]
         bad = [f"X{i:02d}" for i in range(25)]
-        names = [n for pair in zip(good, bad + good[:5]) for n in pair][:55]
-        write_registry(tmp_path, *dict.fromkeys(good + bad))
+        scattered = [n for pair in zip(good, bad) for n in pair] + good[25:]
+        write_registry(tmp_path, *scattered)
         instance, fetcher = make(tmp_path, clock, monkeypatch)
         instance.my_intervals = ["1m", "5m"]
         for name in bad:
             fetcher.failing[name] = FetchFailed("Yahoo error")
-        del names
 
         first = instance.update_stock_data()
         instance.save_ticker_changes()
@@ -1517,28 +1382,59 @@ class TestFailuresInLaterCycles:
         assert fetcher.asked_since(mark) == bad + bad  # both intervals reached
         assert len(second.failed) == 50
 
-    def test_a_hundred_failures_in_a_row_end_the_cycle_even_when_yahoo_answers(
+    def test_failures_in_a_row_end_a_cycle_in_which_half_the_tickers_are_due(
         self, tmp_path, clock, monkeypatch
     ):
-        """Then it is the host, not Yahoo: a full disk fails every write."""
-        names = [f"T{i:03d}" for i in range(150)]
+        names = [f"T{i:02d}" for i in range(40)]
+        write_registry(tmp_path, *names)
+        instance, fetcher = make(tmp_path, clock, monkeypatch)
+        for name in ["T00", *names[20:]]:
+            fetcher.failing[name] = FetchFailed("Yahoo error")
+
+        first = instance.update_stock_data()
+        instance.save_ticker_changes()
+        assert first.aborted and len(first.failed) == 21
+
+        # 21 of 40 are still due, and T00 answers this time
+        del fetcher.failing["T00"]
+        clock.now = NIGHT + timedelta(hours=2)
+        second = instance.update_stock_data()
+        instance.save_ticker_changes()
+        assert second.aborted and (second.processed, second.skipped) == (1, 19)
+
+        # 20 of 40: exactly half, the rule is still judged
+        clock.now = NIGHT + timedelta(hours=4)
+        third = instance.update_stock_data()
+        assert third.aborted and (third.processed, third.skipped) == (0, 20)
+
+    def test_a_run_of_failures_is_not_carried_into_the_next_interval(
+        self, tmp_path, clock, monkeypatch
+    ):
+        """20 failed retries of one interval must not end the next one at its first failure."""
+        bad = [f"B{i:02d}" for i in range(20)]
+        good = [f"G{i:02d}" for i in range(30)]
+        fetched = NIGHT.isoformat(timespec="seconds")
         write_registry(
             tmp_path,
-            **{
-                n: entry(n, status="active", newest_bar_date="2026-10-16")
-                for n in names
-            },
+            *bad,
+            **{n: entry(n, status="active", last_fetch_at=fetched) for n in good},
         )
         instance, fetcher = make(tmp_path, clock, monkeypatch)
-        monkeypatch.setattr(instance, "get_today", lambda: datetime(2026, 10, 19, 17))
-        monkeypatch.setattr(
-            instance, "merge_yf", MagicMock(side_effect=OSError("No space left"))
-        )
+        instance.my_intervals = ["1m", "5m"]
+        for name in bad:
+            fetcher.failing[name] = FetchFailed("Yahoo error")
 
+        def only_the_first_keeps_failing(stock):
+            if len(fetcher.calls) == 20:  # the 1m retries are through
+                for name in bad[1:]:
+                    fetcher.failing.pop(name, None)
+
+        fetcher.before_fetch = only_the_first_keeps_failing
         result = instance.update_stock_data()
 
-        assert MAX_FAILURES_WITHOUT_SUCCESS == 100
-        assert result.aborted and len(result.failed) == 100
+        assert result.ran_to_end
+        assert result.failed == bad + ["B00"]
+        assert fetcher.calls == bad + bad + good
 
     def test_an_unexpected_error_is_logged_with_its_traceback(
         self, tmp_path, clock, monkeypatch
@@ -1579,7 +1475,6 @@ class TestWindowsGivenByHand:
             )
 
             assert result.ran_to_end and result.processed == 40
-            assert result.went_quiet == 0
 
     def test_a_stale_hourly_ticker_is_fetched_for_what_yahoo_still_keeps(self):
         """Before, a start older than 729 days with an end of today asked for nothing at all."""

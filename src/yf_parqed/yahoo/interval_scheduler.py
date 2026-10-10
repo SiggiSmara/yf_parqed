@@ -21,20 +21,12 @@ DateProvider = Callable[[], datetime]
 ProcessStock = Callable[[str, datetime | None, datetime | None, str], str | None]
 #: Answers "is this ticker still to be fetched for this interval?".
 DueCheck = Callable[[str, str], bool]
-#: Answers "does Yahoo return bars for a ticker that is known to have them?",
-#: for an interval and, when the cycle has one, the last ticker that had bars.
-HealthCheck = Callable[[str, str | None], bool]
 
-# After this many tickers in a row that failed, or that returned nothing after
-# having had bars, the cycle finds out whether Yahoo is answering (the health
-# check) and ends if it is not. Without a health check it ends right away. A
-# run of that length is normal in a later cycle of a night, where only the
-# tickers that failed or went quiet are still due.
+# After this many tickers in a row that failed, the cycle ends. The rule is
+# judged only for an interval of which at least half the active tickers are
+# due: in a later cycle of a night only the failed tickers are still due, so
+# they always come in a row.
 MAX_CONSECUTIVE_FAILURES = 20
-
-# Failures that go on for this many tickers end the cycle even when Yahoo
-# answers: then it is the host (disk full, permissions), not Yahoo.
-MAX_FAILURES_WITHOUT_SUCCESS = 100
 
 # Failures that say what went wrong in their message: Yahoo, the network, the
 # disk, a refused write. Anything else is a bug and is logged with its
@@ -50,13 +42,9 @@ EXPECTED_FAILURES = (
 # A checkpoint (the registry save) runs after this many processed tickers.
 CHECKPOINT_EVERY = 500
 
-# What a processor may report for a ticker. WENT_QUIET is an empty answer from
-# a ticker that had bars at its last answer: normal now and then, but this many
-# of them one after the other means Yahoo is not answering properly, in a way
-# that cannot be told from "no data" one ticker at a time.
+# What a processor may report for a ticker.
 BARS = "bars"
 EMPTY = "empty"
-WENT_QUIET = "went_quiet"
 
 
 @dataclass
@@ -65,7 +53,8 @@ class CycleResult:
 
     processed: int = 0
     skipped: int = 0
-    went_quiet: int = 0
+    with_bars: int = 0
+    empty: int = 0
     failed: list[str] = field(default_factory=list)
     stopped: bool = False
     aborted: bool = False
@@ -91,7 +80,6 @@ class IntervalScheduler:
         is_due: DueCheck | None = None,
         checkpoint: Callable[[], None] | None = None,
         checkpoint_every: int = CHECKPOINT_EVERY,
-        health_check: HealthCheck | None = None,
     ) -> None:
         self._registry = registry
         self._intervals_provider = intervals
@@ -102,7 +90,6 @@ class IntervalScheduler:
         self._progress_factory = progress_factory or self._default_progress
         self.is_due = is_due
         self.checkpoint = checkpoint
-        self.health_check = health_check
         self._checkpoint_every = checkpoint_every
 
     @staticmethod
@@ -121,10 +108,9 @@ class IntervalScheduler:
         Process every active ticker that is due; with ``should_stop``, end after the current ticker.
 
         A ticker whose processing raises is logged and left for a later cycle;
-        the tickers after it still run. After ``MAX_CONSECUTIVE_FAILURES``
-        failures in a row, or that many tickers in a row that had bars and
-        return nothing now, the cycle ends unless the health check says Yahoo
-        is answering.
+        the tickers after it still run. ``MAX_CONSECUTIVE_FAILURES`` failures
+        in a row end the cycle, in an interval of which at least half the
+        active tickers are due.
         """
         self._load_registry()
         result = CycleResult()
@@ -154,19 +140,8 @@ class IntervalScheduler:
             return False
 
         failures_in_a_row = 0
-        quiet_in_a_row = 0
         since_checkpoint = 0
-        last_with_bars: str | None = None
         traced: set[type] = set()
-
-        def yahoo_answers(interval: str) -> bool:
-            if self.health_check is None:
-                return False
-            try:
-                return bool(self.health_check(interval, last_with_bars))
-            except Exception as exc:
-                logger.warning(f"The health check failed: {type(exc).__name__}: {exc}")
-                return False
 
         for interval in self._intervals_provider():
             if stopping():
@@ -176,9 +151,13 @@ class IntervalScheduler:
                 for ticker in active_tickers
                 if self._registry.is_active_for_interval(ticker, interval)
             ]
+            # A run of failures is counted within one interval.
+            failures_in_a_row = 0
+            judge_failure_runs = True
             if self.is_due is not None:
                 due = [t for t in interval_stocks if self.is_due(t, interval)]
                 already_done = len(interval_stocks) - len(due)
+                judge_failure_runs = 2 * len(due) >= len(interval_stocks)
                 result.skipped += already_done
                 interval_stocks = due
                 logger.info(
@@ -220,44 +199,24 @@ class IntervalScheduler:
                         logger.opt(exception=exc).error(message)
                     result.failed.append(ticker)
                     failures_in_a_row += 1
-                    if failures_in_a_row % MAX_CONSECUTIVE_FAILURES == 0:
-                        if (
-                            failures_in_a_row < MAX_FAILURES_WITHOUT_SUCCESS
-                            and yahoo_answers(interval)
-                        ):
-                            logger.warning(
-                                f"{failures_in_a_row} tickers failed in a row, but "
-                                "Yahoo answers for a ticker that has bars; going on"
-                            )
-                        else:
-                            logger.error(
-                                f"{failures_in_a_row} tickers failed in a row; "
-                                "ending the update cycle"
-                            )
-                            result.aborted = True
-                            return result
+                    if (
+                        judge_failure_runs
+                        and failures_in_a_row >= MAX_CONSECUTIVE_FAILURES
+                    ):
+                        logger.error(
+                            f"{failures_in_a_row} tickers failed in a row; "
+                            "ending the update cycle"
+                        )
+                        result.aborted = True
+                        return result
                     continue
 
                 failures_in_a_row = 0
                 result.processed += 1
                 if outcome == BARS:
-                    quiet_in_a_row = 0
-                    last_with_bars = ticker
-                elif outcome == WENT_QUIET:
-                    result.went_quiet += 1
-                    quiet_in_a_row += 1
-                    if quiet_in_a_row >= MAX_CONSECUTIVE_FAILURES:
-                        if yahoo_answers(interval):
-                            quiet_in_a_row = 0
-                        else:
-                            logger.error(
-                                f"{quiet_in_a_row} tickers that had bars at their "
-                                "last fetch returned nothing, one after the other, "
-                                "and Yahoo does not answer for a ticker that has "
-                                "bars. Ending the update cycle"
-                            )
-                            result.aborted = True
-                            return result
+                    result.with_bars += 1
+                elif outcome == EMPTY:
+                    result.empty += 1
                 since_checkpoint += 1
                 if (
                     self.checkpoint is not None

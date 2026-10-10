@@ -115,21 +115,6 @@ class DataFetcher:
         )
         return start != end
 
-    def has_recent_bars(self, stock: str, interval: str) -> bool:
-        """
-        Ask Yahoo for the last days of one ticker and say whether bars came
-        back. Used to find out whether Yahoo is answering properly, with a
-        ticker that is known to have bars. Nothing is stored; a failed request
-        raises.
-        """
-        self._limiter()
-        ticker = self._ticker_factory(stock)
-        try:
-            df = ticker.history(period="5d", interval=interval, raise_errors=True)
-        except YFTickerMissingError as exc:
-            return not self._empty_or_failed(ticker, exc).empty
-        return not df.empty
-
     def _fetch_window(
         self,
         ticker: yf.Ticker,

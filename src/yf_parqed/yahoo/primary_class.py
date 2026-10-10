@@ -29,7 +29,7 @@ from ..common.storage_router import StorageRouter
 from ..common.rate_limiter import wrap_callable
 from ..common.shutdown import StopCheck
 from .data_fetcher import SHORT_LIVED_INTERVALS, DataFetcher
-from .interval_scheduler import BARS, EMPTY, WENT_QUIET, CycleResult, IntervalScheduler
+from .interval_scheduler import BARS, EMPTY, CycleResult, IntervalScheduler
 from .ticker_registry import TickerRegistry
 
 
@@ -149,7 +149,6 @@ class YFParqed:
         self.night_start_hour_utc = start_hour_utc
         self.scheduler.is_due = self.is_due_tonight
         self.scheduler.checkpoint = self.save_ticker_changes
-        self.scheduler.health_check = self.yahoo_answers
 
     def night_start(self, now: datetime | None = None) -> datetime:
         """The start of the collection night that ``now`` falls into."""
@@ -167,41 +166,6 @@ class YFParqed:
 
     def is_due_tonight(self, ticker: str, interval: str) -> bool:
         return not self.registry.fetched_since(ticker, interval, self.night_start())
-
-    def yahoo_answers(self, interval: str, reference: str | None = None) -> bool:
-        """
-        Find out whether Yahoo is answering properly: ask for a ticker that is
-        known to have bars. ``reference`` is one that had bars a moment ago;
-        without it, a ticker that had bars tonight, or in the last few days.
-        False when no such ticker is known: then nothing can be said.
-        """
-        reference = reference or self._reference_ticker(interval)
-        if reference is None:
-            return False
-        try:
-            answered = self.data_fetcher.has_recent_bars(reference, interval)
-        except Exception as exc:
-            logger.warning(
-                f"Yahoo did not answer for {reference}: {type(exc).__name__}: {exc}"
-            )
-            return False
-        if not answered:
-            logger.warning(f"Yahoo returned no bars for {reference}")
-        return answered
-
-    def _reference_ticker(self, interval: str) -> str | None:
-        night = self.night_start()
-        recent = self.config.format_date(self.get_today() - timedelta(days=5))
-        fallback = None
-        for ticker, data in self.registry.tickers.items():
-            meta = data.get("intervals", {}).get(interval) or {}
-            if meta.get("status") != "active":
-                continue
-            if self.registry.fetched_since(ticker, interval, night):
-                return ticker
-            if fallback is None and str(meta.get("newest_bar_date", "")) >= recent:
-                fallback = ticker
-        return fallback
 
     def save_ticker_changes(self) -> bool:
         """
@@ -771,8 +735,8 @@ class YFParqed:
         """
         Fetch and store one ticker for one interval.
 
-        Returns what Yahoo answered (``BARS``, ``EMPTY`` or ``WENT_QUIET``) or
-        None when nothing was asked. A failed request or a failed write
+        Returns what Yahoo answered (``BARS`` or ``EMPTY``) or None when
+        nothing was asked. A failed request or a failed write
         raises, and nothing is recorded for the ticker.
         """
         logger.debug(stock)
@@ -798,8 +762,6 @@ class YFParqed:
             )
 
         last_data_date = self.registry.get_last_data_date(stock, interval)
-        interval_meta = self.registry.get_interval_metadata(stock, interval)
-        had_bars = bool(interval_meta) and interval_meta.get("status") == "active"
 
         if end_date is None:
             end_date = self.get_today()
@@ -867,17 +829,8 @@ class YFParqed:
                     f"{stock} returned no results for the date range of {start_date} to {end_date} and load_all:{load_all} for interval {interval}."
                 )
 
-                # Update ticker status - no data found for this interval.
-                # In the nightly collection, a ticker that had bars at its last
-                # answer is not done for the night on an empty one: every later
-                # cycle of this night asks again. The night is remembered in the
-                # registry, so a second empty answer does not close it either.
+                # Update ticker status - no data found for this interval
                 self.new_not_found = True
-                if closes_the_night:
-                    night = self.night_start().isoformat(timespec="seconds")
-                    if had_bars or self.registry.went_quiet_in(stock, interval, night):
-                        self.registry.note_went_quiet(stock, interval, night)
-                        return WENT_QUIET
                 self.update_ticker_interval_status(
                     stock, interval, False, record_fetch=closes_the_night
                 )

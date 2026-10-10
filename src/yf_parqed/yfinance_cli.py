@@ -469,7 +469,6 @@ def update_data(
             if stop():
                 cycle.stopped = True
             failed = cycle.failed
-            went_quiet = cycle.went_quiet
 
             if cycle.stopped:
                 logger.info("Stop requested during the update cycle.")
@@ -484,11 +483,10 @@ def update_data(
                     f"{len(failed)} tickers failed and are left for a later cycle: {shown}"
                 )
 
-            if went_quiet:
-                logger.info(
-                    f"{went_quiet} tickers that had bars at their last fetch returned "
-                    "nothing; they are asked again in the next cycle of this night"
-                )
+            logger.info(
+                f"Cycle counts: {cycle.with_bars} with bars, {cycle.empty} with an "
+                f"empty answer, {len(failed)} failed, {cycle.skipped} already fetched"
+            )
 
             if daemon:
                 # The daemon saves what every cycle learned, whether or not it
